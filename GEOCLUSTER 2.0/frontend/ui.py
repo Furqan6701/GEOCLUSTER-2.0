@@ -66,7 +66,6 @@ from config import (
     PARAMS_TXT,
     CENTROIDS_TXT, RANGES_TXT,
     IMAGES_DIR, DATA_DIR, verify_paths,
-    INPUT_CSV as CONFIG_INPUT_CSV,
     OUTPUT_CSV as CONFIG_OUTPUT_CSV,
     META_TXT as CONFIG_META_TXT,
     HUFFMAN_BIN as CONFIG_HUFFMAN_BIN,
@@ -80,7 +79,6 @@ IMAGES_DIR = Path(IMAGES_DIR)
 PARAMS_TXT = Path(PARAMS_TXT)
 CENTROIDS_TXT = Path(CENTROIDS_TXT)
 RANGES_TXT = Path(RANGES_TXT)
-INPUT_CSV = Path(CONFIG_INPUT_CSV)
 OUTPUT_CSV = Path(CONFIG_OUTPUT_CSV)
 META_TXT = Path(CONFIG_META_TXT)
 HUFFMAN_BIN = Path(CONFIG_HUFFMAN_BIN)
@@ -313,69 +311,6 @@ def threshold_image(image: np.ndarray, threshold: int) -> np.ndarray:
         return output
     _, output = cv2.threshold(image, threshold, 255, cv2.THRESH_BINARY)
     return output
-
-
-# [KEY] cluster_image
-# Why important: this is the pure-Python clustering helper; wrong reshape logic would scramble channel layout.
-# Logic: flatten pixels, run OpenCV k-means, then reshape cluster centers back to the original image geometry.
-# Complexity: O(n*k*i) time | O(n) space
-# Watch out: alpha is detached before clustering and stitched back afterward so transparency is not treated as a feature.
-# [DSA] K-Means Clustering - groups similar pixels by repeatedly assigning them to the nearest color centroid
-def cluster_image(image: np.ndarray, clusters: int, attempts: int) -> np.ndarray:
-    if image.ndim == 2:
-        pixels = image.reshape((-1, 1)).astype(np.float32)
-        shape = image.shape
-        channels = None
-        alpha = None
-    elif image.shape[2] == 4:
-        pixels = image[:, :, :3].reshape((-1, 3)).astype(np.float32)
-        shape = image.shape[:2]
-        channels = 3
-        alpha = image[:, :, 3].copy()
-    else:
-        pixels = image.reshape((-1, image.shape[2])).astype(np.float32)
-        shape = image.shape[:2]
-        channels = image.shape[2]
-        alpha = None
-
-    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 1.0)
-    _compactness, labels, centers = cv2.kmeans(pixels, clusters, None, criteria, attempts, cv2.KMEANS_PP_CENTERS)
-    clustered = centers[labels.flatten()].astype(np.uint8)
-
-    if channels is None:
-        return clustered.reshape(shape)
-
-    output = clustered.reshape(shape[0], shape[1], channels)
-    if alpha is not None:
-        output = np.dstack((output, alpha))
-    return output
-
-
-# [KEY] write_classification_csv
-# Why important: the backend expects grayscale-style numeric labels, so colorized class maps must be encoded deterministically.
-# Logic: sort unique RGB colors by brightness, map them to evenly spaced byte codes, then write the encoded 2D matrix.
-# Complexity: O(n log u) time | O(n + u) space
-# Watch out: visually different colors with identical brightness still stay distinct because encoding is based on exact RGB equality.
-# [DSA] Hashing + Sorting - deduplicates colors first, then orders them by brightness before assigning output codes
-def write_classification_csv(path: Path, image: np.ndarray) -> None:
-    if image.ndim == 2:
-        write_csv_matrix(path, image)
-        return
-
-    base = image[:, :, :3] if image.shape[2] == 4 else image
-    pixels = base.reshape(-1, 3)
-    unique_colors = np.unique(pixels, axis=0)
-    brightness = np.dot(unique_colors.astype(np.float32), np.array([0.114, 0.587, 0.299], dtype=np.float32))
-    order = np.argsort(brightness)
-    sorted_colors = unique_colors[order]
-    codes = np.linspace(0, 255, len(sorted_colors), dtype=np.uint8) if len(sorted_colors) > 1 else np.array([128], dtype=np.uint8)
-
-    encoded = np.zeros(base.shape[:2], dtype=np.uint8)
-    for color, code in zip(sorted_colors, codes):
-        mask = np.all(base == color, axis=2)
-        encoded[mask] = code
-
-    write_csv_matrix(path, encoded)
 
 
 # [DSA] Binary Tree Node - stores one Huffman subtree for Python-side compression and decompression
@@ -969,30 +904,6 @@ class ClassifyClustersDialog(QDialog):
         self.assignments = self._collect_assignments()
         self.apply_callback(self.ranges, self.assignments)
         self.generate_map_callback()
-
-
-class HuffmanActionDialog(QDialog):
-    def __init__(self, mode: str, source_name: str, target_path: Path, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setWindowTitle("Huffman Compression" if mode == "compress" else "Huffman Decompression")
-        self.setModal(True)
-
-        layout = QVBoxLayout(self)
-        if mode == "compress":
-            text = (
-                f"Compress the grayscale image from:\n{source_name}\n\n"
-                f"Output file:\n{target_path}"
-            )
-        else:
-            text = f"Decompress the stored Huffman file:\n{target_path}"
-        label = QLabel(text)
-        label.setWordWrap(True)
-        layout.addWidget(label)
-
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
 
 
 class DistanceUnitDialog(QDialog):

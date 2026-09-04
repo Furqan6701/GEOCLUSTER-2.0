@@ -21,11 +21,6 @@ class DistanceResult:
 
 
 @dataclass
-class HistogramResult:
-    counts: List[int]
-
-
-@dataclass
 class HuffmanCompressionResult:
     original_bytes: int = 0
     compressed_bytes: int = 0
@@ -81,33 +76,6 @@ def _cpp_round(value: float) -> int:
     return math.floor(value + 0.5) if value >= 0 else math.ceil(value - 0.5)
 
 
-def saturate_to_byte(value: float) -> np.uint8:
-    return np.uint8(clamp_int(_cpp_round(value), 0, 255))
-
-
-def to_gray_doubles(image: np.ndarray) -> np.ndarray:
-    if image.ndim == 2:
-        return image.astype(np.float64, copy=True)
-    channels = image.shape[2]
-    blue = image[:, :, 0].astype(np.float64)
-    green = image[:, :, min(1, channels - 1)].astype(np.float64)
-    red = image[:, :, min(2, channels - 1)].astype(np.float64)
-    return 0.114 * blue + 0.587 * green + 0.299 * red
-
-
-def gray_image_from_doubles(rows: int, cols: int, values: Sequence[float]) -> np.ndarray:
-    rounded = np.floor(np.asarray(values, dtype=np.float64).reshape(rows, cols) + 0.5)
-    return np.clip(rounded, 0, 255).astype(np.uint8)
-
-
-def join_ints(values: Sequence[int]) -> str:
-    return ",".join(str(int(value)) for value in values)
-
-
-def join_doubles(values: Sequence[float]) -> str:
-    return ",".join(f"{float(value):.3f}" for value in values)
-
-
 def compute_distance(x1: int, y1: int, x2: int, y2: int) -> DistanceResult:
     dx = float(x2 - x1)
     dy = float(y2 - y1)
@@ -155,11 +123,6 @@ def mean_filter(image: np.ndarray, window_size: int) -> np.ndarray:
     return averaged.astype(np.uint8)
 
 
-def compute_histogram(image: np.ndarray) -> HistogramResult:
-    values = np.clip(np.asarray(image, dtype=np.int32), 0, 255).astype(np.uint8)
-    return HistogramResult(np.bincount(values.ravel(), minlength=256).astype(int).tolist())
-
-
 def read_csv_matrix(path: str | Path) -> np.ndarray:
     rows: List[List[int]] = []
     with Path(path).open("r", encoding="utf-8") as handle:
@@ -174,17 +137,6 @@ def read_csv_matrix(path: str | Path) -> np.ndarray:
 
 def write_csv_matrix(path: str | Path, matrix: np.ndarray) -> None:
     np.savetxt(Path(path), np.clip(np.asarray(matrix, dtype=np.int32), 0, 255), fmt="%d", delimiter=",")
-
-
-def read_params(path: str | Path) -> Dict[str, str]:
-    params: Dict[str, str] = {}
-    with Path(path).open("r", encoding="utf-8") as handle:
-        for line in handle:
-            line = line.rstrip("\n")
-            if "=" in line:
-                key, value = line.split("=", 1)
-                params[key] = value
-    return params
 
 
 def write_metadata(path: str | Path, lines: Iterable[str]) -> None:

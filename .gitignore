@@ -1,0 +1,34 @@
+# Freebuff agent metadata — never commit this
+.freebuff/
+
+# Environment variables — keep real credentials out of git
+.env
+.env.*
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Regenerable runtime artifacts under the project's data dir.
+# These are produced by the app/tests on every run (K-Means output files,
+# processed images, satellite download cache) — do not commit them.
+/GEOCLUSTER 2.0/data/cache/
+/GEOCLUSTER 2.0/data/params.txt
+/GEOCLUSTER 2.0/data/centroids.txt
+/GEOCLUSTER 2.0/data/ranges.txt
+/GEOCLUSTER 2.0/data/output.csv
+/GEOCLUSTER 2.0/data/output_meta.txt
+/GEOCLUSTER 2.0/data/huffman.bin
+/GEOCLUSTER 2.0/data/test_huffman.bin
+/GEOCLUSTER 2.0/data/*_sentinel.png

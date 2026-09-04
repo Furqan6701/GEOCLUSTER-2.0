@@ -38,13 +38,6 @@ print(filtered)
 assert filtered.mean() == 100, "Mean filter on a flat image should not change values"
 print("PASS: mean filter is correct on flat input\n")
 
-print("=== Testing compute_histogram ===")
-hist_img = np.array([[0, 0, 255, 255, 255]], dtype=np.uint8)
-hist = backend_py.compute_histogram(hist_img)
-print("counts[0] =", hist.counts[0], " counts[255] =", hist.counts[255])
-assert hist.counts[0] == 2 and hist.counts[255] == 3, "Histogram counts should match pixel values"
-print("PASS: histogram is correct\n")
-
 print("=== Testing Huffman compress/decompress round-trip ===")
 huff_img = np.random.randint(0, 256, size=(20, 20), dtype=np.uint8)
 huff_path = Path("data/test_huffman.bin")
