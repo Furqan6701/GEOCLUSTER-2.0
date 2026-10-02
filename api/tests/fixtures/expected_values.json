@@ -1,0 +1,328 @@
+{
+  "alpha_alpha_channel_preserved_in_brightness": true,
+  "alpha_alpha_channel_preserved_in_mean": true,
+  "alpha_alpha_channel_preserved_in_negative": true,
+  "alpha_alpha_channel_preserved_in_threshold": true,
+  "classify": {
+    "assignments": {
+      "0": {
+        "color": [
+          220,
+          65,
+          65
+        ],
+        "name": "Shadows"
+      },
+      "1": {
+        "color": [
+          220,
+          197,
+          65
+        ],
+        "name": "Dark Trees / Forest"
+      },
+      "2": {
+        "color": [
+          111,
+          220,
+          65
+        ],
+        "name": "Roads / Pathways"
+      },
+      "3": {
+        "color": [
+          65,
+          220,
+          150
+        ],
+        "name": "Bare Soil / Ground"
+      },
+      "4": {
+        "color": [
+          65,
+          158,
+          220
+        ],
+        "name": "Grass / Lawn"
+      }
+    },
+    "legend": [
+      {
+        "cluster": 0,
+        "color": [
+          220,
+          65,
+          65
+        ],
+        "count": 60019,
+        "label": "Shadows-3.5%",
+        "max": 50,
+        "min": 0,
+        "name": "Shadows",
+        "percentage": 3.5
+      },
+      {
+        "cluster": 1,
+        "color": [
+          220,
+          197,
+          65
+        ],
+        "count": 356372,
+        "label": "Dark Trees / Forest-20.9%",
+        "max": 101,
+        "min": 51,
+        "name": "Dark Trees / Forest",
+        "percentage": 20.9
+      },
+      {
+        "cluster": 2,
+        "color": [
+          111,
+          220,
+          65
+        ],
+        "count": 499763,
+        "label": "Roads / Pathways-29.3%",
+        "max": 152,
+        "min": 102,
+        "name": "Roads / Pathways",
+        "percentage": 29.3
+      },
+      {
+        "cluster": 3,
+        "color": [
+          65,
+          220,
+          150
+        ],
+        "count": 493938,
+        "label": "Bare Soil / Ground-29.0%",
+        "max": 203,
+        "min": 153,
+        "name": "Bare Soil / Ground",
+        "percentage": 29.0
+      },
+      {
+        "cluster": 4,
+        "color": [
+          65,
+          158,
+          220
+        ],
+        "count": 295508,
+        "label": "Grass / Lawn-17.3%",
+        "max": 255,
+        "min": 204,
+        "name": "Grass / Lawn",
+        "percentage": 17.3
+      }
+    ],
+    "ranges": {
+      "0": [
+        0,
+        50
+      ],
+      "1": [
+        51,
+        101
+      ],
+      "2": [
+        102,
+        152
+      ],
+      "3": [
+        153,
+        203
+      ],
+      "4": [
+        204,
+        255
+      ]
+    }
+  },
+  "gray_sample_pixel_0_0": 200,
+  "gray_sample_shape": [
+    1066,
+    1600
+  ],
+  "histogram_sample_first32": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    1,
+    4,
+    3,
+    8,
+    4,
+    6,
+    13,
+    20,
+    34,
+    32,
+    58,
+    91,
+    170,
+    205,
+    326
+  ],
+  "histogram_sample_total": 1705600,
+  "huffman": {
+    "channels": 3,
+    "cols": 1600,
+    "compressed_bytes": 4912614,
+    "file_bytes": 4912614,
+    "frequencies_sha256_input": null,
+    "header_hex": "474348322a04000040060000030000006b8e570201000000",
+    "magic": "GCH2",
+    "original_bytes": 5116800,
+    "payload_bits": 39292523,
+    "roundtrip_ok": true,
+    "rows": 1066,
+    "unique_values": 256,
+    "version": 1
+  },
+  "huffman_gray": {
+    "channels": 1,
+    "cols": 1600,
+    "file_bytes": 1631224,
+    "header_hex": "474348322a0400004006000001000000fafec60001000000",
+    "payload_bits": 13041402,
+    "rows": 1066,
+    "version": 1
+  },
+  "kmeans_k5": {
+    "centroids": [
+      60.93877407700741,
+      100.12040776318369,
+      135.41530872056015,
+      176.55506882799435,
+      212.50225472085612
+    ],
+    "converged": true,
+    "counts": [
+      256313,
+      306060,
+      377040,
+      310920,
+      455267
+    ],
+    "generator": "reference-implementation (torch not installable in the build sandbox)",
+    "init_ranges": [
+      [
+        0,
+        50
+      ],
+      [
+        51,
+        101
+      ],
+      [
+        102,
+        152
+      ],
+      [
+        153,
+        203
+      ],
+      [
+        204,
+        255
+      ]
+    ],
+    "iterations": 14,
+    "k": 5,
+    "max_iter": 30,
+    "ranges": [
+      [
+        0,
+        80
+      ],
+      [
+        81,
+        117
+      ],
+      [
+        118,
+        155
+      ],
+      [
+        156,
+        194
+      ],
+      [
+        195,
+        255
+      ]
+    ],
+    "tolerance": 0.5
+  },
+  "kmeans_k5_assignments": {
+    "0": {
+      "color": [
+        220,
+        65,
+        65
+      ],
+      "name": "Shadows"
+    },
+    "1": {
+      "color": [
+        220,
+        197,
+        65
+      ],
+      "name": "Dark Trees / Forest"
+    },
+    "2": {
+      "color": [
+        111,
+        220,
+        65
+      ],
+      "name": "Roads / Pathways"
+    },
+    "3": {
+      "color": [
+        65,
+        220,
+        150
+      ],
+      "name": "Bare Soil / Ground"
+    },
+    "4": {
+      "color": [
+        65,
+        158,
+        220
+      ],
+      "name": "Grass / Lawn"
+    }
+  },
+  "stats_alpha": {
+    "max": 232,
+    "mean": 124.5732421875,
+    "min": 0,
+    "std": 50.2052607132988
+  },
+  "stats_sample": {
+    "max": 255,
+    "mean": 145.96564610694185,
+    "min": 16,
+    "std": 54.77226145097132
+  }
+}
