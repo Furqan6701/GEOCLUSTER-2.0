@@ -1,12 +1,11 @@
 import cv2
 
 from backend_py import process_operation
-from config import CENTROIDS_TXT, HUFFMAN_BIN, PARAMS_TXT, RANGES_TXT, verify_paths
+from config import CENTROIDS_TXT, HUFFMAN_BIN, PARAMS_TXT, RANGES_TXT
 from ui import DEFAULT_IMAGE, META_TXT, OUTPUT_CSV, parse_metadata, read_csv_matrix, to_grayscale, write_params
 
 
 def main() -> None:
-    verify_paths()
     image = cv2.imread(str(DEFAULT_IMAGE), cv2.IMREAD_COLOR)
     if image is None:
         raise RuntimeError(f"Could not load sample image: {DEFAULT_IMAGE}")

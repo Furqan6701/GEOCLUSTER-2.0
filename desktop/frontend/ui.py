@@ -7,10 +7,8 @@ from frontend.ai_panel import AIPanel
 from frontend.ai_assistant import AIAssistant
 
 import heapq
-import os
 import struct
 import time
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Tuple
 
@@ -65,7 +63,7 @@ from PyQt5.QtWidgets import (
 from config import (
     PARAMS_TXT,
     CENTROIDS_TXT, RANGES_TXT,
-    IMAGES_DIR, DATA_DIR, verify_paths,
+    IMAGES_DIR, DATA_DIR,
     OUTPUT_CSV as CONFIG_OUTPUT_CSV,
     META_TXT as CONFIG_META_TXT,
     HUFFMAN_BIN as CONFIG_HUFFMAN_BIN,
@@ -83,27 +81,6 @@ OUTPUT_CSV = Path(CONFIG_OUTPUT_CSV)
 META_TXT = Path(CONFIG_META_TXT)
 HUFFMAN_BIN = Path(CONFIG_HUFFMAN_BIN)
 DEFAULT_IMAGE = Path(CONFIG_DEFAULT_IMAGE)
-
-
-@dataclass
-# [DSA] Record Struct - packages operation metadata so menus and descriptions stay synchronized
-class OperationConfig:
-    key: str
-    title: str
-    description: str
-
-
-OPERATIONS: List[OperationConfig] = [
-    OperationConfig("grayscale", "Grayscale", "Convert the loaded image to grayscale."),
-    OperationConfig("negative", "Negative", "Invert grayscale intensities using 255 - pixel."),
-    OperationConfig("brightness", "Brightness", "Add or subtract a constant value from all pixels."),
-    OperationConfig("laplacian", "Laplacian", "Apply Laplacian edge detection to the original image."),
-    OperationConfig("statistics", "Statistics", "Show grayscale image statistics for the original image."),
-    OperationConfig("threshold", "Threshold", "Convert grayscale to black and white using a cutoff value."),
-    OperationConfig("meanfilter", "Mean Filter", "Smooth grayscale values with a configurable moving window."),
-    OperationConfig("kmeans", "K-Means Clustering", "Cluster grayscale intensities into K classes."),
-    OperationConfig("histogram", "Histogram", "Open the histogram analysis window for the original or output image."),
-]
 
 
 # [KEY] parse_metadata
@@ -263,7 +240,7 @@ def default_cluster_ranges(cluster_keys: List[int]) -> Dict[int, Tuple[int, int]
 
 
 # [DSA] Masked Assignment - fills all pixels belonging to each cluster in one vectorized NumPy pass
-def build_cluster_display_image(labels: np.ndarray, centroids: Dict[int, int], assignments: Dict[int, Dict[str, object]]) -> np.ndarray:
+def build_cluster_display_image(labels: np.ndarray, assignments: Dict[int, Dict[str, object]]) -> np.ndarray:
     h, w = labels.shape
     display_img = np.zeros((h, w, 3), dtype=np.uint8)
     for k, config in assignments.items():
@@ -1519,7 +1496,6 @@ class GeoClusterWindow(QMainWindow):
         self._build_toolbars()
         self._build_central_ui()
         self._build_run_details_dock()
-        # self._build_ai_panel()
         self._build_status_bar()
         self.ai_widget = FloatingAIWidget(self)
         self.ai_panel = AIPanel(self)
@@ -1585,8 +1561,6 @@ class GeoClusterWindow(QMainWindow):
                 QApplication.processEvents()
 
                 try:
-                    from frontend.sentinel_client import fetch_sector_image
-
                     image_path = fetch_sector_image(location)
 
                     print(image_path)      # optional, for debugging
@@ -1944,45 +1918,6 @@ QMenu::separator {
         self.cursor_label = QLabel("x: -, y: -, value: -")
         self.cursor_label.setMinimumWidth(300)
         status.addPermanentWidget(self.cursor_label)
-    def _build_ai_panel(self):
-
-        dock = QDockWidget("AI Assistant", self)
-        dock.setAllowedAreas(
-            Qt.RightDockWidgetArea
-        )
-
-        container = QWidget()
-
-        layout = QVBoxLayout(container)
-
-        self.chat_history = QTextEdit()
-        self.chat_history.setReadOnly(True)
-
-        self.chat_input = QLineEdit()
-        self.chat_input.setPlaceholderText(
-            "Ask GEOCLUSTER..."
-        )
-
-        send_btn = QPushButton("Send")
-
-        send_btn.clicked.connect(
-            self.handle_ai_prompt
-        )
- 
-        self.chat_input.returnPressed.connect(
-            self.handle_ai_prompt
-        )
-
-        layout.addWidget(self.chat_history)
-        layout.addWidget(self.chat_input)
-        layout.addWidget(send_btn)
-
-        dock.setWidget(container)
-
-        self.addDockWidget(
-            Qt.RightDockWidgetArea,
-            dock,
-        )
     def _sync_run_details_button(self, visible: bool) -> None:
         self.run_details_button.setText("Hide Run Details" if visible else "Run Details")
 
@@ -2221,15 +2156,11 @@ QMenu::separator {
             labels = labels.reshape(1, -1)
         ranges = read_ranges(RANGES_TXT)
         assignments = default_cluster_assignments(method, sorted(ranges))
-        centroids = read_centroids(CENTROIDS_TXT)
         gray = to_grayscale(self.original_image) if self.original_image is not None else np.zeros(labels.shape, dtype=np.uint8)
-        display_img = build_cluster_display_image(labels, centroids, assignments)
+        display_img = build_cluster_display_image(labels, assignments)
         self.current_labels = labels
         self.algorithm_ranges = dict(sorted(ranges.items()))
-        if len(ranges) == 6:
-            self.current_ranges = default_cluster_ranges(sorted(ranges))
-        else:
-            self.current_ranges = default_cluster_ranges(sorted(ranges))
+        self.current_ranges = default_cluster_ranges(sorted(ranges))
         self.last_image_flat = gray.flatten()
         self.cluster_assignments = assignments
         self.last_classification = method

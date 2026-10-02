@@ -5,24 +5,9 @@ import sys
 # Add frontend directory to path so config.py is always found
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from config import verify_paths
-from PyQt5.QtWidgets import QApplication, QMessageBox
+from PyQt5.QtWidgets import QApplication
 
 from ui import GeoClusterWindow, apply_geotech_theme
-
-# Verify paths before launching
-issues = verify_paths()
-if issues:
-    _app = QApplication.instance() or QApplication(sys.argv)
-    msg = QMessageBox()
-    msg.setWindowTitle("GEOCLUSTER 2.0 - Setup Issue")
-    msg.setIcon(QMessageBox.Warning)
-    msg.setText(
-        "Setup issues found:\n\n"
-        + "\n".join(issues)
-        + "\n\nThe app will still launch but some features may not work until these are resolved."
-    )
-    msg.exec_()
 
 
 # [KEY] main
