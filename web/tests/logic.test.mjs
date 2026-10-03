@@ -17,7 +17,24 @@ import {
   resolveApiBase,
 } from "../js/config.js";
 import { ApiError, detailToText, humanizeError, sanitizeMessage, validationToText } from "../js/errors.js";
-import { OPERATIONS_WITH_PARAMS, describeOperation } from "../js/panels/operations.js";
+import {
+  HELP_TEXTS,
+  KEY_COMMIT_DELAY,
+  OPERATIONS_WITH_PARAMS,
+  SLIDER_SPECS,
+  describeOperation,
+  paramsForValue,
+  snapSliderValue,
+} from "../js/panels/operations.js";
+import {
+  PREVIEW_MAX_SIDE,
+  applyBrightness,
+  applyMeanFilter,
+  applyPixels,
+  applyThreshold,
+  previewSize,
+  reflect101,
+} from "../js/preview.js";
 import { ApiClient } from "../js/api.js";
 import { HISTORY_LIMIT, ImageHistory, snapshotOf } from "../js/history.js";
 import {
@@ -894,4 +911,169 @@ test("describeDistance labels the screen value and the original resolution", () 
   assert.equal(uncalibrated.ok, false);
   assert.equal(uncalibrated.reason, "missing-calibration");
   assert.match(uncalibrated.lines[0], /set pixels per unit to convert to millimetres/);
+});
+
+// ───────────────────────── STEP 3: preview maths + slider helpers ───────────
+
+test("reflect101 mirrors like OpenCV's default border", () => {
+  // gfedcb|abcdefgh|gfedcba
+  assert.deepEqual([-1, -2, -3, 0, 3, 4, 5].map((i) => reflect101(i, 4)), [1, 2, 3, 0, 3, 2, 1]);
+  assert.equal(reflect101(0, 1), 0, "a 1-pixel axis cannot reflect");
+  assert.equal(reflect101(100, 4), 2, "the pattern repeats every 2·size−2 = 6");
+});
+
+test("brightness preview clips exactly like np.clip", () => {
+  const pixels = new Uint8ClampedArray([0, 10, 200, 255, 5, 100, 250, 20]);
+  applyBrightness(pixels, 100);
+  assert.deepEqual([...pixels], [100, 110, 255, 255, 105, 200, 255, 20]);
+  applyBrightness(pixels, -200);
+  assert.deepEqual([...pixels], [0, 0, 55, 255, 0, 0, 55, 20]);
+  assert.deepEqual([pixels[3], pixels[7]], [255, 20], "alpha is never shifted");
+});
+
+test("threshold preview is per-channel and strictly greater-than", () => {
+  const pixels = new Uint8ClampedArray([0, 128, 129, 255, 127, 128, 200, 10]);
+  applyThreshold(pixels, 128);
+  assert.deepEqual([...pixels], [0, 0, 255, 255, 0, 0, 255, 10]);
+  assert.equal(pixels[7], 10, "alpha is never thresholded");
+});
+
+test("mean filter preview matches a brute-force box average with reflect-101", () => {
+  const width = 5;
+  const height = 4;
+  const source = new Uint8ClampedArray(width * height * 4);
+  for (let index = 0; index < width * height; index += 1) {
+    const offset = index * 4;
+    source[offset] = (index * 13) % 256;
+    source[offset + 1] = (index * 29) % 256;
+    source[offset + 2] = (index * 7 + 3) % 256;
+    source[offset + 3] = (index * 11) % 256;
+  }
+  const window = 3;
+  const radius = 1;
+
+  // independent reference: average every reflected neighbour, round half up
+  // (alpha is copied through, like the API keeps it)
+  const reference = new Uint8ClampedArray(source);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      for (let channel = 0; channel < 3; channel += 1) { // alpha is not filtered
+        let sum = 0;
+        for (let dy = -radius; dy <= radius; dy += 1) {
+          for (let dx = -radius; dx <= radius; dx += 1) {
+            const ny = reflect101(y + dy, height);
+            const nx = reflect101(x + dx, width);
+            sum += source[(ny * width + nx) * 4 + channel];
+          }
+        }
+        reference[(y * width + x) * 4 + channel] = Math.round(sum / (window * window));
+      }
+    }
+  }
+
+  const result = new Uint8ClampedArray(source);
+  applyMeanFilter(result, width, height, window);
+  // OpenCV's 8-bit path uses a fixed-point reciprocal per pass, so a preview
+  // can differ by one grey level; anything larger would be a real bug
+  for (let index = 0; index < reference.length; index += 1) {
+    if (index % 4 === 3) {
+      assert.equal(result[index], reference[index], `alpha survives at ${index}`);
+      continue;
+    }
+    assert.ok(Math.abs(result[index] - reference[index]) <= 1,
+      `pixel ${index}: ${result[index]} vs ${reference[index]}`);
+  }
+
+  // a constant image must average back to exactly that constant
+  const flat = new Uint8ClampedArray(width * height * 4).fill(90);
+  applyMeanFilter(flat, width, height, 3);
+  assert.deepEqual([...flat], new Array(width * height * 4).fill(90));
+
+  // a 5×5 window still behaves, and an even window is refused by the API anyway
+  const big = new Uint8ClampedArray(source);
+  applyMeanFilter(big, width, height, 5);
+  assert.equal(big.length, source.length);
+  const even = new Uint8ClampedArray(source);
+  applyMeanFilter(even, width, height, 4);
+  assert.deepEqual([...even], [...source], "an even window is ignored");
+});
+
+test("applyPixels dispatches the three slider operations", () => {
+  const pixels = new Uint8ClampedArray([10, 20, 30, 255]);
+  applyPixels(pixels, 1, 1, "brightness", { value: 5 });
+  assert.deepEqual([...pixels], [15, 25, 35, 255]);
+  applyPixels(pixels, 1, 1, "threshold", { value: 30 });
+  assert.deepEqual([...pixels], [0, 0, 255, 255]);
+  assert.equal(pixels[3], 255, "alpha is preserved");
+  const mean = new Uint8ClampedArray([0, 0, 0, 7, 255, 255, 255, 9, 0, 0, 0, 11, 255, 255, 255, 13]);
+  applyPixels(mean, 2, 2, "meanfilter", { window: 3 });
+  assert.equal(mean[0], 170, "a 2×2 checkerboard with reflect-101 averages to 170");
+  assert.deepEqual([mean[3], mean[7], mean[11], mean[15]], [7, 9, 11, 13], "alpha survives the blur");
+});
+
+test("preview copies are capped at PREVIEW_MAX_SIDE without changing the ratio", () => {
+  assert.deepEqual(previewSize(2000, 1000), { width: 512, height: 256, scale: 0.256 });
+  assert.deepEqual(previewSize(260, 260), { width: 260, height: 260, scale: 1 });
+  assert.deepEqual(previewSize(500, 4096), { width: 63, height: 512, scale: 0.125 });
+  assert.equal(PREVIEW_MAX_SIDE, 512);
+});
+
+test("slider values snap to the documented ranges", () => {
+  assert.equal(snapSliderValue("brightness", 300), 255);
+  assert.equal(snapSliderValue("brightness", -900), -255);
+  assert.equal(snapSliderValue("threshold", 128.4), 128);
+  assert.equal(snapSliderValue("meanfilter", 3), 3);
+  assert.equal(snapSliderValue("meanfilter", 4), 5, "even kernels snap up to the next odd size");
+  assert.equal(snapSliderValue("meanfilter", 31), 31);
+  assert.equal(snapSliderValue("meanfilter", 30), 31);
+  assert.equal(snapSliderValue("meanfilter", 99), 31, "the cap is 31, and it stays odd");
+  assert.equal(snapSliderValue("grayscale", 1), null, "point operations have no slider");
+  assert.deepEqual(paramsForValue("brightness", -30), { value: -30 });
+  assert.deepEqual(paramsForValue("threshold", 200), { value: 200 });
+  assert.deepEqual(paramsForValue("meanfilter", 5), { window: 5 });
+  assert.equal(paramsForValue("negative", 5), null);
+});
+
+test("the eight help texts are the verbatim strings from the brief", () => {
+  assert.deepEqual(Object.keys(HELP_TEXTS).sort(),
+    ["brightness", "clear", "filters", "grayscale", "laplacian", "meanfilter", "negative", "threshold"]);
+  assert.equal(HELP_TEXTS.filters,
+    "Each filter is applied to the latest result, so filters can be combined. Use Undo to step back.");
+  assert.equal(HELP_TEXTS.grayscale,
+    "Converts the image to a single-band grayscale image using a luminance-weighted combination of the color channels.");
+  assert.equal(HELP_TEXTS.negative, "Inverts pixel values to produce a photographic negative.");
+  assert.equal(HELP_TEXTS.laplacian,
+    "Edge detection filter that highlights areas of rapid intensity change, such as boundaries and fine detail.");
+  assert.equal(HELP_TEXTS.brightness,
+    "Shifts all pixel values by a constant amount from -255 to 255. Positive values brighten the image and negative values darken it. Results are limited to the valid 0 to 255 range.");
+  assert.equal(HELP_TEXTS.threshold,
+    "Each color value (red, green, blue) above the threshold is set to its maximum, and all others are set to zero.");
+  assert.equal(HELP_TEXTS.meanfilter, "Smooths the image by averaging neighboring pixels.");
+  assert.equal(HELP_TEXTS.clear,
+    "Resets the result viewport to the original image. The undo history is not affected.");
+  assert.equal(SLIDER_SPECS.meanfilter.label, "Kernel size");
+  assert.equal(SLIDER_SPECS.meanfilter.choice(5), "5 x 5");
+  assert.ok(KEY_COMMIT_DELAY > 0 && KEY_COMMIT_DELAY <= 1000, "the key pause is short");
+});
+
+test("dropEntry removes one step and keeps the pointer on the same entry", () => {
+  const history = new ImageHistory({ limit: 10 });
+  for (const id of ["a", "b", "c"]) history.record({ label: id, role: "result", imageId: id, info: { image_id: id } });
+  assert.equal(history.size, 3);
+  assert.equal(history.summary, "3/3");
+
+  assert.equal(history.dropEntry("c"), true);
+  assert.equal(history.size, 2);
+  assert.equal(history.summary, "2/2", "dropping the newest step leaves the pointer on the new newest");
+  assert.equal(history.current.label, "b");
+
+  assert.equal(history.dropEntry("a"), true);
+  assert.equal(history.size, 1);
+  assert.equal(history.canUndo, false, "the first step cannot be undone any more");
+  assert.equal(history.dropEntry("missing"), false);
+  assert.equal(history.size, 1);
+
+  history.record({ label: "d", role: "result", imageId: "d", info: { image_id: "d" } });
+  assert.equal(history.size, 2);
+  assert.equal(history.entries[history.pointer].label, "d");
 });

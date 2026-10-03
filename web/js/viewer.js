@@ -49,6 +49,8 @@ export class Viewer {
     this._pixelData = null;
     this._pixelCanvas = null;
     this._applyingMirror = false;
+    /** Offscreen canvas showing an uncommitted filter preview (null = none). */
+    this.previewCanvas = null;
     this._build();
 
     this._onResize = () => this.render();
@@ -69,6 +71,7 @@ export class Viewer {
     this.metaLabel = el("span", { class: "meta", text: "—" });
     this.modeBadge = el("span", { class: "badge viewer-mode", text: "Pixel" });
     this.zoomLabel = el("span", { class: "zoom-label", text: "—" });
+    this.previewBadge = el("span", { class: "badge viewer-preview", text: "preview", hidden: true });
     this.readout = el("span", { class: "readout", text: "x: —, y: —, value: —" });
 
     this.fitButton = button("Fit", () => this.fit(), { size: "small", title: "Fit the image to the pane" });
@@ -86,6 +89,7 @@ export class Viewer {
         el("h2", { text: this.title }),
         this.nameLabel,
         this.modeBadge,
+        this.previewBadge,
         this.metaLabel,
       ]),
       this.canvasWrap,
@@ -184,6 +188,9 @@ export class Viewer {
     this.points = [];
     this._pixelData = null;
     this._pixelCanvas = null;
+    // a committed image always supersedes an uncommitted preview
+    this.previewCanvas = null;
+    this.previewBadge.hidden = true;
     this.fit();
     this.render();
   }
@@ -200,7 +207,36 @@ export class Viewer {
     this.points = [];
     this._pixelData = null;
     this._pixelCanvas = null;
+    this.previewCanvas = null;
+    this.previewBadge.hidden = true;
     this.render();
+  }
+
+  /**
+   * Show an uncommitted preview (a canvas from js/preview.js) over the current
+   * image. The camera, labels and pixel readout stay as they are: this only
+   * changes the pixels drawn, and `clearPreview` puts the real image back.
+   */
+  setPreviewCanvas(canvas, operation = "") {
+    if (!canvas || !this.image) return false;
+    this.previewCanvas = canvas;
+    this.previewBadge.textContent = operation ? `preview · ${operation}` : "preview";
+    this.previewBadge.hidden = false;
+    this._pixelData = null;
+    this.render();
+    return true;
+  }
+
+  clearPreview() {
+    if (!this.previewCanvas) return false;
+    this.previewCanvas = null;
+    this.previewBadge.hidden = true;
+    this.render();
+    return true;
+  }
+
+  get hasPreview() {
+    return this.previewCanvas != null;
   }
 
   get hasImage() {
@@ -384,6 +420,11 @@ export class Viewer {
   // -------------------------------------------------------------- reading
   _updateReadout(point) {
     if (!this.image) return;
+    if (this.previewCanvas) {
+      // the preview is a downscaled copy: its pixels are not the image's
+      this.readout.textContent = "preview — release the slider to apply";
+      return;
+    }
     const x = Math.floor(point.x);
     const y = Math.floor(point.y);
     if (x < 0 || y < 0 || x >= this.image.width || y >= this.image.height) {
@@ -447,7 +488,13 @@ export class Viewer {
       // zoomed in, smooth only while downscaling
       ctx.imageSmoothingEnabled = this.scale < 1;
       ctx.imageSmoothingQuality = "high";
-      ctx.drawImage(this.image, 0, 0);
+      if (this.previewCanvas) {
+        // the preview copy is smaller for big images: stretch it over the
+        // committed image's rectangle so the framing never changes
+        ctx.drawImage(this.previewCanvas, 0, 0, this.image.width, this.image.height);
+      } else {
+        ctx.drawImage(this.image, 0, 0);
+      }
       ctx.restore();
       ctx.strokeStyle = "rgba(120, 140, 170, 0.55)";
       ctx.lineWidth = 1;

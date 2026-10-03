@@ -230,7 +230,7 @@ export function spinner() {
  * Collapsible dock section (the toolbox is a stack of these).
  * Returns a handle so callers can expand it programmatically.
  */
-export function createSection({ id, title, iconName = "", badgeText = null, collapsed = false, body }) {
+export function createSection({ id, title, iconName = "", badgeText = null, collapsed = false, actions = [], body }) {
   const chevron = icon("chevronRight", { size: 12, class: "chevron" });
   const head = el("button", {
     class: "section-head",
@@ -245,7 +245,13 @@ export function createSection({ id, title, iconName = "", badgeText = null, coll
     badgeText ? badge(badgeText) : null,
   ]);
   const bodyNode = el("div", { class: "section-body", id: `section-body-${id}` }, body);
-  const node = el("section", { class: "section", id: `section-${id}`, dataset: { section: id } }, [head, bodyNode]);
+  // actions (e.g. the "?" help button) sit beside the toggle button, never
+  // inside it: a button inside a button is invalid and would collapse the dock
+  const headRow = el("div", { class: "section-head-row" }, [
+    head,
+    actions.length ? el("span", { class: "section-actions" }, actions) : null,
+  ]);
+  const node = el("section", { class: "section", id: `section-${id}`, dataset: { section: id } }, [headRow, bodyNode]);
 
   function collapsedNow() {
     return node.classList.contains("collapsed");
@@ -258,6 +264,159 @@ export function createSection({ id, title, iconName = "", badgeText = null, coll
   setCollapsed(collapsed);
 
   return { node, head, body: bodyNode, setCollapsed, isCollapsed: collapsedNow, toggle: () => setCollapsed(!collapsedNow()) };
+}
+
+// ------------------------------------------------------------ help popovers
+
+let nextHelpId = 0;
+/** Only one popover is open at a time. */
+const openHelp = new Set();
+let helpDocumentListeners = false;
+
+function closeOtherHelp(except) {
+  for (const handle of [...openHelp]) {
+    if (handle !== except) handle.close();
+  }
+}
+
+function installHelpDocumentListeners() {
+  if (helpDocumentListeners) return;
+  helpDocumentListeners = true;
+  // capture phase: a click anywhere outside the open popover closes it, even
+  // when the target stops propagation for its own reasons
+  document.addEventListener("pointerdown", (event) => {
+    for (const handle of [...openHelp]) {
+      if (!handle.contains(event.target)) handle.close();
+    }
+  }, true);
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    for (const handle of [...openHelp]) {
+      handle.close({ restoreFocus: true });
+      event.stopPropagation();
+      event.preventDefault();
+    }
+  }, true);
+}
+
+/**
+ * Small "?" button with a popover, placed next to a heading.
+ *
+ * Opens on click / tap / Enter / Space, closes on a second click, an outside
+ * click or Escape (which returns focus to the button). The popover is portaled
+ * to <body> and positioned with fixed coordinates so a scrolling dock cannot
+ * clip it; when there is no room above the button it flips below. The button
+ * carries `aria-expanded` and `aria-controls`.
+ */
+export function helpPopover(text, { label = "What does this do?" } = {}) {
+  const id = `help-popover-${(nextHelpId += 1)}`;
+  const button = el("button", {
+    class: "help-btn",
+    type: "button",
+    text: "?",
+    title: label,
+    "aria-label": label,
+    "aria-expanded": "false",
+    "aria-controls": id,
+  });
+  const body = el("p", { class: "help-popover-text", text });
+  const popover = el("div", {
+    class: "help-popover",
+    id,
+    role: "dialog",
+    "aria-modal": "false",
+    "aria-label": label,
+    tabindex: "-1",
+    hidden: true,
+  }, body);
+  const wrapper = el("span", { class: "help", dataset: { help: id } }, [button, popover]);
+
+  let reposition = null;
+
+  function isOpen() {
+    return openHelp.has(handle);
+  }
+
+  function position() {
+    const anchor = button.getBoundingClientRect();
+    const box = popover.getBoundingClientRect();
+    const gap = 6;
+    const viewportWidth = window.innerWidth || 0;
+    const viewportHeight = window.innerHeight || 0;
+    // "no room above" = the popover would start past the top of the viewport
+    const roomAbove = anchor.top - box.height - gap >= 8;
+    popover.classList.toggle("below", !roomAbove);
+    const left = Math.min(
+      Math.max(anchor.left + anchor.width / 2 - box.width / 2, 8),
+      Math.max(8, viewportWidth - box.width - 8),
+    );
+    const top = roomAbove ? anchor.top - box.height - gap : anchor.bottom + gap;
+    popover.style.left = `${Math.round(left)}px`;
+    popover.style.top = `${Math.round(Math.max(8, Math.min(top, viewportHeight - 8)))}px`;
+  }
+
+  function open({ focus = true } = {}) {
+    if (isOpen()) return;
+    closeOtherHelp(handle);
+    installHelpDocumentListeners();
+    // portal: fixed coordinates are not affected by the dock's own scrolling
+    document.body.append(popover);
+    popover.hidden = false;
+    popover.classList.add("open");
+    button.setAttribute("aria-expanded", "true");
+    openHelp.add(handle);
+    position();
+    reposition = () => position();
+    window.addEventListener("resize", reposition);
+    window.addEventListener("scroll", reposition, true);
+    if (focus) popover.focus({ preventScroll: true });
+  }
+
+  function close({ restoreFocus = false } = {}) {
+    if (!isOpen()) return;
+    openHelp.delete(handle);
+    popover.hidden = true;
+    popover.classList.remove("open");
+    button.setAttribute("aria-expanded", "false");
+    if (reposition) {
+      window.removeEventListener("resize", reposition);
+      window.removeEventListener("scroll", reposition, true);
+      reposition = null;
+    }
+    wrapper.append(popover); // back next to its button while hidden
+    if (restoreFocus) button.focus({ preventScroll: true });
+  }
+
+  function toggle() {
+    if (isOpen()) close({ restoreFocus: true });
+    else open();
+  }
+
+  button.addEventListener("click", (event) => {
+    event.preventDefault();
+    toggle();
+  });
+  popover.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.stopPropagation();
+      event.preventDefault();
+      close({ restoreFocus: true });
+    }
+  });
+
+  const handle = {
+    node: wrapper,
+    button,
+    popover,
+    id,
+    text,
+    open,
+    close,
+    toggle,
+    isOpen,
+    contains: (target) => wrapper.contains(target) || popover.contains(target),
+  };
+  return handle;
 }
 
 /** Titled group of controls inside a section body. */

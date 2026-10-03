@@ -291,6 +291,56 @@ def check_workstation_layout() -> None:
     check(re.search(r'reason: "there is no result yet', app_js) is not None,
           "Clear result explains when it is unavailable")
 
+    # STEP 3 of the redesign: the Filters panel has help popovers instead of
+    # hint lines, and sliders instead of Apply buttons
+    filters_js = _js_text("js/panels/operations.js")
+    ui_js = _js_text("js/ui.js")
+    preview_js = _js_text("js/preview.js")
+    for text in [
+        "Each filter is applied to the latest result, so filters can be combined. Use Undo to step back.",
+        "Converts the image to a single-band grayscale image using a luminance-weighted combination of the color channels.",
+        "Inverts pixel values to produce a photographic negative.",
+        "Edge detection filter that highlights areas of rapid intensity change, such as boundaries and fine detail.",
+        "Shifts all pixel values by a constant amount from -255 to 255. Positive values brighten the image and negative values darken it. Results are limited to the valid 0 to 255 range.",
+        "Each color value (red, green, blue) above the threshold is set to its maximum, and all others are set to zero.",
+        "Smooths the image by averaging neighboring pixels.",
+        "Resets the result viewport to the original image. The undo history is not affected.",
+    ]:
+        check(text in filters_js, f"the help text is present verbatim: {text[:46]}…")
+    for hint in ["Adds a constant, clipped to 0…255.", "Pixels above the value become white.",
+                 "OpenCV blur with a square kernel."]:
+        check(hint not in filters_js, f"the old hint line is gone: {hint[:40]}")
+    check("hint-line" not in filters_js, "the Filters panel renders no hint lines")
+    check("paramRow" not in filters_js and '"Apply"' not in filters_js,
+          "the parameterised filters have no Apply button any more")
+    for token in ["helpPopover", "aria-expanded", "aria-controls", "below"]:
+        check(token in ui_js, f"ui.js popovers handle {token}")
+    for token in [".help-btn", ".help-popover", ".help-popover.below", ".slider-row", ".slider-choice"]:
+        check(token in css, f"the STEP 3 styling exists: {token}")
+    check("export function helpPopover" in ui_js, "helpPopover is a reusable component")
+    # three factories (helpCell for the 4 point operations, sliderGroup for the
+    # 3 sliders, the section head) render the eight "?" buttons the boot test counts
+    check(filters_js.count("helpPopover(") == 3 and "HELP_TEXTS[helpKey]" in filters_js
+          and "HELP_TEXTS[key]" in filters_js and "HELP_TEXTS.filters" in filters_js,
+          "each Filters heading wires its own popover",
+          str(filters_js.count("helpPopover(")))
+    check("Kernel size" in filters_js and "choice: (value) => `${value} x ${value}`" in filters_js,
+          "the mean filter slider is labelled Kernel size and shows N x N")
+    check("requestAnimationFrame" in filters_js and '"preview:show"' in filters_js,
+          "dragging paints a browser-side preview (no request)")
+    check("preview:clear" in filters_js and "cancelAnimationFrame" in filters_js,
+          "the preview can be cancelled (Escape, another action)")
+    check("dropEntry" in filters_js and "dropEntry" in _js_text("js/history.js"),
+          "a repeated slider release replaces its own history step")
+    for token in ["export function applyBrightness", "export function applyThreshold",
+                  "export function applyMeanFilter", "PREVIEW_MAX_SIDE"]:
+        check(token in preview_js, f"preview.js exports {token}")
+    check("fetch(" not in preview_js and "ApiClient" not in preview_js,
+          "the preview maths never talks to the server")
+    check("reflect101" in preview_js, "the mean-filter preview uses OpenCV's border mode")
+    check("setPreviewCanvas" in viewer_js and "clearPreview" in viewer_js and "previewBadge" in viewer_js,
+          "the Viewer can show and drop an uncommitted preview")
+
     # STEP 5: histogram options are browser-side, distance has real units
     hist_js = _js_text("js/histogram.js")
     for token in ["smoothBins", "cumulativeBins", "densityBins", "prepareBins",

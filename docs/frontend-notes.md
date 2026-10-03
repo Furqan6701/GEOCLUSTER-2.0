@@ -235,18 +235,73 @@ message. Raw JSON is never displayed.
   and `Fit` are buttons, and the footer shows zoom %, cursor position and the
   RGB/gray value under the pointer.
 * Satellite dates: `start`/`end` are optional and are **only** sent when the
-  user picked them (the date inputs are empty by default → no placeholder text
-  is ever sent). Bad values come back as `502` with an `"Invalid date …"`
-  message, which maps to a friendly toast. An unknown location is a `404`.
+  user picked them (the date inputs live under the collapsed **Advanced** fold
+  and are empty by default → no placeholder text is ever sent). Bad values come
+  back as `502` with an `"Invalid date …"` message, which maps to a friendly
+  toast. An unknown location is a `404` — but only when the server has
+  Copernicus credentials; an unconfigured server answers `503` *before* any
+  place lookup, so it never calls Nominatim for nothing.
+* The Source panel offers **Place** (sector code, alias or any place name, plus
+  a 1/2/5 km size box, default 2) and **Coordinates** (two `lat, lon` corners
+  pasted from Google Maps, sorted server-side) modes. A place that is not a
+  known sector/alias is geocoded by the API through Nominatim — the **center
+  point only**; its bbox is never used. Requests are throttled to 1/s, carry a
+  proper User-Agent, are cached on disk, and the cache key includes the bbox,
+  the size and the date window (so Refresh is meaningful).
+* Satellite crops are requested at 10 m per pixel, so a 5 km tile is 500×500 px
+  (0.25 MP) — far below the 4 MP downscale limit, i.e. satellite images are
+  never silently downscaled. A test asserts this.
+* The old "Working image" metadata block and "Session files" list are gone from
+  the Source panel; the logic behind them (`renderFiles`, `useAsOriginal`) is
+  still there for the rest of the app, it is simply not rendered any more.
+
+## Filters panel (Step 3 of the redesign)
+
+* Grey hint lines under the controls are gone. Every heading — the Filters
+  section head, Grayscale, Negative, Laplacian, Brightness, Threshold, Mean
+  filter, Clear result — carries a small **"?"** button that opens a popover
+  above the heading (flipping below when there is no room), with
+  `aria-expanded` / `aria-controls`, focus moved into the popover, and Escape
+  (or a second click, or an outside click) closing it and returning focus.
+  The popover is portaled to `<body>` with fixed coordinates so the scrolling
+  toolbox cannot clip it.
+* Brightness (−255…255), Threshold (0…255) and Mean filter (labelled **Kernel
+  size**, odd 3…31, shown as "5 x 5") are sliders with a synced number field —
+  no Apply button. Dragging paints a **browser-side preview** of the operation
+  in the Result viewport (`js/preview.js`, downscaled to 512 px for big images)
+  using the already-cached Blob: **no requests, no history entries**. On release
+  exactly one request is sent and exactly one undo step is recorded. Releasing
+  at the starting value does nothing. Arrow keys preview while held and commit
+  after a short pause; the number field commits on Enter or blur; Escape during
+  a drag cancels and restores the previous value.
+* Re-releasing the same slider **replaces** its step instead of stacking: every
+  release re-runs the operation against the image as it was before the first
+  touch (`baseId`), and the previous step of that adjustment is dropped from the
+  history before the new one is recorded, so the slider session leaves exactly
+  one entry. Any other action (another operation, K-Means, undo/redo, a new
+  image) ends the adjustment and puts the sliders back to their defaults.
+  Docked sliders never run at the same time: touching another one ends the first.
+* The preview is a downscaled approximation: OpenCV's 8-bit mean filter uses a
+  fixed-point reciprocal per pass, so smoothing can differ from the committed
+  result by one grey level. The committed pixels always come from the server.
+* **Help-text check requested in the brief:** the Threshold text matches the
+  implementation (`cv2.threshold(…, 255, THRESH_BINARY)` per BGR channel, alpha
+  preserved, strictly `> value`). The Clear-result text does **not** fully
+  match: `clearResult()` empties the Result viewport (it shows the
+  "No image loaded" placeholder) and makes the *next* operation fall back to
+  the working image — it does not re-display the original in that viewport. The
+  second sentence is accurate (no history entry is added, removed or re-pointed
+  by clearing). The verbatim text was kept as instructed; this note is the
+  recorded mismatch.
 
 ## Verification / tests
 
 | Command | What it does |
 | --- | --- |
-| `node --test "web/tests/*.test.mjs"` | 28 logic tests: config resolution, error mapping, API client contract (URLs, bodies, multipart, session recovery), chat command mapping/execution. No browser needed. |
+| `node --test "web/tests/*.test.mjs"` | 70 logic tests: config resolution, error mapping, API client contract (URLs, bodies, multipart, session recovery), chat command mapping/execution, the satellite request shapes, the filter preview maths (reflect-101 box average, threshold/brightness clipping, the 512 px preview cap), the slider snapping/help texts and the history `dropEntry` replacement rule. No browser needed. |
 | `python web/tests/smoke_test.py` | Serves `web/` on 5173 (reuses a running server for the same root), checks assets + content types, that every relative module import resolves, that no key material exists under `web/`, that no `innerHTML` is used, the workstation layout contract (image workspace owns the flexible track, no `object-fit: cover`, technical corner radii), and that the API's CORS allows the frontend origin. |
-| `python web/tests/integration_check.py` | Live contract check against a running API: the exact call sequence the browser makes (session → upload → 6 filters → kmeans k=5 → classify → histogram → stats → GCH2 round trip → satellite error paths → chat commands → 404/415). Requires `uvicorn main:app --port 8000`. |
-| `node web/tests/boot_test.mjs --jsdom <dir>` | Boot test: loads `index.html` in jsdom, imports `js/app.js` and drives the UI through DOM events against the live API — 96 assertions covering the shell (menu bar, toolbar, status bar, dock collapse), viewport behaviour (pan, wheel zoom, pixel readout, distance measurement, sync mirroring), upload, the six filters, the rendered K-Means range table, classify, histogram/stats, GCH2 compress → decompress, PNG export, chat router commands, session-expiry recovery, and a clean browser console. jsdom is optional (not a dependency of the app); without it the test skips. |
+| `python web/tests/integration_check.py` | Live contract check against a running API: the exact call sequence the browser makes (session → upload → 6 filters → kmeans k=5 → classify → histogram → stats → GCH2 round trip → satellite validation and error paths → chat commands → 404/415). The three checks that need real Copernicus credentials report SKIP when the server has no `api/.env` instead of failing. Requires `uvicorn main:app --port 8000`. |
+| `node web/tests/boot_test.mjs --jsdom <dir>` | Boot test: loads `index.html` in jsdom, imports `js/app.js` and drives the UI through DOM events against the live API — 364 assertions covering the shell (menu bar, toolbar, status bar, dock collapse), viewport behaviour (pan, wheel zoom, pixel readout, distance measurement, sync mirroring), upload, the six filters, the Source panel's place/corner modes, the Filters panel's popovers and slider sessions (preview without requests, one request per release, replace-not-stack, Escape, arrow-key commits, one slider at a time), the rendered K-Means range table, classify, histogram/stats, GCH2 compress → decompress, PNG export, chat router commands, session-expiry recovery, and a clean browser console. jsdom is optional (not a dependency of the app); without it the test skips. |
 
 The boot test runs in both serving modes: the default (page on localhost →
 direct API calls) and hosted (`--page-host 5173-demo.e2b.app` → everything

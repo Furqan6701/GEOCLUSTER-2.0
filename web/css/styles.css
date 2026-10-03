@@ -599,3 +599,50 @@ table.grid input[type="color"] { height: 18px; }
   .dock-right { grid-row: 3; max-height: 240px; }
   .chips .chip { display: none; }
 }
+
+/* ────────────────────── STEP 3: filter sliders + help ─────────────────── */
+/* The Filters section has no under-control hint lines any more: each heading
+   carries a "?" popover instead. */
+.section-head-row { display: flex; align-items: center; gap: 4px; }
+.section-head-row .section-head { flex: 1; min-width: 0; }
+.section-actions { display: flex; align-items: center; gap: 4px; padding-right: 7px; }
+
+.help { display: inline-flex; align-items: center; }
+.help-btn {
+  appearance: none; width: 15px; height: 15px; padding: 0; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border-strong); border-radius: 50%; background: transparent;
+  color: var(--text-faint); font: inherit; font-size: 10px; line-height: 1; cursor: pointer;
+}
+.help-btn:hover { color: var(--accent); border-color: var(--accent); }
+.help-btn[aria-expanded="true"] { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+
+.help-popover {
+  position: fixed; z-index: 60; max-width: 250px; padding: 7px 9px;
+  border: 1px solid var(--border-strong); border-radius: 4px;
+  background: #161b26; color: var(--text-dim);
+  font-size: var(--fs-xs); line-height: 1.45;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
+}
+.help-popover[hidden] { display: none; }
+.help-popover::after {
+  content: ""; position: absolute; left: 12px; width: 7px; height: 7px;
+  background: inherit; border-right: 1px solid var(--border-strong);
+  border-bottom: 1px solid var(--border-strong); transform: rotate(45deg);
+}
+.help-popover:not(.below)::after { bottom: -5px; }
+.help-popover.below::after { top: -5px; transform: rotate(225deg); }
+.help-popover-text { margin: 0; }
+
+.op-cell { display: flex; align-items: center; gap: 4px; }
+.op-cell > .btn { flex: 1; }
+
+.slider-row { display: grid; grid-template-columns: auto minmax(0, 1fr) 54px auto; align-items: center; gap: 6px; }
+.slider-label { font-size: var(--fs-xs); color: var(--text-dim); white-space: nowrap; }
+.slider-number { padding: 2px 4px; font-size: var(--fs-sm); }
+.slider-choice { font-family: var(--mono); font-size: var(--fs-xs); color: var(--text-faint); white-space: nowrap; }
+
+.status-line { font-size: var(--fs-xs); color: var(--text-faint); margin: 5px 0 0; }
+.status-line[hidden] { display: none; }
+.viewer-preview { color: var(--warn); border-color: rgba(245, 185, 66, 0.4); }
+.viewer-preview[hidden] { display: none; }

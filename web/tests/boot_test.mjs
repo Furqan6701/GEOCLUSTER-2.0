@@ -759,10 +759,12 @@ if (!bootFailed) {
   }
 
   // ------------------------------------------------------------- 4. filters
-  const labels = ["Grayscale", "Negative", "Laplacian", "Brightness", "Threshold", "Mean filter"];
+  // Grayscale / Negative / Laplacian still have buttons; the three filters with
+  // parameters have sliders (no Apply button) — see the STEP 3 block below.
+  const pointOperations = ["Grayscale", "Negative", "Laplacian"];
   expandSection("Filters");
   let previousId = state()?.result?.id ?? state()?.original?.id;
-  for (const label of labels) {
+  for (const label of pointOperations) {
     clickButton(label);
     const next = await until(() => {
       const id = state()?.result?.id;
@@ -771,7 +773,44 @@ if (!bootFailed) {
     check(Boolean(next), `${label} → new image id`, String(next));
     previousId = next ?? previousId;
   }
-  check(toasts.some((text) => /Grayscale applied/.test(text)) && toasts.some((text) => /Mean filter w=3 applied/.test(text)),
+
+  /** Drive a filter slider exactly like a user: press, move, release. */
+  const sliderRow = (operation) => document.querySelector(`.slider-row[data-slider="${operation}"]`);
+  const dragSlider = async (operation, value, { release = true, keys = false } = {}) => {
+    const row = sliderRow(operation);
+    if (!row) {
+      check(false, `the ${operation} slider exists`);
+      return null;
+    }
+    const range = row.querySelector('input[type="range"]');
+    const number = row.querySelector('input[type="number"]');
+    if (!keys) range.dispatchEvent(new window.Event("pointerdown", { bubbles: true }));
+    range.value = String(value);
+    range.dispatchEvent(new window.Event("input", { bubbles: true }));
+    if (release) {
+      if (keys) range.dispatchEvent(new window.KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+      else range.dispatchEvent(new window.Event("change", { bubbles: true }));
+    }
+    return { row, range, number };
+  };
+
+  for (const [operation, value, expectedLabel] of [
+    ["brightness", -30, "Brightness -30"],
+    ["threshold", 200, "Threshold 200"],
+    ["meanfilter", 5, "Mean filter w=5"],
+  ]) {
+    const before = state()?.result?.id ?? null;
+    await dragSlider(operation, value);
+    const next = await until(() => {
+      const id = state()?.result?.id;
+      return id && id !== before ? id : null;
+    }, `the ${operation} slider commits a result`);
+    check(Boolean(next), `${operation} slider release produces a new image id`, String(next));
+    check(state()?.lastOperation?.operation === expectedLabel,
+      `${operation} slider commits the dragged value (${expectedLabel})`,
+      String(state()?.lastOperation?.operation));
+  }
+  check(toasts.some((text) => /Grayscale applied/.test(text)) && toasts.some((text) => /Mean filter w=5 applied/.test(text)),
     "filter completion toasts name what was applied", toasts.slice(-3).join(" | "));
 
   // the Result viewport must actually show the operation output
@@ -782,6 +821,292 @@ if (!bootFailed) {
   check(/\d+ × \d+ px/.test(rv.metaLabel.textContent), "the Result viewport header shows its dimensions",
     rv.metaLabel.textContent);
   check(rv !== window.geocluster.viewers.original, "Original and Result are separate viewports");
+
+  // ------------------------------------------- 4b. STEP 3: Filters panel
+  {
+    const gh = window.geocluster;
+    const history = gh.history;
+    const filters = gh.panels.get("filters");
+    const section = document.querySelector("#section-filters");
+    const body = section.querySelector(".section-body");
+
+    // --- no grey hint lines under the controls
+    check(body.querySelectorAll(".note, .hint-line").length === 0,
+      "the Filters panel has no grey hint lines",
+      [...body.querySelectorAll(".note, .hint-line")].map((n) => n.textContent).join(" | "));
+    const statusLine = body.querySelector(".status-line");
+    check(statusLine != null && statusLine.hidden,
+      "the status line stays out of the way while an image is loaded",
+      statusLine ? `hidden=${statusLine.hidden}` : "missing");
+
+    // --- a "?" next to every heading, with the verbatim text
+    const helpButtons = [...section.querySelectorAll(".help-btn")];
+    check(helpButtons.length === 8, "eight help buttons (7 controls + the Filters heading)",
+      `${helpButtons.length}: ${helpButtons.map((b) => b.getAttribute("aria-label")).join(", ")}`);
+    const helpText = Object.fromEntries(helpButtons.map((node) => [
+      node.closest(".help").querySelector(".help-popover")?.id,
+      node.closest(".help").querySelector(".help-popover-text")?.textContent,
+    ]));
+    const texts = Object.values(helpText);
+    const expectedTexts = [
+      "Each filter is applied to the latest result, so filters can be combined. Use Undo to step back.",
+      "Converts the image to a single-band grayscale image using a luminance-weighted combination of the color channels.",
+      "Inverts pixel values to produce a photographic negative.",
+      "Edge detection filter that highlights areas of rapid intensity change, such as boundaries and fine detail.",
+      "Shifts all pixel values by a constant amount from -255 to 255. Positive values brighten the image and negative values darken it. Results are limited to the valid 0 to 255 range.",
+      "Each color value (red, green, blue) above the threshold is set to its maximum, and all others are set to zero.",
+      "Smooths the image by averaging neighboring pixels.",
+      "Resets the result viewport to the original image. The undo history is not affected.",
+    ];
+    check(expectedTexts.every((text) => texts.includes(text)),
+      "all eight help texts are present verbatim",
+      expectedTexts.filter((text) => !texts.includes(text)).join(" | "));
+    check(helpButtons.every((node) => node.getAttribute("aria-expanded") === "false" && node.textContent.trim() === "?"),
+      "every help button starts closed, labelled \"?\"", helpButtons.map((n) => n.textContent).join(","));
+    check([...section.querySelectorAll(".help-popover")].every((node) => node.hidden),
+      "popovers are hidden until asked for");
+
+    // --- open / close behaviour
+    const brightnessHelp = section.querySelector('.tool-group[data-help="brightness"] .help-btn')
+      ?? [...helpButtons].find((node) => {
+        const group = node.closest(".tool-group");
+        return group?.textContent.includes("Brightness");
+      });
+    const popover = brightnessHelp.closest(".help").querySelector(".help-popover");
+    brightnessHelp.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+    check(brightnessHelp.getAttribute("aria-expanded") === "true" && !popover.hidden,
+      "clicking \"?\" opens the popover and sets aria-expanded");
+    check(popover.parentElement === document.body && popover.classList.contains("open"),
+      "the open popover is portaled to <body> so the dock cannot clip it");
+    check(document.activeElement === popover, "focus moves into the popover",
+      String(document.activeElement?.className));
+    brightnessHelp.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+    check(brightnessHelp.getAttribute("aria-expanded") === "false" && popover.hidden,
+      "a second click closes it");
+
+    // outside click
+    brightnessHelp.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+    document.body.dispatchEvent(new window.Event("pointerdown", { bubbles: true }));
+    check(popover.hidden && brightnessHelp.getAttribute("aria-expanded") === "false",
+      "an outside click closes the popover");
+
+    // Escape returns focus to the button
+    brightnessHelp.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+    popover.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    check(popover.hidden && document.activeElement === brightnessHelp,
+      "Escape closes the popover and returns focus to \"?\"",
+      String(document.activeElement?.className));
+
+    // flip: no room above → below; room above → above
+    const anchor = brightnessHelp.getBoundingClientRect.bind(brightnessHelp);
+    const box = popover.getBoundingClientRect.bind(popover);
+    brightnessHelp.getBoundingClientRect = () => ({ top: 4, bottom: 20, left: 40, width: 15, height: 15 });
+    popover.getBoundingClientRect = () => ({ top: 0, bottom: 60, left: 0, width: 200, height: 60 });
+    brightnessHelp.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+    check(popover.classList.contains("below"), "with no room above the popover flips below");
+    popover.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    brightnessHelp.getBoundingClientRect = () => ({ top: 500, bottom: 516, left: 40, width: 15, height: 15 });
+    brightnessHelp.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+    check(!popover.classList.contains("below"), "with room above the popover opens above");
+    check(Number.parseFloat(popover.style.top) + 60 <= 500, "the popover sits above its button",
+      popover.style.top);
+    popover.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    brightnessHelp.getBoundingClientRect = anchor;
+    popover.getBoundingClientRect = box;
+
+    // --- sliders replace the Apply buttons
+    const sliderOps = ["brightness", "threshold", "meanfilter"];
+    for (const operation of sliderOps) {
+      const row = sliderRow(operation);
+      check(Boolean(row), `the ${operation} slider row exists`);
+      check(row.querySelector('input[type="range"]') && row.querySelector('input[type="number"]'),
+        `${operation} has a slider and a synced number field`);
+      const apply = [...row.querySelectorAll("button")].length;
+      check(apply === 0, `${operation} has no Apply button`, String(apply));
+    }
+    check(sliderRow("brightness").querySelector('input[type="range"]').min === "-255" &&
+      sliderRow("brightness").querySelector('input[type="range"]').max === "255",
+      "Brightness spans -255…255");
+    check(sliderRow("threshold").querySelector('input[type="range"]').min === "0" &&
+      sliderRow("threshold").querySelector('input[type="range"]').max === "255",
+      "Threshold spans 0…255");
+    const kernel = sliderRow("meanfilter");
+    check(kernel.querySelector('input[type="range"]').min === "3" &&
+      kernel.querySelector('input[type="range"]').max === "31" &&
+      kernel.querySelector('input[type="range"]').step === "2",
+      "Kernel size is odd, 3…31");
+    check(/Kernel size/.test(kernel.textContent), "the mean filter slider is labelled \"Kernel size\"");
+
+    // --- dragging previews client-side: no request, no history entry
+    const postsFor = (operation) => requests.filter((entry) =>
+      entry.method === "POST" && entry.url.includes(`/operations/${operation}`)).length;
+    const postsBefore = postsFor("brightness");
+    const historyBefore = history.size;
+    const requestsBeforeDrag = requests.length;
+    const resultBefore = state()?.result?.id ?? null;
+    const range = sliderRow("brightness").querySelector('input[type="range"]');
+    const numberField = sliderRow("brightness").querySelector('input[type="number"]');
+    const viewer = window.geocluster.viewers.result;
+    range.dispatchEvent(new window.Event("pointerdown", { bubbles: true }));
+    range.value = "70";
+    range.dispatchEvent(new window.Event("input", { bubbles: true }));
+    check(range.value === "70" && numberField.value === "70",
+      "dragging keeps the number field in step", `${range.value}/${numberField.value}`);
+    check(postsFor("brightness") === postsBefore && requests.length === requestsBeforeDrag && history.size === historyBefore,
+      "dragging sends no request at all and adds no history entry",
+      `posts ${postsFor("brightness") - postsBefore}, any ${requests.length - requestsBeforeDrag}, history +${history.size - historyBefore}`);
+    const previewed = await until(() => viewer.hasPreview, "the Result viewport shows a live preview");
+    check(Boolean(previewed) && !viewer.previewBadge.hidden,
+      "the preview is painted in the Result viewport with its badge");
+    check(viewer.previewCanvas && Math.max(viewer.previewCanvas.width, viewer.previewCanvas.height) <= 512,
+      "big images are previewed from a downscaled copy (≤ 512 px)",
+      viewer.previewCanvas ? `${viewer.previewCanvas.width}×${viewer.previewCanvas.height}` : "no canvas");
+    const shown = state()?.result?.info ?? state()?.original?.info;
+    check(shown && viewer.previewCanvas.width / viewer.previewCanvas.height > shown.width / shown.height - 0.02,
+      "the preview copy keeps the image's aspect ratio",
+      `${viewer.previewCanvas.width}×${viewer.previewCanvas.height} vs ${shown?.width}×${shown?.height}`);
+    check(sliderRow("brightness").querySelector(".slider-choice") == null ||
+      sliderRow("meanfilter").querySelector(".slider-choice") != null,
+      "the kernel choice is shown next to its slider");
+
+    // --- release: exactly one request, exactly one undo step
+    range.dispatchEvent(new window.Event("change", { bubbles: true }));
+    const committed = await until(() => {
+      const id = state()?.result?.id;
+      return id && id !== resultBefore ? id : null;
+    }, "releasing the brightness slider commits one result");
+    check(Boolean(committed), "release commits a result", String(committed));
+    check(postsFor("brightness") === postsBefore + 1,
+      "releasing sends exactly one request", String(postsFor("brightness") - postsBefore));
+    check(history.size === historyBefore + 1,
+      "the adjustment adds exactly one undo step", `history +${history.size - historyBefore}`);
+    const baseId = resultBefore;
+    check(viewer.hasPreview === false, "the committed image replaces the preview");
+    check(Number(numberField.value) === 70, "the slider stays where it was left", numberField.value);
+
+    // --- re-releasing the same slider REPLACES the step instead of stacking
+    range.dispatchEvent(new window.Event("pointerdown", { bubbles: true }));
+    range.value = "12";
+    range.dispatchEvent(new window.Event("input", { bubbles: true }));
+    range.dispatchEvent(new window.Event("change", { bubbles: true }));
+    const replaced = await until(() => {
+      const id = state()?.result?.id;
+      return id && id !== committed ? id : null;
+    }, "the second release replaces the result");
+    check(Boolean(replaced), "re-releasing produces a new result", String(replaced));
+    check(history.size === historyBefore + 1,
+      "re-releasing keeps ONE undo step (replaced, not stacked)",
+      `history +${history.size - historyBefore}`);
+    const latestPost = requests.filter((entry) =>
+      entry.method === "POST" && entry.url.includes("/operations/brightness")).pop();
+    check(latestPost.url.includes(`/images/${baseId}/operations/brightness`),
+      "the replacement is measured against the pre-first-touch image",
+      latestPost.url.replace("http://localhost:8000", ""));
+    check(JSON.parse(latestPost.body).value === 12, "the replacement sends the new value", latestPost.body);
+    check(history.entries[history.pointer].label === "Brightness +12",
+      "the single step carries the latest value", history.entries[history.pointer].label);
+
+    // --- releasing at the starting value does nothing at all
+    const postsBeforeIdle = postsFor("brightness");
+    const historyBeforeIdle = history.size;
+    const idleResult = state()?.result?.id ?? null;
+    range.value = "12";
+    range.dispatchEvent(new window.Event("input", { bubbles: true }));
+    range.dispatchEvent(new window.Event("change", { bubbles: true }));
+    await sleep(120);
+    check(postsFor("brightness") === postsBeforeIdle && history.size === historyBeforeIdle &&
+      state()?.result?.id === idleResult,
+      "releasing at the starting value sends nothing and changes nothing",
+      `posts +${postsFor("brightness") - postsBeforeIdle}, history +${history.size - historyBeforeIdle}`);
+
+    // --- Escape during a drag cancels (no request, value restored)
+    const postsBeforeEsc = postsFor("threshold");
+    const historyBeforeEsc = history.size;
+    const thresholdRange = sliderRow("threshold").querySelector('input[type="range"]');
+    const thresholdNumber = sliderRow("threshold").querySelector('input[type="number"]');
+    thresholdRange.value = "77";
+    thresholdRange.dispatchEvent(new window.Event("input", { bubbles: true }));
+    thresholdRange.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await sleep(80);
+    check(postsFor("threshold") === postsBeforeEsc && history.size === historyBeforeEsc,
+      "Escape during a drag cancels: nothing is sent",
+      `posts +${postsFor("threshold") - postsBeforeEsc}`);
+    check(thresholdNumber.value === "128",
+      "Escape restores the slider to the committed value", thresholdNumber.value);
+    check(!window.geocluster.viewers.result.hasPreview, "Escape drops the preview");
+
+    // --- arrow keys commit after a short pause
+    const postsBeforeKey = postsFor("threshold");
+    thresholdRange.dispatchEvent(new window.KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    thresholdRange.value = "150";
+    thresholdRange.dispatchEvent(new window.Event("input", { bubbles: true }));
+    check(postsFor("threshold") === postsBeforeKey, "an arrow-key step previews before committing",
+      String(postsFor("threshold") - postsBeforeKey));
+    const keyCommitted = await until(() => postsFor("threshold") === postsBeforeKey + 1,
+      "the arrow-key step commits after the pause");
+    check(Boolean(keyCommitted), "arrow keys commit one request after a short pause");
+
+    // --- only one slider active at a time: touching another resets the first
+    const brightnessRange = sliderRow("brightness").querySelector("input[type=range]");
+    brightnessRange.dispatchEvent(new window.Event("pointerdown", { bubbles: true }));
+    brightnessRange.value = "99";
+    brightnessRange.dispatchEvent(new window.Event("input", { bubbles: true }));
+    check(filters.actions.adjustment()?.operation === "brightness",
+      "the touched slider owns the adjustment", JSON.stringify(filters.actions.adjustment()));
+    const thresholdKeyRange = sliderRow("threshold").querySelector('input[type="range"]');
+    thresholdKeyRange.value = "90";
+    thresholdKeyRange.dispatchEvent(new window.Event("input", { bubbles: true }));
+    check(filters.actions.adjustment()?.operation === "threshold",
+      "touching another slider takes over the adjustment");
+    check(brightnessRange.value === "40",
+      "the previous slider goes back to its default", brightnessRange.value);
+    const historyBeforeSwap = history.size;
+    thresholdKeyRange.dispatchEvent(new window.Event("change", { bubbles: true }));
+    await until(() => history.size === historyBeforeSwap + 1, "the new slider commits one step");
+    check(history.size === historyBeforeSwap + 1, "only one step is added by the swap",
+      `history +${history.size - historyBeforeSwap}`);
+
+    // --- any other action ends the adjustment and resets the slider
+    clickButton("Negative");
+    await until(() => history.entries[history.pointer]?.label === "Negative",
+      "Negative records a step");
+    check(sliderRow("threshold").querySelector('input[type="range"]').value === "128",
+      "another operation resets the slider to its default",
+      sliderRow("threshold").querySelector('input[type="range"]').value);
+    check(filters.actions.adjustment() === null, "another operation ends the adjustment",
+      JSON.stringify(filters.actions.adjustment()));
+
+    // --- the number field commits on Enter and on blur
+    const numberBefore = postsFor("threshold");
+    const numberInput = sliderRow("threshold").querySelector('input[type="number"]');
+    numberInput.value = "31";
+    numberInput.dispatchEvent(new window.Event("input", { bubbles: true }));
+    check(postsFor("threshold") === numberBefore, "typing in the number field does not commit");
+    numberInput.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await until(() => postsFor("threshold") === numberBefore + 1, "Enter commits the typed value");
+    check(postsFor("threshold") === numberBefore + 1, "Enter sends exactly one request");
+    const numberBody = requests.filter((entry) =>
+      entry.method === "POST" && entry.url.includes("/operations/threshold")).pop().body;
+    check(JSON.parse(numberBody).value === 31, "the typed value is what gets sent", numberBody);
+    const blurBefore = postsFor("threshold");
+    numberInput.value = "44";
+    numberInput.dispatchEvent(new window.Event("input", { bubbles: true }));
+    numberInput.dispatchEvent(new window.Event("blur", { bubbles: true }));
+    await until(() => postsFor("threshold") === blurBefore + 1, "blur commits the typed value");
+    check(postsFor("threshold") === blurBefore + 1, "blur sends exactly one request");
+
+    // --- the kernel size is shown as "N x N"
+    const kernelRange = sliderRow("meanfilter").querySelector('input[type="range"]');
+    kernelRange.dispatchEvent(new window.Event("pointerdown", { bubbles: true }));
+    kernelRange.value = "9";
+    kernelRange.dispatchEvent(new window.Event("input", { bubbles: true }));
+    check(sliderRow("meanfilter").querySelector(".slider-choice").textContent === "9 x 9",
+      "the mean filter shows its kernel as \"9 x 9\"",
+      sliderRow("meanfilter").querySelector(".slider-choice").textContent);
+    kernelRange.dispatchEvent(new window.Event("change", { bubbles: true }));
+    await until(() => /Mean filter w=9/.test(state()?.lastOperation?.operation ?? ""),
+      "the kernel slider commits");
+  }
 
   // ------------------------------------------------- 5. histogram + stats
   expandSection("Analysis");

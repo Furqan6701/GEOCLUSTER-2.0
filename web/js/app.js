@@ -110,6 +110,13 @@ bus.on("image:loaded", ({ role, info }) => {
   bus.emit("status", { message: `${role === "original" ? "Working image" : "Result"} — ${info.name ?? info.image_id} (${info.width}×${info.height})` });
 });
 
+// STEP 3: a slider drag previews the filter client-side; nothing is committed
+// and no history entry exists until the slider is released.
+bus.on("preview:show", ({ canvas, operation }) => {
+  if (canvas) resultViewer.setPreviewCanvas(canvas, operation);
+});
+bus.on("preview:clear", () => resultViewer.clearPreview());
+
 bus.on("image:cleared", ({ role }) => {
   loadTokens[role] += 1;
   (role === "original" ? originalViewer : resultViewer).clear();
@@ -296,6 +303,7 @@ function recordHistory(role, info) {
 }
 
 bus.on("image:loaded", ({ role, info }) => recordHistory(role, info));
+bus.on("history:changed", () => updateHistoryControls());
 
 // looked up directly: `byId` is declared further down this module
 const undoButton = document.getElementById("tb-undo");
@@ -496,6 +504,8 @@ document.getElementById("tb-sync").replaceWith(syncToggle.node);
 syncToggle.node.id = "tb-sync";
 
 // -------------------------------------------------------------------- panels
+// the Filters panel replaces its own slider step instead of stacking
+ctx.history = history;
 const panels = createPanels(ctx);
 const panelById = new Map(panels.map((panel) => [panel.id, panel]));
 // the assistant dispatches operations through the same parameterised path

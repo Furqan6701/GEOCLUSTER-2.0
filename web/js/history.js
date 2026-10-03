@@ -104,6 +104,23 @@ export class ImageHistory {
   }
 
   /**
+   * Remove one step by the image id it displayed.
+   *
+   * A slider adjustment replaces its own previous step instead of stacking a
+   * new one, so before the new state is recorded the old one is dropped. The
+   * pointer keeps pointing at the same entry it did before.
+   */
+  dropEntry(imageId) {
+    const index = this.entries.findIndex((entry) => entry.imageId === imageId);
+    if (index < 0) return false;
+    const wasApplied = index <= this.pointer;
+    this.entries.splice(index, 1);
+    if (wasApplied) this.pointer -= 1;
+    if (this.pointer >= this.entries.length) this.pointer = this.entries.length - 1;
+    return true;
+  }
+
+  /**
    * A state's Blob was re-uploaded under a new id (the old one was evicted):
    * move the blob across and re-point every entry that referenced the old id.
    */
