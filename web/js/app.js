@@ -56,6 +56,9 @@ const resultViewer = new Viewer(document.getElementById("viewer-result"), {
   bus,
   placeholder: "Run a filter or K-Means to see the result here",
 });
+// Panels that paint a live preview (the classification editor) draw from the
+// bitmap a viewport already holds instead of asking the server for it again.
+ctx.viewers = { original: originalViewer, result: resultViewer };
 
 /** Role-based label, used by the status bar for both image viewports. */
 function viewerLabel(viewer) {
@@ -137,7 +140,7 @@ bus.on("viewer:distance-mode", ({ enabled, role }) => {
 // ------------------------------------------------------------- map composer
 /**
  * Map composer (redesign): a large in-page modal, not a docked viewport. The
- * toolbar's Map button and a Classify run open it, and everything it shows —
+ * toolbar's Map button and a Generate map run open it, and everything it shows —
  * image, legend, scale bar, north arrow, credit, corner coordinates — is drawn
  * on ONE canvas by js/mapstudio.js. The dialog shows that canvas and an export
  * re-renders it at 1x/2x/3x, which is why the PNG always matches the preview.
@@ -161,7 +164,7 @@ function legendRowsForComposer() {
 async function openMapStudio({ image = null } = {}) {
   const active = activeImage(state);
   if (!active && !image) {
-    toast("Load, fetch or classify an image first — the composer has nothing to draw.", "warn");
+    toast("Load, fetch or generate a map from an image first — the composer has nothing to draw.", "warn");
     return false;
   }
   try {
@@ -802,7 +805,7 @@ const menuBar = createMenuBar([
         icon: "map",
         note: state.map
           ? `image, legend (${state.map.legend.length} classes), scale bar, north arrow`
-          : "opens on the current image; Classify fills the legend",
+          : "opens on the current image; Generate map fills the legend",
         onClick: () => { void openMapStudio(); },
       },
       {

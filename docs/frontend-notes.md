@@ -193,6 +193,52 @@ Size (px) and Position, and is drawn north-up — the Rotation control and
   writes `--map-modal-top`, so the composer's own header always starts below
   the toolbar.
 
+### Classification editor — live linked ranges (item 11)
+
+* **Ranges are always contiguous over 0..255.** `web/js/clusterranges.js` is the
+  pure, unit-tested module that owns that rule: no gaps, no overlaps, at least
+  one value per class, first class starts at 0 and last one ends at 255. The
+  first Min and the last Max are rendered `readOnly` (and styled `.locked`) —
+  the panel never lets them be edited. The API does not enforce contiguity;
+  the client module is the only authority, and `normalizeEntries()` repairs
+  anything the server or a kept editor hands back.
+* **Editing moves exactly one neighbour, live.** `editMax(entries, i, v)` sets
+  `max(i) = v` and `min(i+1) = v + 1`; `editMin` mirrors it onto `max(i−1)`.
+  The table fields listen to `input`, so the link follows every keystroke —
+  there is no Apply step. A keystroke whose value would empty a class or cross
+  another one is **not** applied (the text stays in the field so typing can
+  continue); Enter or blur **clamps** it into the valid window
+  (`min(i) … max(i+1) − 1`, `min(i−1) + 1 … max(i)`) and writes the clamped
+  number back.
+* **The % column is computed, never fetched while editing.** The editor asks
+  `GET …/histogram` **once per classified image** (`ensureBins()`), then
+  `countsFromBins()` sums the 256 bins inside each range on every edit. Before
+  the histogram arrives the K-Means counts are the fallback (identical numbers:
+  K-Means counts its final ranges with the same inclusive masks).
+* **The Result viewport recolours in the browser.** `buildLut()` makes a
+  256-entry RGB table from the ranges and colours, `recolorPixels()` applies it
+  to the preview-sized copy of the **classified source** image (OpenCV's
+  `BGR2GRAY` weights are reproduced in `toGray()`), and the canvas goes out as
+  the existing `preview:show` event — the same path the filter sliders use, so
+  the badge reads `preview · classification`. The source bitmap comes from the
+  viewport that already holds it (`ctx.viewers`), otherwise from the session's
+  Blob cache; typing itself makes **no request and no history entry** (both
+  asserted in the boot test).
+* **"Generate map"** (renamed from "Classify") commits with ONE `POST
+  …/classify`, which is ONE undo step, then opens the map composer. "Reset
+  ranges" is unchanged (K-Means values back, names and colours kept).
+* **Boundary bar.** Above the table, a 0..255 bar shows one segment per class
+  (width = share of the axis, colour = the class colour) and one handle per
+  boundary. Handles are `role="slider"` buttons: arrow keys move them by one
+  intensity (works without layout, so the boot test can drive them) and a
+  pointer drag maps `clientX` onto the axis.
+* **First column header fixed.** The swatch column was 22 px, so the uppercase
+  `COLOR` header was ellipsised to `C…`; it is now 40 px
+  (`grid-template-columns: 40px repeat(4, minmax(0, 1fr))`).
+* User-facing "Classify" wording was updated everywhere it named the button:
+  the map composer's empty note, the Image menu's composer note, the composer's
+  "nothing to draw" toast and the `errors.js` operation label.
+
 ### Clusters editor layout and class names
 
 * Each cluster is a **two-line grid row** (`grid-template-areas` on the table

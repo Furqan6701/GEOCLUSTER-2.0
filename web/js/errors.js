@@ -27,7 +27,7 @@ const OPERATION_LABELS = Object.freeze({
   threshold: "Threshold",
   meanfilter: "Mean filter",
   kmeans: "K-Means",
-  classify: "Classify",
+  classify: "Generate map",
 });
 
 /** What each operation needs, phrased for a person (used by 422 messages). */

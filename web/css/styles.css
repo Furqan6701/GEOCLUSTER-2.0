@@ -689,7 +689,9 @@ table.grid.cluster-table { width: 100%; table-layout: fixed; }
 table.grid.cluster-table thead tr,
 table.grid.cluster-table tbody tr {
   display: grid;
-  grid-template-columns: 22px repeat(4, minmax(0, 1fr));
+  /* 40px, not 22px: the "Color" header is 5 uppercase letters at --fs-xs and
+     used to be ellipsised down to "C…" in the swatch column */
+  grid-template-columns: 40px repeat(4, minmax(0, 1fr));
   grid-template-areas:
     "color name name name name"
     ".     min  max  pct  .   ";
@@ -722,6 +724,29 @@ table.grid.cluster-table input.cluster-name { width: 100%; min-width: 0; }
 /* Classify / Reset ranges must never clip their labels */
 .cluster-actions { display: flex; gap: 6px; margin-top: 7px; flex-wrap: wrap; }
 .cluster-actions .btn { flex: 1 1 auto; min-width: max-content; }
+
+/* Classification bars: the locked ends read as locked, and a half-typed value
+   never looks committed */
+table.grid.cluster-table input.cluster-bound.locked {
+  color: var(--text-dim); background: transparent; border-color: transparent; cursor: default;
+}
+
+/* 0..255 boundary bar above the table: one segment per class (its width is
+   that class's share of the axis), one draggable handle per boundary */
+.cluster-bar {
+  position: relative; display: flex; height: 14px; margin: 0 0 8px;
+  border: 1px solid var(--border-strong); border-radius: 3px; overflow: visible;
+  background: #000;
+}
+.cluster-bar-segment { flex: 1 1 0; min-width: 0; height: 100%; }
+.cluster-bar-segment:first-child { border-radius: 2px 0 0 2px; }
+.cluster-bar-segment:last-child { border-radius: 0 2px 2px 0; }
+.cluster-handle {
+  position: absolute; top: -3px; width: 9px; height: 20px; padding: 0; margin: 0 0 0 -4px;
+  border: 1px solid var(--bg-panel); border-radius: 2px; background: var(--accent);
+  cursor: ew-resize; appearance: none;
+}
+.cluster-handle:hover, .cluster-handle:focus-visible { background: var(--text); outline: none; }
 
 /* ───────────────────────── Map composer modal ──────────────────────────── */
 /* The overlay starts below the app header (-—map-modal-top is measured and

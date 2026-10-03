@@ -129,6 +129,29 @@ import {
   toMeters,
 } from "../js/mapstudio.js";
 import { defaultParamsFor, describeCommand, executeCommands } from "../js/commands.js";
+import {
+  CHANNEL_MAX,
+  CHANNEL_MIN,
+  CHANNEL_VALUES,
+  boundaries,
+  buildLut,
+  clampMaxEdit,
+  clampMinEdit,
+  cloneEntries,
+  colorsOf,
+  countsFromBins,
+  editMax,
+  editMin,
+  evenRanges,
+  isMaxLocked,
+  isMinLocked,
+  maxEditBounds,
+  minEditBounds,
+  moveBoundary,
+  normalizeEntries,
+  recolorPixels,
+  toGray,
+} from "../js/clusterranges.js";
 
 // --------------------------------------------------------------- test doubles
 
@@ -1989,4 +2012,251 @@ test("clipTitle keeps a long chained name readable", () => {
 test("the window constants describe the required layout", () => {
   assert.equal(MAX_WINDOWS, 4, "at most four windows");
   assert.ok(WINDOW_CHART.width >= 500 && WINDOW_CHART.height >= 240, "the chart is large");
+});
+
+// ══════════════ item 11: the classification editor's range logic ═════════════
+
+const CLASSES = (pairs) => pairs.map(([min, max], cluster) => ({ cluster, min, max }));
+
+/** The three invariants the editor must never break. */
+function assertContiguous(entries, label = "ranges") {
+  assert.ok(entries.length > 0, `${label}: not empty`);
+  assert.equal(entries[0].min, CHANNEL_MIN, `${label}: the first Min is 0`);
+  assert.equal(entries.at(-1).max, CHANNEL_MAX, `${label}: the last Max is 255`);
+  entries.forEach((entry, index) => {
+    assert.ok(entry.min <= entry.max, `${label}: class ${index} keeps a value`);
+    if (index === 0) return;
+    assert.equal(entry.min, entries[index - 1].max + 1,
+      `${label}: class ${index} starts right after class ${index - 1}`);
+  });
+}
+
+test("normalizeEntries makes any input contiguous, ordered and complete", () => {
+  const three = CLASSES([[0, 80], [81, 150], [151, 255]]);
+  assert.deepEqual(normalizeEntries(three), three, "an already-good list is untouched");
+  assertContiguous(normalizeEntries(three));
+
+  // gaps and overlaps are repaired around the boundaries that were given
+  const gappy = normalizeEntries(CLASSES([[0, 40], [120, 200], [210, 255]]));
+  assert.deepEqual(gappy.map((entry) => entry.min), [0, 41, 201], "gaps close onto the neighbour");
+  assert.deepEqual(gappy.map((entry) => entry.max), [40, 200, 255]);
+  assertContiguous(gappy, "gappy");
+
+  // a class can never be squeezed to zero values, and 255 is always covered
+  const squeezed = normalizeEntries(CLASSES([[0, 255], [0, 0], [0, 0]]));
+  assertContiguous(squeezed, "squeezed");
+  assert.ok(squeezed.every((entry) => entry.max - entry.min >= 0));
+  const unsorted = normalizeEntries([{ cluster: 2, min: 0, max: 0 }, { cluster: 0, min: 0, max: 0 },
+    { cluster: 1, min: 0, max: 0 }]);
+  assert.deepEqual(unsorted.map((entry) => entry.cluster), [0, 1, 2], "entries are sorted by cluster");
+  assert.deepEqual(normalizeEntries([]), []);
+  assert.deepEqual(normalizeEntries(null), []);
+});
+
+test("evenRanges mirrors the API's calculate_default_ranges for every K", () => {
+  assert.deepEqual(evenRanges(5).map((entry) => [entry.min, entry.max]),
+    [[0, 50], [51, 101], [102, 153], [154, 204], [205, 255]],
+    "k=5 is the API's even split");
+  for (let k = 2; k <= 10; k += 1) {
+    const ranges = evenRanges(k);
+    assert.equal(ranges.length, k, `k=${k} produces ${k} classes`);
+    assertContiguous(ranges, `k=${k}`);
+    for (const entry of ranges) {
+      assert.ok(entry.max - entry.min >= 1, `k=${k}: no class is a single intensity`);
+    }
+  }
+  assert.deepEqual(evenRanges(1).map((entry) => [entry.min, entry.max]), [[0, 255]]);
+});
+
+test("editing a Max moves the next Min live, but only when the value is valid", () => {
+  const ranges = CLASSES([[0, 80], [81, 150], [151, 255]]);
+
+  const up = editMax(ranges, 0, 90);
+  assert.equal(up.applied, true);
+  assert.deepEqual(up.entries.map((entry) => [entry.min, entry.max]), [[0, 90], [91, 150], [151, 255]]);
+  assertContiguous(up.entries, "after a live Max edit");
+
+  const down = editMax(ranges, 0, 40);
+  assert.deepEqual(down.entries.map((entry) => entry.max), [40, 150, 255]);
+  assert.equal(down.entries[1].min, 41, "the next class follows downwards too");
+
+  // invalid while typing: below this class's Min, over the next class's Max,
+  // empty and non-numeric all change NOTHING (the user is still typing)
+  for (const bad of [-5, 200, 151, "", "abc", null, undefined]) {
+    const result = editMax(ranges, 0, bad);
+    assert.equal(result.applied, false, `typing ${JSON.stringify(bad)} is left alone`);
+    assert.deepEqual(result.entries, ranges, `typing ${JSON.stringify(bad)} changed nothing`);
+  }
+  // …and the boundaries themselves are valid: 80 keeps class 1 one value at 81
+  assert.equal(editMax(ranges, 0, 80).applied, true);
+  assert.equal(editMax(ranges, 0, 81).applied, true);
+
+  // the source list is never mutated
+  const before = JSON.stringify(ranges);
+  editMax(ranges, 0, 90, { commit: true });
+  assert.equal(JSON.stringify(ranges), before, "edits return new lists");
+});
+
+test("committing a Max clamps it and shows the clamped value", () => {
+  const ranges = CLASSES([[0, 80], [81, 150], [151, 255]]);
+  const over = editMax(ranges, 0, 200, { commit: true });
+  assert.equal(over.applied, true);
+  assert.equal(over.value, 149, "clamped so class 1 keeps one value");
+  assert.deepEqual(over.entries.map((entry) => [entry.min, entry.max]), [[0, 149], [150, 150], [151, 255]]);
+  assertContiguous(over.entries, "clamped");
+
+  const under = editMax(ranges, 0, -40, { commit: true });
+  assert.equal(under.value, 0, "clamped up to this class's Min");
+  assert.deepEqual(under.entries[0], { cluster: 0, min: 0, max: 0 });
+  assert.equal(under.entries[1].min, 1, "and the next class still starts after it");
+
+  const decimal = editMax(ranges, 1, 120.6, { commit: true });
+  assert.equal(decimal.value, 121, "values are whole intensities");
+  assert.equal(clampMaxEdit(ranges, 0, 999), 149);
+  assert.equal(clampMaxEdit(ranges, 0, "nope"), 0, "a non-number falls back to the low bound");
+  assert.equal(clampMaxEdit(ranges, 0, ""), 0, "an empty field commits as the low bound");
+  assert.equal(editMax(ranges, 0, "", { commit: true }).value, 0);
+  assert.deepEqual(maxEditBounds(ranges, 0), { low: 0, high: 149, locked: false });
+  assert.deepEqual(maxEditBounds(ranges, 2), { low: 255, high: 255, locked: true },
+    "the last class's Max is locked");
+});
+
+test("editing a Min mirrors it onto the previous class's Max", () => {
+  const ranges = CLASSES([[0, 80], [81, 150], [151, 255]]);
+
+  const live = editMin(ranges, 1, 100);
+  assert.equal(live.applied, true);
+  assert.deepEqual(live.entries.map((entry) => [entry.min, entry.max]),
+    [[0, 99], [100, 150], [151, 255]], "the previous Max became v − 1");
+  assertContiguous(live.entries, "after a live Min edit");
+
+  for (const bad of [200, 0, "", "x", null]) {
+    const result = editMin(ranges, 1, bad);
+    assert.equal(result.applied, false, `typing ${JSON.stringify(bad)} is left alone`);
+  }
+  assert.equal(editMin(ranges, 1, 81).applied, true, "the current boundary is valid");
+  assert.equal(editMin(ranges, 1, 80).applied, true, "80 is a legal Min (class 0 keeps 0..79)");
+  assert.equal(editMin(ranges, 1, 150).applied, true, "…and so is the class's own Max");
+
+  const clamped = editMin(ranges, 1, 500, { commit: true });
+  assert.equal(clamped.value, 150, "clamped to this class's Max");
+  assert.equal(clamped.entries[0].max, 149, "the previous class keeps one value");
+  const low = editMin(ranges, 1, -20, { commit: true });
+  assert.equal(low.value, 1, "clamped to min(prev) + 1");
+  assert.equal(low.entries[0].max, 0);
+  assert.equal(clampMinEdit(ranges, 1, 0), 1);
+  assert.deepEqual(minEditBounds(ranges, 1), { low: 1, high: 150, locked: false });
+  assert.deepEqual(minEditBounds(ranges, 0), { low: 0, high: 0, locked: true },
+    "the first class's Min is locked at 0");
+});
+
+test("the ends are locked: 0 and 255 cannot be moved", () => {
+  const ranges = CLASSES([[0, 80], [81, 150], [151, 255]]);
+  assert.equal(isMinLocked(ranges, 0), true);
+  assert.equal(isMinLocked(ranges, 1), false);
+  assert.equal(isMaxLocked(ranges, 2), true);
+  assert.equal(isMaxLocked(ranges, 0), false);
+
+  const firstMin = editMin(ranges, 0, 40, { commit: true });
+  assert.equal(firstMin.applied, false, "editing the first Min does nothing");
+  assert.equal(firstMin.entries[0].min, 0);
+  const lastMax = editMax(ranges, 2, 200, { commit: true });
+  assert.equal(lastMax.applied, false, "editing the last Max does nothing");
+  assert.equal(lastMax.entries.at(-1).max, 255);
+});
+
+test("every edit keeps the invariants, however hard it is pushed", () => {
+  let ranges = evenRanges(4);
+  const pushes = [
+    ["max", 0, 300], ["max", 0, -10], ["min", 1, 999], ["min", 1, -5],
+    ["max", 2, 12], ["min", 3, 0], ["max", 1, 255], ["min", 2, 250],
+  ];
+  for (const [kind, index, value] of pushes) {
+    const result = kind === "max" ? editMax(ranges, index, value, { commit: true })
+      : editMin(ranges, index, value, { commit: true });
+    ranges = result.entries;
+    assertContiguous(ranges, `after ${kind}(${index}) = ${value}`);
+  }
+});
+
+test("the boundary bar maps handles onto the same Max edits", () => {
+  const ranges = CLASSES([[0, 80], [81, 150], [151, 255]]);
+  assert.deepEqual(boundaries(ranges), [80, 150], "one handle between each pair of classes");
+  assert.deepEqual(boundaries(evenRanges(2)), [127]);
+  const moved = moveBoundary(ranges, 0, 120);
+  assert.equal(moved.applied, true);
+  assert.deepEqual(moved.entries.map((entry) => [entry.min, entry.max]),
+    [[0, 120], [121, 150], [151, 255]], "dragging handle 0 is a Max edit of class 0");
+  assert.equal(moveBoundary(ranges, 0, 200).applied, false, "dragging past the next class is refused");
+  assert.equal(moveBoundary(ranges, 0, 200, { commit: true }).value, 149);
+});
+
+test("the percentages follow the 256-bin histogram, not a request", () => {
+  const bins = new Array(CHANNEL_VALUES).fill(0);
+  bins[10] = 30;   // class 0  (0..80)
+  bins[90] = 50;   // class 1  (81..150)
+  bins[200] = 20;  // class 2  (151..255)
+  const ranges = CLASSES([[0, 80], [81, 150], [151, 255]]);
+  const first = countsFromBins(ranges, bins);
+  assert.equal(first.total, 100, "the histogram's own total");
+  assert.deepEqual(first.counts, { 0: 30, 1: 50, 2: 20 });
+  assert.deepEqual(first.percentages, { 0: 30, 1: 50, 2: 20 });
+
+  // move a boundary, recompute from the SAME bins — no request involved
+  const moved = moveBoundary(ranges, 0, 100).entries;
+  const second = countsFromBins(moved, bins);
+  assert.deepEqual(second.counts, { 0: 80, 1: 0, 2: 20 }, "the first class swallowed the second");
+  assert.equal(second.percentages[0], 80);
+  assert.deepEqual(countsFromBins(evenRanges(2), new Array(CHANNEL_VALUES).fill(0)).percentages,
+    { 0: 0, 1: 0 }, "an empty histogram divides by zero safely");
+  assert.equal(countsFromBins(ranges, bins).counts[1]
+    + countsFromBins(ranges, bins).counts[0], 80, "counts are per intensity, not per pixel");
+});
+
+test("the 256-entry LUT colours exactly the ranges, and pixels follow it", () => {
+  const ranges = CLASSES([[0, 80], [81, 150], [151, 255]]);
+  const entries = ranges.map((entry, index) => ({ ...entry, color: [[255, 0, 0], [0, 255, 0], [0, 0, 255]][index] }));
+  const lut = buildLut(entries);
+  assert.equal(lut.length, CHANNEL_VALUES * 3, "one RGB triple per intensity");
+  assert.deepEqual([...lut.slice(0, 3)], [255, 0, 0], "intensity 0");
+  assert.deepEqual([...lut.slice(80 * 3, 80 * 3 + 3)], [255, 0, 0], "the range is inclusive at its top");
+  assert.deepEqual([...lut.slice(81 * 3, 81 * 3 + 3)], [0, 255, 0], "…and the next range starts at v+1");
+  assert.deepEqual([...lut.slice(255 * 3)], [0, 0, 255], "255 is covered");
+
+  // a gap (only possible mid-edit) stays black, like the API's recolor
+  const gappy = buildLut(CLASSES([[0, 40], [60, 255]]).map((entry, index) =>
+    ({ ...entry, color: index ? [0, 255, 0] : [255, 0, 0] })));
+  assert.deepEqual([...gappy.slice(50 * 3, 50 * 3 + 3)], [0, 0, 0]);
+  assert.deepEqual(colorsOf(entries), { 0: [255, 0, 0], 1: [0, 255, 0], 2: [0, 0, 255] });
+
+  // pixels: black→red, mid-grey→green, white→blue, alpha untouched
+  const data = new Uint8ClampedArray([
+    0, 0, 0, 255,        // → class 0
+    128, 128, 128, 128,  // → class 1
+    255, 255, 255, 7,    // → class 2
+  ]);
+  recolorPixels(data, lut);
+  assert.deepEqual([...data.slice(0, 4)], [255, 0, 0, 255]);
+  assert.deepEqual([...data.slice(4, 8)], [0, 255, 0, 128], "alpha is preserved");
+  assert.deepEqual([...data.slice(8, 12)], [0, 0, 255, 7]);
+});
+
+test("toGray matches OpenCV's 8-bit BGR2GRAY", () => {
+  assert.equal(toGray(255, 255, 255), 255);
+  assert.equal(toGray(0, 0, 0), 0);
+  assert.equal(toGray(255, 0, 0), 76, "0.299 × 255");
+  assert.equal(toGray(0, 255, 0), 150, "0.587 × 255");
+  assert.equal(toGray(0, 0, 255), 29, "0.114 × 255");
+  // monotone in every channel, and never out of range
+  for (let value = 0; value <= 255; value += 5) {
+    assert.ok(toGray(value, 0, 0) <= 255 && toGray(0, value, 0) <= 255);
+  }
+});
+
+test("cloneEntries never shares entry objects with the caller", () => {
+  const ranges = CLASSES([[0, 80], [81, 255]]);
+  const copy = cloneEntries(ranges);
+  copy[0].max = 10;
+  assert.equal(ranges[0].max, 80);
+  assert.deepEqual(cloneEntries(null), []);
 });

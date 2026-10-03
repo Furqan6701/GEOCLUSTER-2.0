@@ -753,10 +753,10 @@ if (!bootFailed) {
         "the label-map download is confirmed", toasts.slice(-2).join(" | "));
     }
 
-    // Classify / Reset ranges must not clip
+    // Generate map / Reset ranges must not clip
     const actions = [...clusterSection.querySelectorAll(".cluster-actions .btn")];
-    check(actions.map((node) => node.textContent.trim()).join("|") === "Classify|Reset ranges",
-      "the editor buttons are Classify and Reset ranges",
+    check(actions.map((node) => node.textContent.trim()).join("|") === "Generate map|Reset ranges",
+      "the editor buttons are Generate map and Reset ranges",
       actions.map((node) => node.textContent.trim()).join("|"));
     check(actions.length === 2 && actions.every((node) => node.closest(".cluster-actions")),
       "both buttons live in the actions row");
@@ -764,7 +764,127 @@ if (!bootFailed) {
     check(/\.cluster-actions \.btn \{[^}]*min-width: max-content/.test(cssText),
       "the action buttons cannot shrink below their labels");
 
-    // Reset ranges puts the algorithm values back
+    // -------------------------------- item 11: the live linked editor
+    // the "Color" header used to be ellipsised to "C…" in a 22px column
+    const colorHead = editorTable?.querySelector("thead th.cluster-color-head");
+    check(colorHead?.textContent.trim() === "Color", "the first column header is still spelled Color",
+      colorHead?.textContent);
+    check(/grid-template-columns: 40px repeat\(4, minmax\(0, 1fr\)\)/.test(cssText),
+      "the swatch column is 40px, wide enough for the COLOR header (was 22px)");
+
+    const app = window.geocluster;
+    const bounds = (row) => [...row.querySelectorAll("input.cluster-bound")];
+    const editorShares = () => editorRows.map((row) => Number.parseFloat(row.querySelector(".cluster-share").textContent));
+    const histogramCalls = () => requests.filter((entry) => /\/histogram$/.test(entry.url)).length;
+
+    // the histogram is fetched ONCE per image — never while editing
+    await until(() => histogramCalls() >= 1, "the editor pulls the 256-bin histogram");
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    const histogramBefore = histogramCalls();
+    check(histogramBefore === 1, "exactly one histogram request per K-Means run", String(histogramBefore));
+
+    const typeInto = (input, value, kind = "input") => {
+      input.value = value;
+      input.dispatchEvent(new window.Event(kind, { bubbles: true }));
+    };
+
+    // the locked ends are read-only
+    check(bounds(editorRows[0])[0].readOnly && bounds(editorRows[0])[0].value === "0",
+      "the first class's Min is fixed at 0 and read-only");
+    check(bounds(editorRows.at(-1))[1].readOnly && bounds(editorRows.at(-1))[1].value === "255",
+      "the last class's Max is fixed at 255 and read-only");
+    check(!bounds(editorRows[1])[0].readOnly && !bounds(editorRows[0])[1].readOnly,
+      "every other boundary stays editable");
+    check(bounds(editorRows[0])[0].classList.contains("locked") &&
+      bounds(editorRows.at(-1))[1].classList.contains("locked"),
+      "the locked ends are marked as locked");
+
+    const beforeShares = editorShares();
+    const requestsBeforeEdits = requests.length;
+    const historyBeforeEdits = app.history.size;
+
+    // Max: the next class's Min follows on every keystroke
+    typeInto(bounds(editorRows[0])[1], "9");
+    check(bounds(editorRows[0])[1].value === "9" && bounds(editorRows[1])[0].value === "10",
+      "typing a Max moves the next Min to v+1 live (single digit)",
+      `${bounds(editorRows[0])[1].value} / ${bounds(editorRows[1])[0].value}`);
+    typeInto(bounds(editorRows[0])[1], "90");
+    check(bounds(editorRows[1])[0].value === "91", "…and again when the number grows",
+      bounds(editorRows[1])[0].value);
+    check(editorShares()[0] > beforeShares[0] && editorShares()[1] < beforeShares[1],
+      "the % column follows the new range live",
+      `${beforeShares[0]} → ${editorShares()[0]}, ${beforeShares[1]} → ${editorShares()[1]}`);
+    check(Math.abs(editorShares().reduce((sum, value) => sum + value, 0) - 100) < 0.05,
+      "the shares still add up to 100%", String(editorShares().reduce((a, b) => a + b, 0)));
+
+    // Min: the previous class's Max follows
+    typeInto(bounds(editorRows[1])[0], "95");
+    check(bounds(editorRows[0])[1].value === "94", "typing a Min moves the previous Max to v−1",
+      bounds(editorRows[0])[1].value);
+
+    // an out-of-range value is left in the field while typing and clamped on blur
+    typeInto(bounds(editorRows[0])[1], "240");
+    check(bounds(editorRows[1])[0].value === "95",
+      "an out-of-range keystroke changes nothing while typing", bounds(editorRows[1])[0].value);
+    typeInto(bounds(editorRows[0])[1], "240", "blur");
+    check(bounds(editorRows[0])[1].value === "116",
+      "blur clamps the Max to max(next) − 1 and shows it", bounds(editorRows[0])[1].value);
+    check(bounds(editorRows[1])[0].value === "117", "the linked Min follows the clamped value",
+      bounds(editorRows[1])[0].value);
+    // "3" is a legal Min here (the class above may shrink to 0..2)…
+    typeInto(bounds(editorRows[1])[0], "3", "blur");
+    check(bounds(editorRows[1])[0].value === "3" && bounds(editorRows[0])[1].value === "2",
+      "a legal Min moves the previous Max to v−1",
+      `${bounds(editorRows[1])[0].value} / ${bounds(editorRows[0])[1].value}`);
+    // …but 0 is not: a class may not swallow the one above it
+    typeInto(bounds(editorRows[1])[0], "0", "blur");
+    check(bounds(editorRows[1])[0].value === "1" && bounds(editorRows[0])[1].value === "0",
+      "a Min below the class above clamps to min(prev) + 1",
+      `${bounds(editorRows[1])[0].value} / ${bounds(editorRows[0])[1].value}`);
+
+    // every class keeps at least one value: no gaps, no overlaps, always 0..255
+    const rangesNow = () => editorRows.map((row) => bounds(row).map((input) => Number(input.value)));
+    check(rangesNow()[0][0] === 0 && rangesNow().at(-1)[1] === 255,
+      "the ranges still start at 0 and end at 255", JSON.stringify(rangesNow()));
+    check(rangesNow().every((pair, index, all) =>
+      pair[0] <= pair[1] && (index === 0 || pair[0] === all[index - 1][1] + 1)),
+      "the ranges are contiguous with one value per class", JSON.stringify(rangesNow()));
+
+    // the live preview: the Result viewport repaints from the browser's LUT
+    const previewViewer = app.viewers.result;
+    await until(() => previewViewer.hasPreview, "the Result viewport repaints live");
+    check(previewViewer.hasPreview, "editing recolours the Result viewport with no server call");
+    check(/classification/.test(previewViewer.previewBadge.textContent),
+      "the preview badge names the operation", previewViewer.previewBadge.textContent);
+    check((previewViewer.previewCanvas?.width ?? 0) > 0,
+      "the preview is a real canvas", String(previewViewer.previewCanvas?.width));
+
+    // the boundary bar mirrors the model and can be dragged / arrow-keyed
+    const bar = clusterSection.querySelector(".cluster-bar");
+    const handles = [...(bar?.querySelectorAll(".cluster-handle") ?? [])];
+    check(handles.length === editorRows.length - 1, "the bar has one handle per boundary",
+      String(handles.length));
+    check(bar?.querySelectorAll(".cluster-bar-segment").length === editorRows.length,
+      "the bar has one segment per class");
+    const handleBefore = Number(handles[0]?.getAttribute("aria-valuenow"));
+    handles[0]?.dispatchEvent(new window.KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    check(handles[0]?.getAttribute("aria-valuenow") === String(handleBefore + 1),
+      "the arrow keys move a boundary by one intensity",
+      `${handleBefore} → ${handles[0]?.getAttribute("aria-valuenow")}`);
+    check(bounds(editorRows[0])[1].value === String(handleBefore + 1) &&
+      bounds(editorRows[1])[0].value === String(handleBefore + 2),
+      "…and the table fields follow the handle",
+      `${bounds(editorRows[0])[1].value} / ${bounds(editorRows[1])[0].value}`);
+
+    // …and none of it touched the server or the undo history
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    check(requests.length === requestsBeforeEdits && histogramCalls() === histogramBefore,
+      "editing sends no request at all",
+      `+${requests.length - requestsBeforeEdits} requests`);
+    check(app.history.size === historyBeforeEdits,
+      "editing pushes no undo entry", `+${app.history.size - historyBeforeEdits}`);
+
+    // Reset ranges puts the algorithm values back, keeping the names
     const nameField = editorRows[0].querySelector('input[type="text"]');
     const minField = editorRows[0].querySelector('input[type="number"]');
     nameField.value = "Renamed";
@@ -774,6 +894,7 @@ if (!bootFailed) {
     resetButton.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
     const restored = clusterSection.querySelector("table.cluster-table tbody tr input[type=number]");
     check(restored?.value === "0", "Reset ranges restores the K-Means min value", restored?.value);
+    check(editorNames()[0] === "Renamed", "Reset ranges keeps the edited names", editorNames()[0]);
   }
   {
     const posts = requests.filter((entry) => /\/kmeans$/.test(entry.url));
@@ -786,7 +907,8 @@ if (!bootFailed) {
 
   expandSection("Clusters");
   const resultBeforeClassify = state()?.result?.id;
-  clickButton("Classify");
+  const historyBeforeGenerate = window.geocluster.history.size;
+  clickButton("Generate map");
   const legend = await until(() => {
     const id = state()?.result?.id;
     return id && id !== resultBeforeClassify && state()?.map ? id : null;
@@ -794,6 +916,12 @@ if (!bootFailed) {
   check(Boolean(legend), "classify result loaded");
   check(state()?.legend?.length >= 2, "the classify legend is stored on the state",
     String(state()?.legend?.length));
+  check(window.geocluster.history.size === historyBeforeGenerate + 1,
+    "Generate map is exactly ONE undo step",
+    `${historyBeforeGenerate} → ${window.geocluster.history.size}`);
+  check(window.geocluster.history.current?.label?.length > 0 &&
+    window.geocluster.viewers.result.hasPreview === false,
+    "the committed image replaces the live preview");
 
   // ---------------------------------------- 3b. STEP 4: the Map composer
   {
@@ -1824,6 +1952,7 @@ if (!bootFailed) {
 
     // ---- pressing it opens a floating window
     const requestsBefore = requests.length;
+    const histogramsBeforeWindow = requests.filter((entry) => /\/histogram$/.test(entry.url)).length;
     const opened = analysis.actions.openHistogram();
     const win = await until(() => hist.windows.at(-1) ?? null, "the Histogram button opens a window");
     check(opened === win && win != null, "the button returned the window it opened");
@@ -1849,9 +1978,9 @@ if (!bootFailed) {
       "the chart is large", `${win.canvas.width}×${win.canvas.height}`);
 
     // one request for the bins, and the statistics come from those numbers
-    check(requests.filter((entry) => /\/histogram$/.test(entry.url)).length === 1,
-      "the window fetched one histogram",
-      String(requests.filter((entry) => /\/histogram$/.test(entry.url)).length));
+    check(requests.filter((entry) => /\/histogram$/.test(entry.url)).length === histogramsBeforeWindow + 1,
+      "the window fetched exactly one histogram of its own",
+      String(requests.filter((entry) => /\/histogram$/.test(entry.url)).length - histogramsBeforeWindow));
     check(win.bins?.length === 256, "the window holds the 256 bins", String(win.bins?.length));
     const texts = () => (win.canvas.__texts ?? []).join(" | ");
     check(/linear scale/.test(texts()), "the chart states its scale", texts().slice(0, 120));

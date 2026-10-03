@@ -313,7 +313,7 @@ export class MapStudio {
     const image = this.image;
     if (!image) {
       setChildren(this.previewHost ?? this.root.querySelector(".map-preview-host"),
-        el("p", { class: "empty-note", text: "Load or classify an image first — the composer needs pixels." }));
+        el("p", { class: "empty-note", text: "Load an image or generate a map first — the composer needs pixels." }));
       this.canvas = null;
       return null;
     }
@@ -367,7 +367,7 @@ export class MapStudio {
     if (!host || !this.settings) return;
     const rows = this.settings.legend?.rows ?? [];
     if (!rows.length) {
-      setChildren(host, el("p", { class: "empty-note", text: "No classes yet — run K-Means and Classify." }));
+      setChildren(host, el("p", { class: "empty-note", text: "No classes yet — run K-Means and Generate map." }));
       return;
     }
     setChildren(host, rows.map((row, index) => {
