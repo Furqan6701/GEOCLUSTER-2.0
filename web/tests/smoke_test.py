@@ -252,23 +252,34 @@ def check_workstation_layout() -> None:
     check(".viewer-head .meta" in css and ".sb-item" in css,
           "both the viewport header and the status bar participate in truncation")
 
-    # STEP 4: the Map viewport is a third real viewport, not a card
-    check('id="viewer-map"' in index, "index.html has a Map viewport slot")
-    check('id="viewer-map" hidden' in index or 'hidden id="viewer-map"' in index
-          or re.search(r'id="viewer-map"[^>]*hidden', index) is not None,
-          "the Map viewport starts hidden (nothing to map before a classification)")
-    check('id="tb-map"' in index, "the toolbar has a Map toggle")
+    # the Map composer (redesign): a modal, not a third docked viewport
+    check('id="viewer-map"' not in index,
+          "index.html has no docked Map viewport any more (the composer replaced it)")
+    check('id="tb-map"' in index, "the toolbar has a Map button")
     viewer_js = _js_text("js/viewer.js")
-    check("footerExtras" in viewer_js, "viewers accept extra footer controls (legend toggle)")
+    check("footerExtras" in viewer_js, "viewers accept extra footer controls")
+    check("node instanceof Node" in viewer_js,
+          "viewer footer extras are DOM nodes only (the [object Object] guard)")
     map_js = _js_text("js/map.js")
-    for token in ["composeMap", "drawLegend", "legendRows", "mapCanvasToBlob", "formatPercentage"]:
+    for token in ["mapCanvasToBlob", "formatPercentage", "mapFileName"]:
         check(f"export function {token}" in map_js or f"export async function {token}" in map_js,
               f"map.js exports {token}")
-    check("createElement(\"canvas\")" in map_js,
-          "the legend is composited on a canvas (so the PNG export includes it)")
-    check("map-open" in css, "the workspace can lay out three viewports")
-    check("@media (max-width: 1500px)" in css and "map-open" in css,
-          "three viewports never squeeze the image panes on a laptop")
+    check("composeMap" not in map_js and "drawLegend" not in map_js,
+          "map.js holds no second composer — one canvas, one renderer")
+    studio_js = _js_text("js/mapstudio.js")
+    for token in ["drawStudioMap", "composeStudioMap", "drawScaleBar", "drawNorthArrow",
+                  "drawLegendBox", "groundWidthMeters", "cornerLabels", "roundScaleLength",
+                  "SCALE_UNITS", "NORTH_STYLES", "EXPORT_SCALES"]:
+        check(token in studio_js, f"mapstudio.js provides {token}")
+    check('createElement("canvas")' in studio_js,
+          "the whole map (image + legend + bar + arrow) is composited on one canvas")
+    check("drawImage" in studio_js and "not to scale" in studio_js,
+          "the image is drawn in and unknown scales are labelled honestly")
+    ui_js = _js_text("js/mapstudio_ui.js")
+    for token in ['role="dialog"', 'aria-modal', "Escape", "FOCUSABLE", "MapStudio"]:
+        check(token in ui_js, f"mapstudio_ui.js implements {token}")
+    check("map-modal-dialog" in css and ".segmented" in css and ".cluster-actions" in css,
+          "the composer and the cluster editor are styled")
 
     # STEP 6: nothing is left advertising an unimplemented feature
     app_js = _js_text("js/app.js")
@@ -286,8 +297,13 @@ def check_workstation_layout() -> None:
           "the File menu still offers the satellite fetch")
     check(re.search(r'label: "Map export \(PNG\)…"', app_js) is not None,
           "Map export is a real menu action")
-    check(re.search(r'reason: "run Classify in the Clusters section first', app_js) is not None,
-          "the map entries that are disabled say exactly what to do first")
+    check(re.search(r'label: "Map composer…"', app_js) is not None and
+          "openMapStudio" in app_js,
+          "the composer is reachable from the View/Analysis menus")
+    check("mapViewer" not in app_js and "setMapVisible" not in app_js,
+          "the docked map viewport wiring is gone from app.js")
+    check(re.search(r'if \(!mapStudio\.isOpen\(\)\)', app_js) is not None,
+          "an export from the menu opens the composer first (so the scale can be chosen)")
     check(re.search(r'reason: "there is no result yet', app_js) is not None,
           "Clear result explains when it is unavailable")
 

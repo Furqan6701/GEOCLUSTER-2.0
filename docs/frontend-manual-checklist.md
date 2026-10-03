@@ -84,29 +84,35 @@ pointer behaviour, and layout at the two widths the user asked about.
     `max_images`, then undo to an old state and run an operation. It must
     succeed silently; the status bar reports the restored image was re-uploaded.
 
-## D. STEP 4 — map view
+## D. STEP 4 — the Map composer
 
 28. **[both]** Type **k=5** in Clusters → **Run K-Means** → **Classify**. The
-    Map viewport opens automatically, showing the recoloured image with a
-    legend panel beside/below it.
-29. **[both]** The legend lists every class with its colour swatch, name and
-    percentage, and those match the Clusters legend table.
-30. **[both]** Zoom/pan the Map viewport (`+`, fit, wheel, drag): it behaves
-    like the other two viewports; the status bar names it `Viewport: Map`.
-31. **[both]** **Analysis → Map export (PNG)…**: Chrome downloads
-    `map-<image>.png`. Open it: the legend is **inside** the PNG, next to the
-    classified image.
-32. **[both]** **Analysis → Map legend** (or the Legend button in the Map footer)
-    hides the legend in the viewport; export again — the new PNG has no legend
-    and is exactly the image size.
-33. **[both]** **Analysis → Map view**, **View → Show map viewport** and the
-    toolbar **Map** button each show/hide the Map pane. With three panes the map
-    takes a full-width row under the other two at 1366 px, and a third column
-    at 1920 px.
-34. **[both]** Before classifying (new session, no K-Means): the map entries are
-    disabled and their tooltip says "run Classify in the Clusters section
-    first", and clicking the toolbar **Map** button explains it in a toast.
-
+    Map composer modal opens: live preview centre, properties sidebar right.
+29. **[both]** **Escape** closes it and focus jumps back to the toolbar **Map**
+    button; clicking **Map** reopens it with the settings you left (they persist
+    for the session). Tabbing from the last control wraps to the first.
+30. **[both]** The legend lists every class with its swatch, name and
+    percentage, and matches the Clusters table — rename a class or change its
+    colour in either place and the other follows.
+31. **[both]** Title defaults to the image name without its extension; edit the
+    title, add a subtitle and change the credit line — the preview updates as
+    you type.
+32. **[both]** Toggle the legend off/on, switch percentages off/on, move it to
+    another corner and change its font size — every change is visible in the
+    preview.
+33. **[both]** The scale bar is on with alternating black/white segments; edit
+    the total length, the divisions (1–10) and the unit (m, km, ft, mi). Without
+    ground-scale metadata it says **not to scale** — type an image width under
+    “image width = X unit” and the bar becomes exact. For a satellite fetch
+    (item 5) it is exact immediately.
+34. **[both]** The north arrow is on; try the three styles, rotate it and move
+    it to another corner. Satellite crops are north-up, so 0° is correct.
+35. **[both]** Click **PNG 2x** / **PNG 3x**: Chrome downloads
+    `<title>-map@2x.png` and the file is exactly the preview at that scale
+    (open it and compare the legend text and the bar).
+36. **[both]** Analysis → *Map legend* toggles the legend without opening the
+    modal; Analysis → *Map export (PNG)…* opens the modal so the scale can be
+    chosen first.
 ## E. STEP 5 — histogram and distance
 
 35. **[both]** Analysis → **Histogram & stats**. Switch **Log scale**,

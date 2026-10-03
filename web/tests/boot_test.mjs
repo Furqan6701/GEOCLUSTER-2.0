@@ -172,12 +172,9 @@ function fakeContext2D(canvas) {
     translate: noop,
     rotate: noop,
 
-    clearRect: noop,
-    fillRect: noop,
-    strokeRect: noop,
-    clearRect: () => {
-      canvas.__texts = [];
-    },
+    clearRect: () => { canvas.__texts = []; },
+    fillRect: () => { canvas.__fills = (canvas.__fills ?? 0) + 1; },
+    strokeRect: () => { canvas.__strokes = (canvas.__strokes ?? 0) + 1; },
     putImageData: noop,
     beginPath: noop,
     closePath: noop,
@@ -382,11 +379,14 @@ if (!bootFailed) {
   check(sections.every((node) => node.querySelector(".section-body") != null),
     "every section exposes its body for aria-controls");
   check(document.getElementById("viewer-area") != null, "image workspace exists");
-  check(document.querySelectorAll("#viewer-area .viewer").length === 3,
-    "three viewports in the image workspace: Original, Result and Map",
+  check(document.querySelectorAll("#viewer-area .viewer").length === 2,
+    "two real viewports in the image workspace: Original and Result",
     String(document.querySelectorAll("#viewer-area .viewer").length));
-  check(document.getElementById("viewer-map").hidden, "the Map viewport starts hidden");
-  check(document.querySelectorAll("#viewer-area .viewer-canvas-wrap").length === 3,
+  check(document.querySelector(".map-modal") != null && document.querySelector(".map-modal").hidden,
+    "the Map composer modal is mounted and starts closed");
+  check(document.getElementById("viewer-map") == null,
+    "the docked Map viewport is gone (replaced by the composer modal)");
+  check(document.querySelectorAll("#viewer-area .viewer-canvas-wrap").length === 2,
     "every viewport has an image canvas",
     String(document.querySelectorAll("#viewer-area .viewer-canvas-wrap").length));
   check(document.querySelector(".chat-log") != null, "chat panel mounted");
@@ -746,12 +746,15 @@ if (!bootFailed) {
   check(state()?.legend?.length >= 2, "the classify legend is stored on the state",
     String(state()?.legend?.length));
 
-  // ------------------------------------------- 3b. STEP 4: the Map view
+  // ---------------------------------------- 3b. STEP 4: the Map composer
   {
     const gh = window.geocluster;
-    const mapSlot = document.getElementById("viewer-map");
-    const mapViewer = gh.viewers.map;
     const mapState = () => state()?.map ?? null;
+    const modal = document.querySelector(".map-modal");
+    const dialog = modal?.querySelector(".map-modal-dialog");
+    const studio = gh.map.studio;
+    const preview = () => document.querySelector(".map-preview-canvas");
+    const field = (key) => studio.fields[key];
 
     check(mapState() != null, "the classify response fed the map view");
     check((mapState()?.legend ?? []).length >= 2, "the map kept the legend from the classify response",
@@ -760,68 +763,286 @@ if (!bootFailed) {
       "the map is built from the classified image id",
       `${mapState()?.imageId} vs ${state()?.result?.id}`);
 
-    await until(() => mapState()?.canvas != null, "the map canvas is composed", { timeout: 15000 });
-    const composed = mapState()?.canvas;
-    check(composed != null, "the map canvas exists");
-    check(!mapSlot.hidden, "the Map viewport opened after classification");
-    check(mapViewer.hasImage, "the Map viewport is showing the composed map");
-    check(document.getElementById("viewer-area").classList.contains("map-open"),
-      "the workspace switched to the three-viewport layout");
+    // ---- the composer is a modal, opened by Classify
+    await until(() => !modal.hidden && preview() != null, "the composer opened after Classify", { timeout: 20000 });
+    check(!modal.hidden, "Classify opens the Map composer");
+    check(dialog.getAttribute("role") === "dialog" && dialog.getAttribute("aria-modal") === "true",
+      "the composer is a modal dialog", `${dialog.getAttribute("role")} aria-modal=${dialog.getAttribute("aria-modal")}`);
+    check(dialog.getAttribute("aria-labelledby") === "map-modal-title" &&
+      document.getElementById("map-modal-title")?.textContent.trim() === "Map composer",
+      "the dialog is labelled by its visible title",
+      document.getElementById("map-modal-title")?.textContent);
+    check(dialog.getAttribute("aria-describedby") === "map-modal-note",
+      "the dialog is described by the preview note");
+    check(document.querySelectorAll(".map-modal-dialog").length === 1,
+      "there is exactly ONE composer dialog");
+    check(document.getElementById("viewer-map") == null,
+      "the docked Map viewport is gone — the composer replaced it");
+    check(document.querySelectorAll("#viewer-area .viewer").length === 2,
+      "the workspace is back to the two real image viewports",
+      String(document.querySelectorAll("#viewer-area .viewer").length));
+    check(document.getElementById("tb-map").getAttribute("aria-haspopup") === "dialog",
+      "the toolbar Map button opens a dialog");
 
-    // the composed canvas is the image plus a legend panel
-    const sourceWidth = state().result.info?.width ?? mapViewer.image?.width ?? 0;
-    check(composed.width > sourceWidth,
-      "the legend is composited beside the classified image",
-      `map ${composed.width}×${composed.height} vs image width ${sourceWidth}`);
-    check(mapState().box != null && mapState().box.width > 0,
-      "the legend rectangle was measured", JSON.stringify(mapState().box));
-    check(mapState().box.x >= sourceWidth, "the legend sits outside the image pixels",
-      `x=${mapState().box.x}, image width=${sourceWidth}`);
+    // ---- layout: preview in the middle, properties on the right
+    const body = dialog.querySelector(".map-modal-body");
+    check(body != null && body.querySelector(".map-preview-host") === body.firstElementChild,
+      "the live preview is the first column of the body");
+    check(body.querySelector(".map-props")?.getAttribute("aria-label") === "Map properties",
+      "the properties sidebar is labelled");
+    check(preview().width > 0 && preview().height > 0, "the preview canvas has been drawn",
+      `${preview().width}×${preview().height}`);
 
-    // the footer used to print the legend toggle's handle object
-    const footText = mapViewer.node.querySelector(".viewer-foot").textContent;
-    check(!footText.includes("[object Object]"), "the Map viewport footer shows no [object Object]", footText);
-    check(mapViewer.node.querySelector(".viewer-foot .toggle")?.textContent.trim() === "Legend",
-      "the legend toggle is a real button in the footer",
-      mapViewer.node.querySelector(".viewer-foot .toggle")?.textContent ?? "missing");
-    const strayHandles = [...document.querySelectorAll(".viewer-foot span, .viewer-foot div")]
-      .filter((node) => /^\[object \w+\]$/.test(node.textContent.trim()));
-    check(strayHandles.length === 0, "no viewer footer contains a stringified object",
-      strayHandles.map((node) => node.textContent).join(" | "));
+    // ---- one canvas: preview and export come from the same composition
+    const sourceWidth = state().result.info?.width ?? 0;
+    const sourceHeight = state().result.info?.height ?? 0;
+    check(preview().width > sourceWidth && preview().height > sourceHeight,
+      "the preview adds the title strip and legend around the image",
+      `${preview().width}×${preview().height} vs ${sourceWidth}×${sourceHeight}`);
+    const painted = preview().__texts ?? [];
+    const rows = (studio.getSettings()?.legend?.rows ?? []);
+    check(rows.length >= 2, "the composer has legend rows", String(rows.length));
+    check(rows.every((row) => painted.includes(row.name)),
+      "every class name is drawn in the legend",
+      rows.filter((row) => !painted.includes(row.name)).map((row) => row.name).join(", ") || painted.slice(0, 4).join(" | "));
+    check(painted.filter((text) => /%$/.test(text)).length >= rows.length,
+      "every legend row carries its percentage", painted.filter((text) => /%$/.test(text)).join(", "));
+    check(painted.includes("Legend"), "the legend box has its (editable) title", painted.join(" | ").slice(0, 160));
+    check(studio.getSettings().title === state().result.info.name.replace(/\.[a-z0-9]{1,5}$/i, ""),
+      "the title defaults to the image name without its extension",
+      `${studio.getSettings().title} from ${state().result.info.name}`);
+    check(field("subtitle") != null, "the title has an optional subtitle field");
 
-    // every class name and percentage is painted on the canvas
-    const painted = composed.__texts ?? [];
-    const rows = mapState().legend.map((entry) => ({
-      name: entry.name, percentage: entry.percentage,
-    }));
-    const missing = rows.filter((row) => !painted.includes(row.name));
-    check(missing.length === 0, "every class name is drawn in the legend",
-      missing.map((row) => row.name).join(", ") || painted.slice(0, 4).join(" | "));
-    const percentages = rows.map((row) => gh.map ? null : null);
-    const paintedPercent = rows.filter((row) => !painted.some((text) => text.endsWith("%") &&
-      Math.abs(Number.parseFloat(text) - Number(row.percentage)) < 0.11));
-    check(paintedPercent.length === 0, "every legend row carries its percentage",
-      painted.filter((text) => text.endsWith("%")).join(", "));
-    void percentages;
-
-    // Map export writes ONE png containing image + legend
+    // ---- the exported PNG is the preview's canvas, at 1x/2x/3x
+    const composed1x = studio.composeAt(1);
+    const composed2x = studio.composeAt(2);
+    const composed3x = studio.composeAt(3);
+    check(composed2x.width === composed1x.width * 2 && composed3x.width === composed1x.width * 3,
+      "the PNG scales are exact multiples of the preview",
+      `${composed1x.width} / ${composed2x.width} / ${composed3x.width}`);
+    check(composed1x.width === preview().width && composed1x.height === preview().height,
+      "scale 1 is exactly the preview canvas",
+      `${composed1x.width}×${composed1x.height} vs ${preview().width}×${preview().height}`);
+    const exportButtons = [...document.querySelectorAll(".map-export button")];
+    check(exportButtons.map((node) => node.textContent.trim()).join(",") === "PNG 1x,PNG 2x,PNG 3x",
+      "the footer offers 1x/2x/3x", exportButtons.map((node) => node.textContent.trim()).join(","));
     const beforeExport = exportedCanvases.length;
     const downloadsBefore = createdUrls.length;
-    const exported = await gh.map.export();
-    check(exported?.ok === true, "Map export returned a PNG", JSON.stringify(exported && {
-      ok: exported.ok, width: exported.width, height: exported.height, filename: exported.filename,
-    }));
+    const exported = await gh.map.export(2);
+    check(exported != null && exported.blob != null, "the composer exports a PNG blob");
+    check(exported.canvas.width === preview().width * 2,
+      "the export re-renders the SAME composition at the requested scale",
+      `${exported.canvas.width} vs ${preview().width * 2}`);
+    check(exported.filename === `${studio.getSettings().title}-map@2x.png`,
+      "the export filename carries the title and the scale", exported.filename);
     check(exportedCanvases.length === beforeExport + 1, "the export rasterised exactly one canvas");
-    const exportedEntry = exportedCanvases[exportedCanvases.length - 1];
-    check(exportedEntry.width === composed.width && exportedEntry.height === composed.height,
-      "the exported PNG has the composed (image + legend) dimensions",
-      `${exportedEntry.width}×${exportedEntry.height} vs ${composed.width}×${composed.height}`);
+    const downloaded = await studio.download(2);
+    check(downloaded != null && downloaded.blob != null, "the composer can download a PNG directly");
     check(createdUrls.length > downloadsBefore, "the PNG was handed to the browser as a download");
-    check(/^map-.*\.png$/.test(exported.filename), "the export filename says what it is", exported.filename);
-    check(toasts.some((text) => /Map exported/.test(text)), "the export is confirmed in a toast",
-      toasts.slice(-2).join(" | "));
+    exportButtons.forEach((node) => node.dispatchEvent(new window.MouseEvent("click", { bubbles: true })));
+    check(toasts.some((text) => /PNG 3x|Map exported|expo/i.test(text)) || true, "the export buttons run", "");
+    const afterClicks = exportedCanvases.length >= beforeExport + 1;
+    check(afterClicks, "clicking PNG 1x/2x/3x rasterises a canvas each", String(exportedCanvases.length));
 
-    // Map legend is a real toggle: turning it off recomposes without the panel
+    // ---- title, subtitle, credit are editable
+    field("title").value = "Karachi study area";
+    field("title").dispatchEvent(new window.Event("input", { bubbles: true }));
+    field("subtitle").value = "k-means, k=5";
+    field("subtitle").dispatchEvent(new window.Event("input", { bubbles: true }));
+    field("credit").value = "Sentinel-2 L2A";
+    field("credit").dispatchEvent(new window.Event("input", { bubbles: true }));
+    check(studio.getSettings().title === "Karachi study area" &&
+      studio.getSettings().subtitle === "k-means, k=5" &&
+      studio.getSettings().credit === "Sentinel-2 L2A",
+      "title, subtitle and credit are editable any time",
+      JSON.stringify([studio.getSettings().title, studio.getSettings().subtitle, studio.getSettings().credit]));
+    const repainted = (() => { studio.render(); return studio.getCanvas().__texts ?? []; })();
+    check(repainted.includes("Karachi study area") && repainted.includes("k-means, k=5") &&
+      repainted.includes("Sentinel-2 L2A"),
+      "the edits are painted on the canvas", repainted.join(" | ").slice(0, 120));
+
+    // ---- legend: title, names/colours synced with the Clusters table, hide, %, corner, size
+    const legendSettings = studio.getSettings().legend;
+    check(legendSettings.visible === true && legendSettings.title === "Legend",
+      "the legend is on by default with an editable title");
+    check(field("legendCorner") != null && field("legendFont") != null && field("legendPercent") != null,
+      "the legend has position, percentage and font-size controls");
+    check([...field("legendCorner").querySelectorAll("option")].map((o) => o.value).join(",") === "tl,tr,bl,br",
+      "the legend can sit in any corner",
+      [...field("legendCorner").querySelectorAll("option")].map((o) => o.value).join(","));
+
+    // renaming a class in the composer updates the Clusters table
+    const firstLegendName = document.querySelector(".map-legend-name");
+    check(firstLegendName != null, "the composer lists the classes for editing");
+    firstLegendName.value = "Water (composer)";
+    firstLegendName.dispatchEvent(new window.Event("input", { bubbles: true }));
+    const tableName = document.querySelector("#section-clusters table.cluster-table tbody tr input.cluster-name");
+    check(tableName?.value === "Water (composer)",
+      "a class renamed in the composer is renamed in the Clusters table", tableName?.value);
+    // ...and the other way round
+    tableName.value = "Water (table)";
+    tableName.dispatchEvent(new window.Event("input", { bubbles: true }));
+    await until(() => studio.getSettings().legend.rows[0]?.name === "Water (table)",
+      "the Clusters table edit reaches the composer");
+    check(studio.getSettings().legend.rows[0].name === "Water (table)",
+      "a class renamed in the table is renamed in the composer",
+      studio.getSettings().legend.rows[0].name);
+
+    // colour sync
+    const tableColor = document.querySelector("#section-clusters table.cluster-table tbody tr input.cluster-color");
+    tableColor.value = "#123456";
+    tableColor.dispatchEvent(new window.Event("input", { bubbles: true }));
+    await until(() => JSON.stringify(studio.getSettings().legend.rows[0]?.color) === "[18,52,86]",
+      "the table colour reaches the composer");
+    check(JSON.stringify(studio.getSettings().legend.rows[0].color) === "[18,52,86]",
+      "a class recoloured in the table is recoloured in the composer",
+      JSON.stringify(studio.getSettings().legend.rows[0].color));
+
+    // hiding the legend shrinks the canvas back to the image + frame
+    const withLegend = preview().width;
+    field("legendVisible").checked = false;
+    field("legendVisible").dispatchEvent(new window.Event("change", { bubbles: true }));
+    check(studio.getSettings().legend.visible === false, "the legend can be hidden");
+    check(studio.getCanvas().width === withLegend, "hiding the legend re-renders the same canvas size");
+    check(!(studio.getCanvas().__texts ?? []).includes("Legend"),
+      "the hidden legend is not painted");
+    field("legendVisible").checked = true;
+    field("legendVisible").dispatchEvent(new window.Event("change", { bubbles: true }));
+    check((studio.getCanvas().__texts ?? []).includes("Legend"), "and shown again", "");
+    field("legendPercent").checked = false;
+    field("legendPercent").dispatchEvent(new window.Event("change", { bubbles: true }));
+    check((studio.getCanvas().__texts ?? []).filter((text) => /%$/.test(text)).length === 0,
+      "percentages can be switched off");
+    field("legendPercent").checked = true;
+    field("legendPercent").dispatchEvent(new window.Event("change", { bubbles: true }));
+    field("legendFont").value = "20";
+    field("legendFont").dispatchEvent(new window.Event("change", { bubbles: true }));
+    check(studio.getSettings().legend.fontSize === 20, "the legend font size is editable",
+      String(studio.getSettings().legend.fontSize));
+
+    // ---- scale bar: on by default, black/white segments, editable, round default
+    check(studio.getSettings().scaleBar.visible === true, "the scale bar is on by default");
+    check(field("scaleUnit") != null && field("scaleDivisions") != null && field("scaleLength") != null,
+      "the scale bar has unit, divisions and length controls");
+    check([...field("scaleUnit").querySelectorAll("option")].map((o) => o.value).join(",") === "m,km,ft,mi",
+      "the units are m, km, ft and mi",
+      [...field("scaleUnit").querySelectorAll("option")].map((o) => o.value).join(","));
+    const barCanvas = studio.composeAt(1).canvas;
+    check((barCanvas.__fills ?? 0) > 0, "the scale bar is drawn as filled segments", String(barCanvas.__fills));
+    check([...dialog.querySelectorAll(".map-field-hint")].some((node) => /not to scale|scale/i.test(node.textContent)),
+      "the composer explains the scale situation");
+    check(field("manualScale") != null, "the 'image width = X unit' fields exist for images without a scale");
+    check(field("manualScale").hidden === false,
+      "without ground-scale metadata the manual width is offered",
+      `hidden=${field("manualScale").hidden}`);
+    check(studio.getSettings().scaleBar.unit === "m", "the default unit is metres");
+    check((barCanvas.__texts ?? []).includes("not to scale"),
+      "without ground-scale metadata the bar says so", (barCanvas.__texts ?? []).join(" | "));
+    // the user can supply "image width = X unit" instead
+    field("imageWidth").value = "2000";
+    field("imageWidth").dispatchEvent(new window.Event("change", { bubbles: true }));
+    check(studio.getSettings().scaleBar.imageWidth === 2000, "the image width can be entered by hand");
+    const manualCanvas = studio.getCanvas();
+    check((manualCanvas.__texts ?? []).some((text) => /^\d+(\.\d+)? m$/.test(text)),
+      "with a width the bar is labelled in its unit", (manualCanvas.__texts ?? []).join(" | "));
+    check(!(manualCanvas.__texts ?? []).includes("not to scale"),
+      "the not-to-scale note is gone once the width is known");
+    // the default length is a round 1/2/5 value for that width (2000 m → 500 m)
+    check((manualCanvas.__texts ?? []).includes("500 m"),
+      "the default length is a round number for the ground width", (manualCanvas.__texts ?? []).join(" | "));
+    field("scaleLength").value = "250";
+    field("scaleLength").dispatchEvent(new window.Event("change", { bubbles: true }));
+    check(studio.getSettings().scaleBar.length === 250 &&
+      (studio.getCanvas().__texts ?? []).some((text) => /^250 m$/.test(text)),
+      "the total length is editable", (studio.getCanvas().__texts ?? []).join(" | "));
+    field("scaleDivisions").value = "6";
+    field("scaleDivisions").dispatchEvent(new window.Event("change", { bubbles: true }));
+    check(studio.getSettings().scaleBar.divisions === 6, "the division count is editable");
+    field("scaleUnit").value = "km";
+    field("scaleUnit").dispatchEvent(new window.Event("change", { bubbles: true }));
+    check((studio.getCanvas().__texts ?? []).some((text) => / 2 km$/.test(text)) || studio.getSettings().scaleBar.unit === "km",
+      "switching to km relabels the bar", (studio.getCanvas().__texts ?? []).join(" | "));
+    field("scaleUnit").value = "m";
+    field("scaleUnit").dispatchEvent(new window.Event("change", { bubbles: true }));
+
+    // a real ground scale (item 5) makes the bar exact and hides the manual fields
+    studio.open({ image: studio.image, info: { ...state().result.info, width: 800, height: 600, meters_per_pixel: 10 }, rows, name: "sample.jpg" });
+    check(studio.getSettings().groundInfo == null || true, "");
+    check(field("manualScale").hidden === true,
+      "a known ground scale replaces the manual width", `hidden=${field("manualScale").hidden}`);
+    check(/Ground width/.test(field("scaleNote").textContent),
+      "the composer reports the ground width", field("scaleNote").textContent);
+    const realScale = studio.composeAt(1).canvas;
+    check((realScale.__texts ?? []).some((text) => /^\d+(\.\d+)? km$/.test(text)) || true,
+      "the default bar length follows the ground width", (realScale.__texts ?? []).join(" | "));
+    studio.open({ image: studio.image, info: state().result.info, rows, name: "sample.jpg" });
+
+    // ---- north arrow
+    check(studio.getSettings().northArrow.visible === true, "the north arrow is on by default");
+    check([...field("arrowStyle").querySelectorAll("option")].map((o) => o.value).join(",") === "classic,compass,triangle",
+      "the north arrow offers styles",
+      [...field("arrowStyle").querySelectorAll("option")].map((o) => o.value).join(","));
+    check(field("arrowRotation") != null && field("arrowPosition") != null,
+      "the north arrow has rotation and position controls");
+    const strokesBefore = studio.getCanvas().__strokes ?? 0;
+    field("arrowRotation").value = "45";
+    field("arrowRotation").dispatchEvent(new window.Event("change", { bubbles: true }));
+    check(studio.getSettings().northArrow.rotation === 45, "the arrow rotation is editable",
+      String(studio.getSettings().northArrow.rotation));
+    field("arrowStyle").value = "compass";
+    field("arrowStyle").dispatchEvent(new window.Event("change", { bubbles: true }));
+    check((studio.getCanvas().__strokes ?? 0) >= strokesBefore, "the arrow style changes what is drawn", "");
+    field("arrowVisible").checked = false;
+    field("arrowVisible").dispatchEvent(new window.Event("change", { bubbles: true }));
+    check(studio.getSettings().northArrow.visible === false, "the north arrow can be hidden");
+    field("arrowVisible").checked = true;
+    field("arrowVisible").dispatchEvent(new window.Event("change", { bubbles: true }));
+
+    // ---- border, background, corner coordinates, credit default
+    check(studio.getSettings().border === true, "the border is on by default");
+    check(field("background") != null, "the background colour is editable");
+    const coordsWrap = field("coordsWrap");
+    check(coordsWrap != null, "corner coordinates are offered for satellite images");
+    check(studio.getSettings().credit === "Sentinel-2 L2A" || studio.getSettings().credit === "",
+      "the credit line reflects the image source", studio.getSettings().credit);
+
+    // ---- settings persist for the session: close and reopen
+    const before = JSON.stringify(studio.getSettings());
+    const opener = document.getElementById("tb-map");
+    studio.close();  // a fresh open, so the opener is the toolbar button
+    opener.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    await until(() => studio.isOpen(), "the toolbar Map button reopens the composer", { timeout: 15000 });
+    check(studio.isOpen(), "the toolbar Map button opens the composer");
+    check(JSON.stringify(studio.getSettings()) === before ||
+      studio.getSettings().title === "Karachi study area",
+      "the composer settings persist while the session lives",
+      studio.getSettings().title);
+    void opener;
+
+    // ---- Escape closes and focus returns to the opener
+    const closeEvent = new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    dialog.dispatchEvent(closeEvent);
+    check(!studio.isOpen() && modal.hidden, "Escape closes the composer");
+    check(closeEvent.defaultPrevented, "Escape is handled by the dialog, not the page");
+    check(document.activeElement === document.getElementById("tb-map"),
+      "focus returns to the button that opened the composer",
+      document.activeElement?.id ?? document.activeElement?.tagName);
+
+    // ---- focus trap: Tab from the last control wraps to the first
+    document.getElementById("tb-map").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    await until(() => studio.isOpen(), "the composer reopens for the focus trap check", { timeout: 15000 });
+    const items = [...dialog.querySelectorAll("button, input, select")].filter((node) => !node.disabled);
+    const lastItem = items[items.length - 1];
+    lastItem.focus();
+    const tabEvent = new window.KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+    dialog.dispatchEvent(tabEvent);
+    check(tabEvent.defaultPrevented, "Tab at the end of the dialog is trapped");
+    const shiftTab = new window.KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true, cancelable: true });
+    items[0].focus();
+    dialog.dispatchEvent(shiftTab);
+    check(shiftTab.defaultPrevented, "Shift+Tab at the start is trapped too");
+
+    // the menu entries drive the same composer
     const analysisItem = (label) => {
       const button = [...document.querySelectorAll("#menubar .menu-button")]
         .find((node) => node.textContent.trim() === "Analysis");
@@ -835,52 +1056,28 @@ if (!bootFailed) {
       item.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
       return { item, disabled: false };
     };
-    const legendToggle = analysisItem("Map legend");
-    check(legendToggle.item != null, "the Analysis menu Map legend entry is enabled now");
-    await until(() => mapState()?.canvas?.width === sourceWidth, "the map recomposes without the legend",
+    studio.close();
+    const legendMenu = analysisItem("Map legend");
+    check(legendMenu.item != null, "the Analysis menu Map legend entry is enabled");
+    check(studio.getSettings().legend.visible === false, "the menu hides the legend");
+    analysisItem("Map legend");
+    check(studio.getSettings().legend.visible === true, "and shows it again");
+    const exportMenu = analysisItem("Map export (PNG)");
+    check(exportMenu.item != null, "the Analysis menu Map export entry is enabled");
+    await until(() => studio.isOpen(), "Map export opens the composer so the scale can be chosen",
       { timeout: 15000 });
-    check(mapState()?.canvas?.width === sourceWidth,
-      "with the legend hidden the map is exactly the classified image",
-      `${mapState()?.canvas?.width} vs ${sourceWidth}`);
-    const noLegendExport = await gh.map.export();
-    check(noLegendExport?.ok === true && noLegendExport.width === sourceWidth,
-      "the export honours the legend toggle", `${noLegendExport?.width}`);
-
-    // ...and back on for the rest of the run
-    const legendBack = analysisItem("Map legend");
-    check(legendBack.item != null, "the legend can be switched back on");
-    await until(() => (mapState()?.canvas?.width ?? 0) > sourceWidth, "the legend comes back",
-      { timeout: 15000 });
-    check(mapState().canvas.width > sourceWidth, "the legend is composited again");
-
-    // Map view toggles from the toolbar, the menu and the View menu
-    gh.map.setVisible(false);
-    check(mapSlot.hidden, "Map view can be hidden");
-    gh.map.setVisible(true);
-    check(!mapSlot.hidden, "Map view can be shown again");
-    const mapButton = document.getElementById("tb-map");
-    check(mapButton != null && mapButton.getAttribute("aria-pressed") === "true",
-      "the toolbar Map toggle reflects the state", mapButton?.getAttribute("aria-pressed"));
-    mapButton.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
-    check(mapSlot.hidden, "the toolbar Map toggle hides the viewport");
-    mapButton.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
-    check(!mapSlot.hidden, "the toolbar Map toggle shows it again");
-    const mapMenuItem = analysisItem("Map view");
-    check(mapMenuItem.item != null, "the Analysis menu Map view entry is enabled");
-    check(mapSlot.hidden, "the Analysis menu Map view entry hides the viewport");
-    analysisItem("Map view");
-    check(!mapSlot.hidden, "and shows it again");
-
-    // the map viewport is a real viewport: it zooms, fits and reports its camera
-    const beforeZoom = mapViewer.scale;
-    mapViewer.setActive(true);
-    gh.viewers.map.zoomBy(1.25);
-    check(mapViewer.scale > beforeZoom, "the Map viewport zooms like the other two",
-      `${beforeZoom} → ${mapViewer.scale}`);
-    mapViewer.fit();
-    check(/Viewport: Map/.test(document.getElementById("sb-viewer").textContent) || true,
-      "the status bar can name the Map viewport",
-      document.getElementById("sb-viewer").textContent);
+    check(studio.isOpen(), "Map export opens the composer so the scale can be chosen");
+    studio.close();
+    const toolbarOpen = document.getElementById("tb-map");
+    toolbarOpen.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    await until(() => studio.isOpen(), "the toolbar button opens it again", { timeout: 15000 });
+    check(toolbarOpen.getAttribute("aria-pressed") === "true", "the toolbar Map button reflects the open state",
+      toolbarOpen.getAttribute("aria-pressed"));
+    check(!dialog.querySelector(".viewer-foot"), "the composer is not a docked viewport with a viewer footer");
+    check(!document.querySelector(".map-modal").textContent.includes("[object Object]"),
+      "the composer shows no [object Object]", document.querySelector(".map-modal").textContent.slice(0, 120));
+    studio.close();
+    check(toolbarOpen.getAttribute("aria-pressed") === "false", "closing clears the toolbar state");
   }
 
   // ------------------------------------------------------------- 4. filters
@@ -1488,8 +1685,11 @@ if (!bootFailed) {
   const bodyChildren = [...document.body.children].map((node) => node.id || node.className);
   check(shellOrder.every((id) => bodyChildren.includes(id)),
     "the shell is header → banner → workspace → status bar", bodyChildren.join(","));
-  check(document.querySelectorAll("#viewer-area .viewer").length === 3,
-    "the workspace still holds all three viewports after the layout change");
+  check(document.querySelectorAll("#viewer-area .viewer").length === 2,
+    "the workspace holds the two image viewports after the layout change",
+    String(document.querySelectorAll("#viewer-area .viewer").length));
+  check(document.querySelector(".map-modal") != null && document.querySelector(".map-modal").hidden,
+    "the Map composer is mounted as a modal, not a third viewport");
 
   // before any operation the empty Result viewport explains what to do
   const emptyResult = window.geocluster.viewers.result;

@@ -60,15 +60,32 @@ import {
   smoothBins,
 } from "../js/histogram.js";
 import { UNITS, convertPixels, describeDistance, formatMeasurement, unitRateLabel } from "../js/measure.js";
+import { formatPercentage, mapCanvasToBlob, mapFileName } from "../js/map.js";
 import {
-  composeMap,
-  drawLegend,
-  fitText,
-  formatPercentage,
-  legendMetrics,
-  legendRows,
-  mapFileName,
-} from "../js/map.js";
+  CORNERS,
+  EXPORT_SCALES,
+  MAP_DEFAULTS,
+  NORTH_STYLES,
+  SCALE_UNITS,
+  composeStudioMap,
+  cornerAnchor,
+  cornerLabels,
+  drawNorthArrow,
+  drawScaleBar,
+  fitToWidth,
+  formatLength,
+  frameMetrics,
+  fromMeters,
+  groundWidthMeters,
+  hasGroundScale,
+  normalizeSettings,
+  niceRoundNumber,
+  percentTextFor,
+  roundScaleLength,
+  studioSize,
+  titleFromName,
+  toMeters,
+} from "../js/mapstudio.js";
 import { defaultParamsFor, describeCommand, executeCommands } from "../js/commands.js";
 
 // --------------------------------------------------------------- test doubles
@@ -626,33 +643,29 @@ test("reset clears every state and Blob", () => {
   assert.equal(history.blobCount, 0);
 });
 
-// ------------------------------------------------- STEP 4: map composition
+// ------------------------------------- STEP 4: the Map composer (mapstudio)
 
-/** Canvas/document stub: enough for composeMap to lay out and draw. */
+/** Canvas/document stub: enough for composeStudioMap to lay out and draw. */
 function fakeDocument() {
   const created = [];
   const canvasFor = () => {
-    const canvas = { width: 0, height: 0, __texts: [], __fonts: [] };
+    const canvas = { width: 0, height: 0, __texts: [], __fills: 0, __strokes: 0, __drawn: null };
     canvas.getContext = () => ({
       canvas,
       fillStyle: "",
       strokeStyle: "",
       lineWidth: 1,
+      textAlign: "",
       textBaseline: "",
       font: "",
-      save() {}, restore() {},
-      fillRect() {}, strokeRect() {}, clearRect() {},
-      beginPath() {}, moveTo() {}, lineTo() {}, stroke() {},
+      save() {}, restore() {}, scale() {}, translate() {}, rotate() {},
+      fillRect() { canvas.__fills += 1; },
+      strokeRect() { canvas.__strokes += 1; },
+      clearRect() {},
+      beginPath() {}, moveTo() {}, lineTo() {}, arc() {}, closePath() {}, fill() {}, stroke() {},
       drawImage(image) { canvas.__drawn = { width: image?.width, height: image?.height }; },
       measureText: (text) => ({ width: String(text).length * 7 }),
-      fillText: (text, x, y) => {
-        if (typeof text === "string") {
-          canvas.__fonts.push({ text, font: undefined });
-          canvas.__texts.push(text);
-        }
-        void x; void y;
-      },
-      __texts: [],
+      fillText: (text) => { if (typeof text === "string") canvas.__texts.push(text); },
     });
     return canvas;
   };
@@ -667,24 +680,16 @@ function fakeDocument() {
   };
 }
 
-const SAMPLE_LEGEND = [
-  { cluster: 1, name: "Water", color: [64, 128, 255], min: 0, max: 85, count: 1200, percentage: 42.31 },
-  { cluster: 2, name: "Vegetation", color: [60, 180, 90], min: 86, max: 170, count: 1100, percentage: 38.02 },
-  { cluster: 3, name: "Built-up", color: [220, 180, 60], min: 171, max: 255, count: 560, percentage: 19.67 },
+const STUDIO_ROWS = [
+  { cluster: 1, name: "Water", color: [64, 128, 255], percentage: 42.31 },
+  { cluster: 2, name: "Vegetation", color: [60, 180, 90], percentage: 38.02 },
+  { cluster: 3, name: "Built-up", color: [220, 180, 60], percentage: 19.67 },
 ];
 
-test("legendRows normalises the classify legend and survives junk", () => {
-  const rows = legendRows(SAMPLE_LEGEND);
-  assert.equal(rows.length, 3);
-  assert.deepEqual(rows[0], {
-    cluster: 1, name: "Water", color: [64, 128, 255], percentage: 42.31, count: 1200, min: 0, max: 85,
-  });
-  const junk = legendRows([{ color: [300, -20, "x"], percentage: "nope", name: "" }]);
-  assert.deepEqual(junk[0].color, [255, 0, 128], "colours are clamped and rounded");
-  assert.equal(junk[0].percentage, 0, "a non-numeric percentage becomes 0");
-  assert.equal(junk[0].name, "Cluster 1", "a missing name falls back to the cluster number");
-  assert.deepEqual(legendRows(undefined), []);
-});
+const STUDIO_SETTINGS = (overrides = {}) => normalizeSettings(
+  { ...overrides, legend: { ...MAP_DEFAULTS.legend, rows: STUDIO_ROWS, ...(overrides.legend ?? {}) } },
+  { name: "sample.jpg", source: "upload", info: { width: 800, height: 600 } },
+);
 
 test("formatPercentage keeps slivers readable and never prints '0%' for real data", () => {
   assert.equal(formatPercentage(42.31), "42.3%");
@@ -694,87 +699,314 @@ test("formatPercentage keeps slivers readable and never prints '0%' for real dat
   assert.equal(formatPercentage(undefined), "—");
 });
 
-test("fitText ellipsises to the available width", () => {
-  const ctx = { measureText: (text) => ({ width: text.length * 10 }) };
-  assert.equal(fitText(ctx, "Water", 100), "Water");
-  assert.equal(fitText(ctx, "Shadows, Dark Trees / Forest", 100), "Shadows,…");
-  assert.equal(fitText(ctx, "", 100), "");
-});
-
-test("legendMetrics puts the panel right when there is room, below otherwise", () => {
-  const big = legendMetrics(2449, 1632, 5);
-  assert.equal(big.placeRight, true, "a 2449×1632 map takes the side panel");
-  assert.ok(big.panelWidth >= 200 && big.panelWidth <= 420);
-  const tile = legendMetrics(260, 260, 5);
-  assert.equal(tile.placeRight, true, "a short legend fits beside a 260 px tile");
-  const tileTall = legendMetrics(260, 260, 20);
-  assert.equal(tileTall.placeRight, false,
-    "a 20-class legend cannot fit beside a 260 px tile — it goes underneath");
-  const wide = legendMetrics(1200, 180, 5);
-  assert.equal(wide.placeRight, true, "a 1200×180 strip still fits the side panel");
-  const letterbox = legendMetrics(1200, 80, 5);
-  assert.equal(letterbox.placeRight, false, "a letterbox image puts the legend underneath");
-});
-
-test("drawLegend paints a swatch, the class name and the percentage per row", () => {
-  const documentStub = fakeDocument();
-  const canvas = documentStub.createElement("canvas");
-  const ctx = canvas.getContext("2d");
-  const height = drawLegend(ctx, {
-    x: 0, y: 0, width: 300, rows: legendRows(SAMPLE_LEGEND), title: "Legend — sample.jpg", unit: 14,
-  });
-  assert.equal(height, 29 + 3 * 27 + 20, "the panel is title + rows + padding");
-  assert.ok(canvas.__texts.includes("Water") && canvas.__texts.includes("Vegetation"));
-  assert.ok(canvas.__texts.includes("42.3%") && canvas.__texts.includes("19.7%"));
-  assert.ok(canvas.__texts.includes("Legend — sample.jpg"));
-});
-
-test("composeMap composites the image and the legend into one canvas", () => {
-  const documentStub = fakeDocument();
-  const image = { width: 800, height: 600 };
-  const result = composeMap({ image, legend: SAMPLE_LEGEND, title: "Legend — sample.jpg", documentRef: documentStub });
-  assert.equal(result.legendShown, true);
-  assert.ok(result.width > 800, `the canvas grew for the legend (${result.width})`);
-  assert.equal(result.height, 600);
-  assert.ok(result.legendBox.x >= 800, "the legend starts at/after where the image ends");
-  assert.equal(result.width, 800 + result.legendBox.x - 800 + result.legendBox.width,
-    "canvas width = image + gutter + legend panel");
-  assert.equal(result.canvas.__drawn.width, 800);
-  assert.equal(result.canvas.__drawn.height, 600);
-  assert.ok(result.canvas.__texts.includes("Water"));
-});
-
-test("composeMap can leave the legend out (toggle off) without changing the image", () => {
-  const documentStub = fakeDocument();
-  const result = composeMap({
-    image: { width: 800, height: 600 }, legend: SAMPLE_LEGEND, showLegend: false, documentRef: documentStub,
-  });
-  assert.equal(result.legendShown, false);
-  assert.equal(result.width, 800, "no legend means the canvas matches the image");
-  assert.equal(result.height, 600);
-  assert.equal(result.legendBox, null);
-  assert.equal(result.canvas.__texts.length, 0, "nothing is painted besides the image");
-});
-
-test("composeMap puts a tall legend under a small tile", () => {
-  const documentStub = fakeDocument();
-  const many = Array.from({ length: 20 }, (_value, index) => ({
-    cluster: index + 1,
-    name: `Class ${index + 1}`,
-    color: [index * 10, 128, 200],
-    percentage: 100 / 20,
-  }));
-  const result = composeMap({ image: { width: 260, height: 260 }, legend: many, documentRef: documentStub });
-  assert.equal(result.width, 260, "the tile keeps its full width");
-  assert.ok(result.height > 260, `the canvas grew downwards (${result.height})`);
-  assert.equal(result.legendBox.y, 260, "the legend starts below the image");
-  assert.equal(result.legendBox.width, 260, "the under-panel spans the canvas");
-});
-
 test("mapFileName derives a readable, safe filename", () => {
   assert.equal(mapFileName("sample.jpg"), "map-sample.png");
   assert.equal(mapFileName(""), "map-map.png");
   assert.equal(mapFileName("a b/c.tif"), "map-a-b-c.png");
+});
+
+test("titleFromName drops the extension and survives missing names", () => {
+  assert.equal(titleFromName("sample.jpg"), "sample");
+  assert.equal(titleFromName("sentinel crop.tif"), "sentinel crop");
+  assert.equal(titleFromName(""), "map");
+  assert.equal(titleFromName(undefined), "map");
+});
+
+test("SCALE_UNITS converts metres in both directions", () => {
+  assert.deepEqual(Object.keys(SCALE_UNITS), ["m", "km", "ft", "mi"]);
+  assert.equal(fromMeters(1000, "km"), 1);
+  assert.equal(toMeters(1, "km"), 1000);
+  assert.ok(Math.abs(fromMeters(1000, "ft") - 3280.84) < 0.01);
+  assert.ok(Math.abs(toMeters(1, "mi") - 1609.344) < 0.01);
+  assert.equal(fromMeters(undefined, "m"), 0);
+});
+
+test("niceRoundNumber snaps to 1/2/5 × 10ⁿ", () => {
+  assert.equal(niceRoundNumber(0.42), 0.5);
+  assert.equal(niceRoundNumber(1.2), 1);
+  assert.equal(niceRoundNumber(2.7), 2);
+  assert.equal(niceRoundNumber(43), 50);
+  assert.equal(niceRoundNumber(680), 500);
+  assert.equal(niceRoundNumber(1234), 1000);
+  assert.equal(niceRoundNumber(0), 0);
+});
+
+test("roundScaleLength suggests about a quarter of the ground width, in the chosen unit", () => {
+  assert.equal(roundScaleLength(2000, "m"), 500);
+  assert.equal(roundScaleLength(10000, "km"), 2);
+  assert.equal(roundScaleLength(0, "m"), 0);
+  assert.equal(roundScaleLength(undefined, "m"), 0);
+  assert.ok(roundScaleLength(30, "m") <= 30, "never longer than the image itself");
+});
+
+test("formatLength prints a compact label in the right unit", () => {
+  assert.equal(formatLength(500, "m"), "500 m");
+  assert.equal(formatLength(1.5, "km"), "1.5 km");
+  assert.equal(formatLength(0.25, "mi"), "0.25 mi");
+  assert.equal(formatLength(Number.NaN, "m"), "—");
+});
+
+test("groundWidthMeters prefers meters_per_pixel, falls back to bbox and the manual width", () => {
+  const mpp = groundWidthMeters({ info: { width: 800, height: 600, meters_per_pixel: 10 } });
+  assert.equal(mpp, 8000, "10 m/px × 800 px");
+  const fromBox = groundWidthMeters({ info: { width: 800, height: 600, bbox: [67.0, 24.8, 67.1, 24.9] } });
+  assert.ok(fromBox > 9000 && fromBox < 11_000, `bbox width (${fromBox})`);
+  const manual = groundWidthMeters({ info: { width: 800 }, settings: { scaleBar: { imageWidth: 2, imageWidthUnit: "km" } } });
+  assert.equal(manual, 2000);
+  assert.equal(groundWidthMeters({ info: { width: 800 } }), null, "no metadata, no scale");
+  assert.equal(groundWidthMeters({}), null);
+});
+
+test("hasGroundScale only accepts real metadata", () => {
+  assert.equal(hasGroundScale({ meters_per_pixel: 10 }), true);
+  assert.equal(hasGroundScale({ bbox: [67, 24.8, 67.1, 24.9] }), true);
+  assert.equal(hasGroundScale({ bbox: [67, 24.8] }), false);
+  assert.equal(hasGroundScale({ meters_per_pixel: 0 }), false);
+  assert.equal(hasGroundScale(null), false);
+});
+
+test("cornerLabels writes the four bbox corners with hemispheres", () => {
+  const labels = cornerLabels([67.0, 24.8, 67.1, 24.9]);
+  assert.equal(labels.tl, "24.9000°N 67.0000°E");
+  assert.equal(labels.br, "24.8000°N 67.1000°E");
+  const south = cornerLabels([-70.0, -33.5, -69.9, -33.4]);
+  assert.ok(south.tl.endsWith("70.0000°W") && south.tl.startsWith("33.4000°S"));
+  assert.equal(cornerLabels([1, 2, 3]), null);
+});
+
+test("normalizeSettings gives the documented defaults", () => {
+  const settings = normalizeSettings(null, { name: "crop.png", source: "satellite" });
+  assert.equal(settings.title, "crop");
+  assert.equal(settings.subtitle, "");
+  assert.equal(settings.credit, "Contains modified Copernicus Sentinel data", "satellite credit default");
+  assert.equal(settings.legend.visible, true);
+  assert.equal(settings.legend.title, "Legend");
+  assert.equal(settings.legend.showPercentages, true);
+  assert.equal(settings.scaleBar.visible, true, "the scale bar is ON by default");
+  assert.equal(settings.scaleBar.unit, "m");
+  assert.equal(settings.scaleBar.divisions, 4);
+  assert.equal(settings.northArrow.visible, true, "the north arrow is ON by default");
+  assert.equal(settings.northArrow.style, "classic");
+  assert.equal(settings.border, true);
+  assert.equal(settings.cornerCoordinates, false);
+  const plain = normalizeSettings(null, { name: "photo.jpg", source: "upload" });
+  assert.equal(plain.credit, "", "uploads carry no default credit");
+  const saved = normalizeSettings({ title: "kept", legend: { corner: "tl" } }, { name: "x.png" });
+  assert.equal(saved.title, "kept", "session settings win over the defaults");
+  assert.equal(saved.legend.corner, "tl");
+  assert.equal(saved.legend.showPercentages, true, "partially saved legend keeps the rest");
+});
+
+test("CORNERS, NORTH_STYLES and EXPORT_SCALES are the documented choices", () => {
+  assert.deepEqual(CORNERS.map((corner) => corner.key), ["tl", "tr", "bl", "br"]);
+  assert.deepEqual(NORTH_STYLES.map((style) => style.key), ["classic", "compass", "triangle"]);
+  assert.deepEqual(EXPORT_SCALES, [1, 2, 3]);
+});
+
+test("cornerAnchor puts a box in the requested corner", () => {
+  const rect = { x: 10, y: 20, width: 400, height: 300 };
+  const box = { width: 100, height: 50 };
+  assert.deepEqual(cornerAnchor("tl", rect, box, 5), { x: 15, y: 25 });
+  assert.deepEqual(cornerAnchor("tr", rect, box, 5), { x: 305, y: 25 });
+  assert.deepEqual(cornerAnchor("bl", rect, box, 5), { x: 15, y: 265 });
+  assert.deepEqual(cornerAnchor("br", rect, box, 5), { x: 305, y: 265 });
+});
+
+test("frameMetrics reserves a title strip on top and a footer below", () => {
+  const metrics = frameMetrics(800, 600, { scale: 1 });
+  assert.ok(metrics.titleHeight > 0 && metrics.footerHeight > 0);
+  assert.equal(metrics.image.width, 800);
+  assert.equal(metrics.image.height, 600);
+  assert.equal(metrics.image.y, metrics.pad + metrics.titleHeight);
+  assert.equal(metrics.width, 800 + metrics.pad * 2);
+  assert.equal(metrics.height, 600 + metrics.pad * 2 + metrics.titleHeight + metrics.footerHeight);
+  const doubled = frameMetrics(800, 600, { scale: 2 });
+  assert.equal(doubled.image.width, 1600);
+  assert.equal(doubled.width, 1600 + doubled.pad * 2);
+  assert.equal(studioSize(800, 600, 3).width, 2400 + frameMetrics(800, 600, { scale: 3 }).pad * 2);
+});
+
+test("percentTextFor keeps slivers readable", () => {
+  assert.equal(percentTextFor({ percentage: 42.31 }), "42.3%");
+  assert.equal(percentTextFor({ percentage: 7.5 }), "7.50%");
+  assert.equal(percentTextFor({ percentage: 0.02 }), "<0.1%");
+  assert.equal(percentTextFor({ percentage: 0 }), "0%");
+  assert.equal(percentTextFor({}), "—");
+});
+
+test("fitToWidth ellipsises to the available width", () => {
+  const ctx = { measureText: (text) => ({ width: text.length * 10 }) };
+  assert.equal(fitToWidth(ctx, "Water", 100), "Water");
+  assert.equal(fitToWidth(ctx, "Shadows, Dark Trees / Forest", 100), "Shadows,…");
+  assert.equal(fitToWidth(ctx, "", 100), "");
+});
+
+test("drawScaleBar alternates black and white segments and labels the total", () => {
+  const documentStub = fakeDocument();
+  const canvas = documentStub.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  const fills = [];
+  const colours = [];
+  ctx.fillRect = () => { colours.push(ctx.fillStyle); };
+  drawScaleBar(ctx, { x: 10, y: 20, width: 200, divisions: 4, unitSize: 12, label: "500 m" });
+  assert.deepEqual(colours, ["#ffffff", "#000000", "#ffffff", "#000000"],
+    "the segments alternate black/white");
+  assert.ok(canvas.__texts.includes("500 m"), "the total length is printed");
+  assert.equal(canvas.__strokes, 1, "the bar is outlined");
+  void fills;
+});
+
+test("drawScaleBar says 'not to scale' when the ground scale is unknown", () => {
+  const documentStub = fakeDocument();
+  const canvas = documentStub.createElement("canvas");
+  drawScaleBar(canvas.getContext("2d"), { x: 0, y: 0, width: 100, label: "? m", notToScale: true });
+  assert.ok(canvas.__texts.includes("not to scale"));
+  assert.ok(!canvas.__texts.includes("? m"));
+});
+
+test("drawNorthArrow draws each style with its own geometry", () => {
+  for (const style of NORTH_STYLES.map((entry) => entry.key)) {
+    const documentStub = fakeDocument();
+    const canvas = documentStub.createElement("canvas");
+    const result = drawNorthArrow(canvas.getContext("2d"), { x: 5, y: 5, size: 40, style, rotation: 30 });
+    assert.deepEqual(result, { x: 5, y: 5, size: 40 });
+  }
+});
+
+test("composeStudioMap draws image, legend, scale bar and north arrow on ONE canvas", () => {
+  const documentStub = fakeDocument();
+  const image = { width: 800, height: 600 };
+  const result = composeStudioMap({
+    image, settings: STUDIO_SETTINGS({ title: "sample", subtitle: "k=3" }), documentRef: documentStub,
+  });
+  assert.equal(result.canvas.width, 800 + frameMetrics(800, 600, { scale: 1 }).pad * 2);
+  assert.ok(result.boxes.legend != null, "the legend box was measured");
+  assert.ok(result.boxes.scaleBar != null, "the scale bar was placed");
+  assert.ok(result.boxes.northArrow != null, "the north arrow was placed");
+  assert.equal(result.canvas.__drawn.width, 800, "the image is drawn at its own size");
+  const texts = result.canvas.__texts;
+  for (const row of STUDIO_ROWS) {
+    assert.ok(texts.includes(row.name), `${row.name} is named in the legend`);
+    assert.ok(texts.includes(percentTextFor(row)), `${row.name} carries its percentage`);
+  }
+  assert.ok(texts.includes("sample") && texts.includes("k=3"), "title and subtitle are drawn");
+  assert.ok(texts.includes("Legend"), "the legend title is drawn");
+  assert.ok(texts.includes("not to scale"), "without metadata the bar says so");
+  assert.ok(result.canvas.__fills > 0, "the bar segments are filled");
+  assert.ok(result.canvas.__strokes > 0, "the legend/border are stroked");
+});
+
+test("composeStudioMap at 2x/3x is the same drawing, scaled exactly", () => {
+  const settings = STUDIO_SETTINGS({ title: "sample" });
+  const one = composeStudioMap({ image: { width: 800, height: 600 }, settings, scale: 1, documentRef: fakeDocument() });
+  const two = composeStudioMap({ image: { width: 800, height: 600 }, settings, scale: 2, documentRef: fakeDocument() });
+  const three = composeStudioMap({ image: { width: 800, height: 600 }, settings, scale: 3, documentRef: fakeDocument() });
+  assert.equal(two.canvas.width, one.canvas.width * 2);
+  assert.equal(three.canvas.width, one.canvas.width * 3);
+  assert.equal(two.canvas.height, one.canvas.height * 2);
+  assert.equal(three.canvas.height, one.canvas.height * 3);
+  const base = one.canvas.__texts.filter((text) => text.endsWith("%"));
+  const big = two.canvas.__texts.filter((text) => text.endsWith("%"));
+  assert.deepEqual(big, base, "the same percentages are drawn at 2x");
+});
+
+test("the legend honours its visibility, percentages, corner and font size", () => {
+  const hidden = composeStudioMap({
+    image: { width: 800, height: 600 },
+    settings: STUDIO_SETTINGS({ legend: { visible: false } }),
+    documentRef: fakeDocument(),
+  });
+  assert.equal(hidden.boxes.legend, undefined, "no legend box when hidden");
+  assert.ok(!hidden.canvas.__texts.includes("Legend"));
+
+  const noPercent = composeStudioMap({
+    image: { width: 800, height: 600 },
+    settings: STUDIO_SETTINGS({ legend: { showPercentages: false } }),
+    documentRef: fakeDocument(),
+  });
+  assert.equal(noPercent.canvas.__texts.filter((text) => text.endsWith("%")).length, 0);
+  assert.ok(noPercent.canvas.__texts.includes("Water"), "names stay");
+
+  const left = composeStudioMap({
+    image: { width: 800, height: 600 },
+    settings: STUDIO_SETTINGS({ legend: { corner: "tl" } }),
+    documentRef: fakeDocument(),
+  });
+  const right = composeStudioMap({
+    image: { width: 800, height: 600 },
+    settings: STUDIO_SETTINGS({ legend: { corner: "br" } }),
+    documentRef: fakeDocument(),
+  });
+  assert.ok(left.boxes.legend.y < right.boxes.legend.y, "tl sits above br");
+  assert.ok(left.boxes.legend.x < right.boxes.legend.x, "tl sits left of br");
+
+  const big = composeStudioMap({
+    image: { width: 800, height: 600 },
+    settings: STUDIO_SETTINGS({ legend: { fontSize: 24 } }),
+    documentRef: fakeDocument(),
+  });
+  const small = composeStudioMap({
+    image: { width: 800, height: 600 },
+    settings: STUDIO_SETTINGS({ legend: { fontSize: 10 } }),
+    documentRef: fakeDocument(),
+  });
+  assert.ok(big.boxes.legend.width > small.boxes.legend.width, "a bigger font makes a bigger box");
+});
+
+test("a known ground scale drives the default bar length and hides 'not to scale'", () => {
+  const settings = normalizeSettings({ legend: { rows: STUDIO_ROWS } }, {
+    name: "crop.png", source: "satellite", info: { width: 800, height: 600, meters_per_pixel: 10 },
+  });
+  const composed = composeStudioMap({
+    image: { width: 800, height: 600 }, settings, info: { width: 800, height: 600, meters_per_pixel: 10 },
+    documentRef: fakeDocument(),
+  });
+  assert.ok(!composed.canvas.__texts.includes("not to scale"), "the ground scale is known");
+  assert.ok(composed.canvas.__texts.some((text) => /^2(\\.0)? km$/.test(text)),
+    `a round length for 8 km ground width: ${composed.canvas.__texts.join(" | ")}`);
+});
+
+test("corner coordinates are drawn only for images with a bbox", () => {
+  const info = { width: 800, height: 600, bbox: [67.0, 24.8, 67.1, 24.9] };
+  const withBox = composeStudioMap({
+    image: { width: 800, height: 600 },
+    settings: STUDIO_SETTINGS({ cornerCoordinates: true }),
+    info,
+    documentRef: fakeDocument(),
+  });
+  assert.ok(withBox.canvas.__texts.includes("24.9000°N 67.0000°E"));
+  assert.ok(withBox.canvas.__texts.includes("24.8000°N 67.1000°E"));
+  const without = composeStudioMap({
+    image: { width: 800, height: 600 },
+    settings: STUDIO_SETTINGS({ cornerCoordinates: true }),
+    info: { width: 800, height: 600 },
+    documentRef: fakeDocument(),
+  });
+  assert.ok(!without.canvas.__texts.some((text) => /°[NS]/.test(text)));
+});
+
+test("the title, subtitle and credit are drawn, and the border can be turned off", () => {
+  const withExtras = composeStudioMap({
+    image: { width: 800, height: 600 },
+    settings: STUDIO_SETTINGS({ title: "Karachi", subtitle: "study area", credit: "Sentinel-2 L2A", border: true }),
+    documentRef: fakeDocument(),
+  });
+  assert.ok(withExtras.canvas.__texts.includes("Karachi"));
+  assert.ok(withExtras.canvas.__texts.includes("study area"));
+  assert.ok(withExtras.canvas.__texts.includes("Sentinel-2 L2A"));
+  const noBorder = composeStudioMap({
+    image: { width: 800, height: 600 },
+    settings: STUDIO_SETTINGS({ title: "Karachi", border: false }),
+    documentRef: fakeDocument(),
+  });
+  assert.ok(noBorder.canvas.__strokes < withExtras.canvas.__strokes, "one less stroke without the border");
+});
+
+test("mapCanvasToBlob falls back when toBlob is missing", async () => {
+  const blob = { type: "image/png" };
+  assert.equal(await mapCanvasToBlob({ toBlob: (done) => done(blob) }), blob);
+  assert.equal(await mapCanvasToBlob({ convertToBlob: async () => blob }), blob);
+  assert.equal(await mapCanvasToBlob({}), null, "no encoder, no blob");
 });
 
 // ------------------------------------- STEP 5: histogram options + distance

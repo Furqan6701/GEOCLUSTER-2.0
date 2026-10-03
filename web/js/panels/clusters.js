@@ -169,6 +169,32 @@ export function createClustersPanel(ctx) {
     bus.emit("clusters:changed", { rows: legendEntries() });
   }
 
+  /**
+   * The Map composer's legend editor changed a name or colour: write it back
+   * into the table so the two editors cannot drift apart. Silence is fine —
+   * the composer already rendered the change.
+   */
+  function setLegendRows(rows) {
+    if (!Array.isArray(rows) || !editorRows.length) return false;
+    let changed = false;
+    for (const incoming of rows) {
+      const row = editorRows.find((candidate) => candidate.cluster === incoming.cluster);
+      if (!row) continue;
+      const name = String(incoming.name ?? "");
+      const hex = rgbToHex(incoming.color);
+      if (name && row.nameInput.value !== name) {
+        row.nameInput.value = name;
+        changed = true;
+      }
+      if (hex && row.colorInput.value !== hex) {
+        row.colorInput.value = hex;
+        changed = true;
+      }
+    }
+    if (changed) bus.emit("clusters:changed", { rows: legendEntries() });
+    return changed;
+  }
+
   /** Put every min/max back to the values the algorithm returned. */
   function resetRanges() {
     if (!state.kmeans) return;
@@ -287,6 +313,7 @@ export function createClustersPanel(ctx) {
       resetRanges,
       showView,
       legendEntries,
+      setLegendRows,
       views: () => RESULT_VIEWS.map((view) => view.key),
       activeView: () => activeView,
     },

@@ -45,11 +45,12 @@ rather than a dashboard:
   silently. Toolbar buttons, File menu and `Ctrl+Z`/`Ctrl+Y` all drive it.
 * **Zoom** — lives in exactly one place, the per-viewport footers (the toolbar
   duplicate was removed); the View menu keeps the same commands.
-* **Map view** — after Classify, a third viewport shows the classified image
-  with its legend **composited on one canvas** (swatch + class name + %), so
-  Analysis → *Map export* writes a single PNG that already includes the legend.
-  The legend can be toggled; with three panes the map takes a full-width row
-  under the two image viewports on laptops.
+* **Map composer** — a large modal (toolbar **Map**, Analysis → *Map composer…*
+  or a Classify run) that draws the classified image, its legend, a scale bar,
+  a north arrow, the title/subtitle, the credit line and optional corner
+  coordinates **on one canvas** — the preview *is* that canvas and the PNG
+  export re-renders it at 1x/2x/3x. Legend names/colours are shared with the
+  Clusters table.
 * **Manual checks** — `docs/frontend-manual-checklist.md` lists what to confirm
   by hand in Chrome at 1366 px and 1920 px (rendering, downloads, gestures).
 * **Shortcuts** — `Ctrl+O` open, `Ctrl+S` export PNG, `Ctrl+Z`/`Ctrl+Y`

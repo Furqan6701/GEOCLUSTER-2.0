@@ -64,7 +64,7 @@
         </div>
 
         <div class="tb-group tb-right" role="group" aria-label="Panels">
-          <button class="tb-btn icon-btn toggle" id="tb-map" type="button" aria-pressed="false" title="Show the classified map (image + legend) — run Classify first">
+          <button class="tb-btn icon-btn toggle" id="tb-map" type="button" aria-pressed="false" title="Open the Map composer — the image, legend, scale bar and north arrow on one canvas">
             <span class="tb-label">Map</span>
           </button>
           <button class="tb-btn icon-btn" id="tb-toggle-toolbox" type="button" title="Show or hide the toolbox">
@@ -92,7 +92,7 @@
       <section class="image-workspace" id="viewer-area" aria-label="Image workspace">
         <div class="viewer-slot" id="viewer-original"></div>
         <div class="viewer-slot" id="viewer-result"></div>
-        <div class="viewer-slot" id="viewer-map" hidden></div>
+        <!-- the Map composer is a modal appended to <body> by js/mapstudio_ui.js -->
       </section>
 
       <aside class="dock dock-right" id="assistant-dock" aria-label="Assistant">

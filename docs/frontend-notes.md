@@ -57,27 +57,35 @@ viewport slots so "Clear result" is undoable too.
   nothing. Old Blobs are released after 24 images to bound memory.
 * Starting a new session clears the history (server ids are gone).
 
-### Map view (implemented)
+### Map composer (implemented)
 
-The classify step returns a recoloured image plus a legend
-(`cluster, name, colour, min, max, count, percentage, label`), so the Map
-viewport is a real product of the pipeline, not a placeholder:
-
-* `js/map.js` draws the classified image **and** its legend onto one canvas:
-  swatch + class name + percentage per row, panel beside the image when it
-  fits, underneath when it does not (260×260 satellite tiles with 20 classes,
-  letterbox images). Long names are ellipsised, colours are normalised.
-* That canvas is what the Map viewport shows, so **Map export** writes a single
-  PNG that already contains the legend — the same canvas, `toBlob("image/png")`,
-  named `map-<source>.png`.
-* Analysis → *Map view* / *Map legend* / *Map export*, the toolbar **Map**
-  toggle and View → *Show map viewport* all drive it. The legend toggle
-  recomposes the canvas with or without the panel, and the export follows it.
-* Classify opens the Map view automatically; with three panes the workspace
-  puts the map on a full-width row under the two image panes below 1500 px, and
-  undoing past the classification hides it again.
-* No new requests: the classified image comes from the session Blob cache and
-  everything else is canvas work in the browser.
+* **One canvas, one renderer.** `js/mapstudio.js` draws everything — image,
+  legend, scale bar, north arrow, title/subtitle, credit and corner
+  coordinates — into a single canvas. The modal shows that canvas and the PNG
+  export re-renders it at 1x/2x/3x, so the file can never disagree with the
+  preview. `js/map.js` keeps only `mapCanvasToBlob`, `mapFileName` and
+  `formatPercentage`; the old second composer is gone.
+* **The modal** (`js/mapstudio_ui.js`, markup appended to `<body>`): live
+  preview centre, properties sidebar right, `role="dialog"` + `aria-modal` +
+  `aria-labelledby/-describedby`, Escape closes, Tab is trapped, focus returns
+  to the opener, and the backdrop closes on click. The toolbar **Map** button,
+  **Analysis → Map composer…**, **View → Map composer…** and a Classify run
+  all open it; **Analysis → Map legend** toggles the legend without opening it.
+* **Defaults:** title = the image name without its extension, subtitle blank,
+  credit “Contains modified Copernicus Sentinel data” for satellite images
+  (blank for uploads), legend on with percentages and the "Legend" title,
+  scale bar on with 4 alternating black/white divisions, north arrow on
+  (classic style, 0°, top right), background `#0d1115`, border on, corner
+  coordinates off. Settings persist for the session inside `MapStudio`.
+* **Scale:** the length defaults to a 1/2/5 round number for about a quarter
+  of the ground width, in m/km/ft/mi (auto-picking km above a kilometre when
+  the user has not chosen). With `meters_per_pixel`/`bbox` (item 5) the bar is
+  exact; without them it is labelled **not to scale** until the user types
+  “image width = X unit”. Satellite crops are north-up, so the arrow defaults
+  to 0°.
+* **Legend sync:** the composer's class names/colours and the Clusters table
+  are two views of the same rows — edits in either one are pushed to the other
+  over the bus (`map:legend-rows` / `clusters:changed`).
 
 ### Histogram options and distance units (STEP 5)
 
