@@ -57,6 +57,13 @@ viewport slots so "Clear result" is undoable too.
   nothing. Old Blobs are released after 24 images to bound memory.
 * Starting a new session clears the history (server ids are gone).
 
+### No internal ids in user-facing text
+
+Toasts and status messages name the image, the operation and its size — never
+the server's `image_id`: "Result — sample.jpg#negative (1600×1066)", not
+"new image EkEkL0bUvBYg". A boot assertion collects every `/images/<id>` id the
+session used and fails if any of them appears in a toast.
+
 ### The action gate (bug fix)
 
 * Root cause of the "not-allowed" point-operation buttons: the Filters panel
@@ -254,11 +261,12 @@ message. Raw JSON is never displayed.
   message pointing at the commands that work without the model.
 * The Clusters panel is one editor table (Color / Land cover / Min / Max /
   % of pixels) with **Classify** and **Reset ranges**; the Last run table, the
-  centroid line, the separate legend block and every hint line are gone. The
-  two K-Means result buttons are a single two-option toggle
-  ("Clustered image" / "Label map"), and a run shows the clustered image
-  immediately. Max iterations is not user-facing: the panel always sends
-  `max_iter=100` and K is limited to 2..10.
+  centroid line, the separate legend block and every hint line are gone.
+  K-Means always displays the clustered image — there is no image/label toggle
+  — and the raw label map (which the API already stores as `kmeans:labels`) is
+  downloaded from the Files panel's "Download raw label map (PNG)…". Max
+  iterations is not user-facing: the panel always sends `max_iter=100` and K is
+  limited to 2..10.
 * Operations triggered from the chat carry no numbers, so documented defaults
   are used and announced in the chat log: `kmeans {k: 5, max_iter: 100}`,
   `meanfilter {window: 3}`, `threshold {value: 128}`, `brightness {value: 20}`.

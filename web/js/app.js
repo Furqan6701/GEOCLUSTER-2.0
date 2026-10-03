@@ -80,7 +80,7 @@ async function showImage(role, info) {
 
 bus.on("image:loaded", ({ role, info }) => {
   showImage(role, info);
-  bus.emit("status", { message: `${role === "original" ? "Working image" : "Result"} — ${info.name ?? info.image_id} (${info.width}×${info.height})` });
+  bus.emit("status", { message: `${role === "original" ? "Working image" : "Result"} — ${info.name ?? "image"} (${info.width}×${info.height})` });
 });
 
 // STEP 3: a slider drag previews the filter client-side; nothing is committed
@@ -387,7 +387,7 @@ async function revive(imageId) {
       slot.info = info;
     }
   }
-  bus.emit("status", { message: `Restored image ${imageId} into the session (it had been evicted)` });
+  bus.emit("status", { message: `Restored ${info.name ?? "the image"} into the session (the server had dropped it)` });
   updateHistoryControls();
   return info;
 }

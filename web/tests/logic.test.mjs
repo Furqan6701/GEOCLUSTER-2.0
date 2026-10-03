@@ -5,7 +5,8 @@
  *       node --test tests/         (from web/)
  */
 
-import { readFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
+import { readFile as readFileAsync } from "node:fs/promises";
 import test from "node:test";
 import assert from "node:assert/strict";
 
@@ -45,7 +46,6 @@ import {
   KMEANS_MAX_ITER,
   KMEANS_MAX_K,
   KMEANS_MIN_K,
-  RESULT_VIEWS,
   sharePercentage,
 } from "../js/panels/clusters.js";
 import {
@@ -1357,7 +1357,7 @@ test("the four point operations share one grouped help entry list", () => {
 
 test("ui.helpList builds bold names from DOM nodes and never markup", async () => {
   const { helpList } = await import("../js/ui.js");
-  const source = await readFile(new URL("../js/ui.js", import.meta.url), "utf8");
+  const source = await readFileAsync(new URL("../js/ui.js", import.meta.url), "utf8");
   assert.match(source, /export function helpList\(entries\)/, "helpList is exported");
   // the only mention is the guard that rejects markup, never an assignment
   assert.equal(/innerHTML\s*=/.test(source), false, "ui.js never assigns innerHTML");
@@ -1403,10 +1403,13 @@ test("sharePercentage turns cluster counts into percentages", () => {
   assert.equal(sharePercentage(10, undefined), 0);
 });
 
-test("the K-Means result view is exactly two options", () => {
-  assert.deepEqual(RESULT_VIEWS.map((view) => view.key), ["display", "labels"]);
-  assert.deepEqual(RESULT_VIEWS.map((view) => view.short), ["Clustered image", "Label map"]);
-  assert.deepEqual(RESULT_VIEWS.map((view) => view.label), ["Show clustered image", "Show label map"]);
+test("K-Means has no result-view toggle: the clustered image is the result", () => {
+  const source = readFileSync(new URL("../js/panels/clusters.js", import.meta.url), "utf8");
+  assert.ok(!/RESULT_VIEWS|\.segmented/.test(source),
+    "the Clustered image / Label map toggle is gone from the panel");
+  assert.match(source, /showClusteredImage/);
+  assert.match(source, /display_image_id/, "K-Means displays the clustered image");
+  assert.match(source, /downloadLabelMap/, "the raw label map stays downloadable");
 });
 
 // ------------------- the action gate: one rule for every operation button ----

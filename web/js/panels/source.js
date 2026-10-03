@@ -104,7 +104,7 @@ export function createSourcePanel(ctx) {
   async function useAsOriginal(info) {
     try {
       await session.useAsOriginal(info);
-      toast(`Working image → ${info.name ?? info.image_id}`, "ok");
+      toast(`Working image → ${info.name ?? "the fetched image"}`, "ok");
     } catch (error) {
       reportError(error, "Could not load that image");
     }

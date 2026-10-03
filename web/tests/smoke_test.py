@@ -278,7 +278,7 @@ def check_workstation_layout() -> None:
     ui_js = _js_text("js/mapstudio_ui.js")
     for token in ['role="dialog"', 'aria-modal', "Escape", "FOCUSABLE", "MapStudio"]:
         check(token in ui_js, f"mapstudio_ui.js implements {token}")
-    check("map-modal-dialog" in css and ".segmented" in css and ".cluster-actions" in css,
+    check("map-modal-dialog" in css and ".cluster-actions" in css,
           "the composer and the cluster editor are styled")
 
     # the action gate: one rule for every operation button (bug fix)
@@ -423,12 +423,18 @@ def check_workstation_layout() -> None:
           str(clusters_js.count('toolGroup("')))
     for gone in ["Last run", "Centroids", 'toolGroup("Legend"', "renderSummary", "renderLegend", "legendHost"]:
         check(gone not in clusters_js, f"the removed Clusters block is gone: {gone}")
-    for kept in ["% of pixels", "Land cover", "cluster-actions", "Reset ranges",
-                 "Show clustered image", "Show label map"]:
+    for kept in ["% of pixels", "Land cover", "cluster-actions", "Reset ranges"]:
         check(kept in clusters_js, f"the Clusters panel keeps {kept}")
-    check("RESULT_VIEWS" in clusters_js and "aria-pressed" in clusters_js,
-          "the two result buttons are one aria-pressed two-option toggle")
-    for token in [".segmented", ".cluster-actions", ".cluster-bound", ".cluster-name", ".cluster-share"]:
+    check("RESULT_VIEWS" not in clusters_js and ".segmented" not in clusters_js,
+          "the Clustered image / Label map toggle is gone (the clustered image is the result)")
+    check("showClusteredImage" in clusters_js and "display_image_id" in clusters_js,
+          "K-Means always shows the clustered image")
+    check("downloadLabelMap" in clusters_js and "labels_image_id" in clusters_js,
+          "the raw label map is still downloadable (the API stores it)")
+    files_source = _js_text("js/panels/files.js")
+    check("Download raw label map" in files_source and "labelmap:request" in files_source,
+          "the label-map download lives in the Files panel")
+    for token in [".cluster-actions", ".cluster-bound", ".cluster-name", ".cluster-share"]:
         check(token in css, f"the Clusters styling exists: {token}")
 
     # STEP 5: histogram options are browser-side, distance has real units

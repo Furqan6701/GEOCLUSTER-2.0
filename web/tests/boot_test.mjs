@@ -696,32 +696,25 @@ if (!bootFailed) {
       "the Clusters section has no hint lines",
       [...clusterSection.querySelectorAll(".note, .hint-line")].map((n) => n.textContent).join(" | "));
 
-    // the two former buttons are one two-option toggle
-    const toggle = clusterSection.querySelector(".segmented");
-    const options = [...(toggle?.querySelectorAll("button") ?? [])];
-    check(options.length === 2, "the result view is a two-option toggle", String(options.length));
-    check(options.map((node) => node.textContent.trim()).join("|") === "Clustered image|Label map",
-      "the toggle options are the clustered image and the label map",
-      options.map((node) => node.textContent.trim()).join("|"));
-    check(options.filter((node) => node.getAttribute("aria-pressed") === "true").length === 1,
-      "exactly one option is active",
-      options.map((node) => node.getAttribute("aria-pressed")).join(","));
-    check(toggle.getAttribute("role") === "group" && toggle.getAttribute("aria-label") != null,
-      "the toggle is a labelled group for screen readers");
-
-    // switching the toggle displays the matching derived image
-    const before = state()?.result?.id;
-    options[1].dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
-    const labelShown = await until(() => state()?.result?.id === kmeans.labels_image_id,
-      "the Label map option shows the label image", { timeout: 15000 });
-    check(Boolean(labelShown), "Label map option → label image", String(state()?.result?.id));
-    check(options[1].getAttribute("aria-pressed") === "true" && options[0].getAttribute("aria-pressed") === "false",
-      "the toggle follows the selection");
-    options[0].dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
-    await until(() => state()?.result?.id === kmeans.display_image_id,
-      "the Clustered image option shows the display image", { timeout: 15000 });
-    check(state()?.result?.id === kmeans.display_image_id, "Clustered image option → display image",
-      `${before} → ${state()?.result?.id}`);
+    // K-Means shows the clustered image; there is no toggle any more
+    check(clusterSection.querySelector(".segmented") == null,
+      "the Clustered image / Label map toggle is gone");
+    check(state()?.result?.id === kmeans.display_image_id,
+      "K-Means displayed the clustered image on its own", String(state()?.result?.id));
+    check(!/Show clustered image|Show label map/.test(text),
+      "no result-view buttons are left in the panel");
+    const labelAction = window.geocluster.panels.get("clusters").actions.downloadLabelMap;
+    check(typeof labelAction === "function",
+      "the raw label map is still reachable (Files panel download)");
+    {
+      const before = createdUrls.length;
+      const labelDownload = await labelAction();
+      check(labelDownload?.ok === true, "the label map downloads as a PNG");
+      check(createdUrls.length > before, "the label map download reached the browser",
+        String(createdUrls.length - before));
+      check(toasts.some((entry) => /Label map downloaded/.test(entry)),
+        "the label-map download is confirmed", toasts.slice(-2).join(" | "));
+    }
 
     // Classify / Reset ranges must not clip
     const actions = [...clusterSection.querySelectorAll(".cluster-actions .btn")];
@@ -2285,6 +2278,27 @@ if (!bootFailed) {
 
   // ------------------------------------------------------------- 9. wrapping
   check(uncaught.length === 0, "no uncaught errors during the whole run", uncaught.join(" | "));
+  // ------------- no user-facing message leaks an internal server image id
+  {
+    // every id the session has ever seen — from the app state, the history and
+    // the K-Means response — must not appear in a toast
+    const knownIds = new Set();
+    for (const entry of requests) {
+      const match = /\/images\/([^/?]+)/.exec(String(entry.url ?? ""));
+      if (match && match[1].length > 4) knownIds.add(match[1]);
+    }
+    for (const key of ["labels_image_id", "display_image_id"]) {
+      if (state()?.kmeans?.[key]) knownIds.add(String(state().kmeans[key]));
+    }
+    const leaking = toasts.filter((text) => [...knownIds].some((id) => id.length > 4 && text.includes(id)));
+    check(leaking.length === 0, "no toast repeats an internal image id",
+      leaking.join(" | "));
+    check(knownIds.size >= 3, "the check had real ids to look for", String(knownIds.size));
+    check(!toasts.some((text) => /image_id|imageId|\bid:/.test(text)),
+      "toasts never print an id field name",
+      toasts.filter((text) => /image_id|imageId|\bid:/.test(text)).join(" | "));
+  }
+
   check(consoleErrors.length === 0, "browser console stays clean (no console.error)",
     consoleErrors.slice(0, 3).join(" | "));
   check(typeof window.geocluster?.selectTab === "function", "debug handle exposed");

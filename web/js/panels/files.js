@@ -27,6 +27,13 @@ export function createFilesPanel(ctx) {
   const decompressButton = button("Decompress a .gch file…", () => fileInput.click(), { size: "small" });
   const exportButton = button("Export current image (PNG)…", exportPng, { size: "small" });
   ctx.gate.register(exportButton, { requiresImage: true, label: "Export" });
+  // The K-Means label map is a real server-side image (kmeans:labels); this
+  // asks the Clusters panel for it rather than re-implementing the download.
+  const labelMapButton = button("Download raw label map (PNG)…", () => bus.emit("labelmap:request"), {
+    size: "small",
+    title: "Run K-Means first — the label map is one of its outputs",
+  });
+  ctx.gate.register(labelMapButton, { requiresImage: true, label: "Label map" });
   const status = el("p", { class: "note", text: "GCH2 files are compatible with the desktop app." });
 
   function baseName() {
@@ -133,7 +140,11 @@ export function createFilesPanel(ctx) {
         status,
         el("p", { class: "note", text: "Compression is lossless and stateless; the file can be opened in the desktop app." }),
       ]),
-      toolGroup("Export", [exportButton]),
+      toolGroup("Export", [
+        exportButton,
+        el("div", { style: { height: "5px" } }),
+        labelMapButton,
+      ]),
     ],
   });
 

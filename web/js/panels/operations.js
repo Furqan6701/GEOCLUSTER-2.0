@@ -500,7 +500,7 @@ export function createOperationsPanel(ctx) {
    *  labelled toast and a persistent status-bar entry. */
   function applyFeedback(label, info) {
     toast(`${label} applied → ${info.width}×${info.height}`, "ok");
-    bus.emit("status", { message: `${label} applied — new image ${info.image_id}` });
+    bus.emit("status", { message: `${label} applied — ${info.width}×${info.height}` });
     bus.emit("operation:applied", { label, info });
   }
 

@@ -16,7 +16,7 @@ import { humanizeError } from "../errors.js";
 import { SessionExpiredError } from "../session.js";
 import { activeImage } from "../state.js";
 import { formatPercentage } from "../map.js";
-import { button, createSection, el, numberInput, setChildren, toast, toolGroup } from "../ui.js";
+import { button, createSection, downloadBlob, el, numberInput, setChildren, toast, toolGroup } from "../ui.js";
 
 /**
  * K-Means always runs with this many Lloyd iterations. The field was removed
@@ -28,12 +28,6 @@ export const KMEANS_MAX_ITER = 100;
 /** Cluster count the panel accepts (api/schemas.py allows 2..20). */
 export const KMEANS_MIN_K = 2;
 export const KMEANS_MAX_K = 10;
-
-/** The two K-Means derived images, shown through one two-option toggle. */
-export const RESULT_VIEWS = Object.freeze([
-  { key: "display", label: "Show clustered image", short: "Clustered image" },
-  { key: "labels", label: "Show label map", short: "Label map" },
-]);
 
 /** Percentage of the classified pixels that a count represents. */
 export function sharePercentage(count, total) {
@@ -54,8 +48,6 @@ export function createClustersPanel(ctx) {
   const editorHost = el("div", {}, el("p", { class: "empty-note", text: "Run K-Means to fill the table." }));
 
   let editorRows = [];
-  /** Which derived image the toggle currently shows: "display" | "labels". */
-  let activeView = "display";
 
   // --------------------------------------------------------------- K-Means
   async function runKMeans() {
@@ -75,7 +67,9 @@ export function createClustersPanel(ctx) {
       );
       state.kmeans = { ...result, sourceImageId: active.id, sourceInfo: active.info };
       renderEditor(result);
-      showView(activeView, { announce: false });
+      // K-Means always shows the clustered (recoloured) image; the raw label
+      // map stays available as a download in the Files panel.
+      showClusteredImage();
       toast(`K-Means finished in ${result.iterations} iteration(s)${result.converged ? " (converged)" : ""}.`, "ok");
       bus.emit("status", { message: `K-Means k=${result.k} · ${result.iterations} iterations${result.converged ? " · converged" : ""}` });
     } catch (error) {
@@ -85,40 +79,39 @@ export function createClustersPanel(ctx) {
     }
   }
 
-  // ------------------------------------------------------- result view toggle
-  const viewButtons = RESULT_VIEWS.map((view) => {
-    const node = button(view.short, () => showView(view.key), { size: "small", title: view.label });
-    node.classList.add("seg-btn");
-    node.setAttribute("aria-pressed", "false");
-    return { ...view, node };
-  });
-  const viewToggle = el("div", {
-    class: "segmented",
-    role: "group",
-    "aria-label": "K-Means result view (clustered image or label map)",
-    hidden: true,
-  }, viewButtons.map((entry) => entry.node));
-
-  function setToggleState(view) {
-    activeView = view;
-    for (const entry of viewButtons) {
-      const on = entry.key === view;
-      entry.node.setAttribute("aria-pressed", on ? "true" : "false");
-      entry.node.classList.toggle("active", on);
-    }
-  }
-
-  /** Display one of the two K-Means images and reflect it in the toggle. */
-  function showView(view, { announce = true } = {}) {
+  // -------------------------------------------------------- result display
+  /**
+   * Display the K-Means clustered image. There is no image/label toggle any
+   * more: the recoloured image is the result, and the raw label map can be
+   * downloaded from the Files panel (`downloadLabelMap`).
+   */
+  function showClusteredImage() {
     const result = state.kmeans;
-    const imageId = view === "labels" ? result?.labels_image_id : result?.display_image_id;
-    setToggleState(view);
+    const imageId = result?.display_image_id;
     if (!imageId) return null;
     const base = result.sourceInfo ?? activeImage(state)?.info ?? {};
-    const label = view === "labels" ? "K-Means label map" : "K-Means clustered image";
-    session.useAsResultId(imageId, { ...base, source: label });
-    if (announce) toast(`Showing the ${view === "labels" ? "label map" : "clustered image"} (${imageId}).`, "ok");
+    session.useAsResultId(imageId, { ...base, source: "K-Means clustered image" });
     return imageId;
+  }
+
+  /**
+   * Raw label map (one grey value per cluster) as a PNG download. The API
+   * already stores it as the K-Means `labels_image_id`, so this asks the
+   * session for that image and saves it — no second request is invented.
+   */
+  async function downloadLabelMap() {
+    const labelId = state.kmeans?.labels_image_id;
+    if (!labelId) return toast("Run K-Means first — the label map comes from its response.", "warn");
+    try {
+      const blob = await session.imageBlob(labelId);
+      const sourceName = String(state.kmeans.sourceInfo?.name ?? "image").replace(/\.[^.]+$/, "");
+      downloadBlob(blob, `labels-${sourceName}.png`);
+      toast("Label map downloaded — one grey value per cluster.", "ok");
+      return { ok: true, blob };
+    } catch (error) {
+      report(error, "Could not download the label map");
+      return { ok: false, error };
+    }
   }
 
   // -------------------------------------------------------- editor table
@@ -166,7 +159,6 @@ export function createClustersPanel(ctx) {
         button("Reset ranges", resetRanges, { size: "small", variant: "ghost" }),
       ]),
     ]);
-    viewToggle.hidden = false;
     bus.emit("clusters:changed", { rows: legendEntries() });
   }
 
@@ -275,13 +267,15 @@ export function createClustersPanel(ctx) {
     toast(`${prefix}: ${humanizeError(error, { apiBase: ctx.api.base })}`, "bad", { timeout: 12000 });
   }
 
+  // the Files panel's "Download raw label map" button asks for it here, where
+  // the K-Means response (and therefore the label image id) lives
+  bus.on("labelmap:request", () => downloadLabelMap());
+
   bus.on("image:loaded", ({ role }) => {
     if (role === "original") {
       state.kmeans = null;
       editorRows = [];
       setChildren(editorHost, el("p", { class: "empty-note", text: "Run K-Means to fill the table." }));
-      viewToggle.hidden = true;
-      setToggleState("display");
       bus.emit("clusters:changed", { rows: [] });
     }
   });
@@ -298,7 +292,6 @@ export function createClustersPanel(ctx) {
           kInput,
         ]),
         runButton,
-        viewToggle,
         runStatus,
       ]),
       toolGroup("Classification editor", [editorHost]),
@@ -313,11 +306,10 @@ export function createClustersPanel(ctx) {
       runKMeans,
       classify,
       resetRanges,
-      showView,
       legendEntries,
       setLegendRows,
-      views: () => RESULT_VIEWS.map((view) => view.key),
-      activeView: () => activeView,
+      showClusteredImage,
+      downloadLabelMap,
     },
   };
 }
