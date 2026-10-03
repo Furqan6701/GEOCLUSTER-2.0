@@ -68,21 +68,28 @@ import { UNITS, convertPixels, describeDistance, formatMeasurement, unitRateLabe
 import { formatPercentage, mapCanvasToBlob, mapFileName } from "../js/map.js";
 import {
   CORNERS,
+  DEFAULT_MAP_FONT,
   EXPORT_SCALES,
   MAP_DEFAULTS,
+  MAP_FONTS,
   NORTH_STYLES,
   SCALE_UNITS,
+  TEXT_SIZE_RANGE,
+  TITLE_ALIGNS,
   composeStudioMap,
   cornerAnchor,
   cornerLabels,
   drawNorthArrow,
   drawScaleBar,
+  drawStudioMap,
   fitToWidth,
+  fontSpec,
   formatLength,
   frameMetrics,
   fromMeters,
   groundWidthMeters,
   hasGroundScale,
+  mapFont,
   normalizeSettings,
   niceRoundNumber,
   percentTextFor,
@@ -914,7 +921,7 @@ test("drawNorthArrow draws each style with its own geometry", () => {
   for (const style of NORTH_STYLES.map((entry) => entry.key)) {
     const documentStub = fakeDocument();
     const canvas = documentStub.createElement("canvas");
-    const result = drawNorthArrow(canvas.getContext("2d"), { x: 5, y: 5, size: 40, style, rotation: 30 });
+    const result = drawNorthArrow(canvas.getContext("2d"), { x: 5, y: 5, size: 40, style });
     assert.deepEqual(result, { x: 5, y: 5, size: 40 });
   }
 });
@@ -1515,4 +1522,107 @@ test("defaultNameFor picks the preset at K=5 and Class n everywhere else", () =>
   assert.equal(defaultNameFor(undefined, 0, undefined), "Class 1", "a missing K is safe");
   assert.equal(defaultNameFor(5, 4, undefined), "Class 5",
     "K=5 with no preset for that cluster still gets a name");
+});
+
+// ------------- item 4: one font, a size per text, title options -------------
+
+test("the Font dropdown lists exactly the six required families", () => {
+  assert.deepEqual([...MAP_FONTS],
+    ["Arial", "Times New Roman", "Georgia", "Verdana", "Courier New", "Trebuchet MS"]);
+  assert.equal(DEFAULT_MAP_FONT, "Arial");
+  assert.deepEqual(TITLE_ALIGNS.map((entry) => entry.key), ["left", "center", "right"]);
+  assert.equal(MAP_DEFAULTS.titleAlign, "center", "centred at the top by default");
+  assert.ok(MAP_DEFAULTS.titleSize > MAP_DEFAULTS.subtitleSize, "the title defaults larger");
+  assert.equal(MAP_DEFAULTS.titleBold, true);
+});
+
+test("fontSpec produces valid CSS font syntax with the chosen family first", () => {
+  assert.equal(fontSpec(22, { font: "Georgia" }), '22px "Georgia", system-ui, sans-serif');
+  assert.equal(fontSpec(26.4, { font: "Times New Roman", weight: "700" }),
+    '700 26px "Times New Roman", system-ui, sans-serif');
+  assert.equal(fontSpec(14, { font: "No Such Font" }), '14px "Arial", system-ui, sans-serif',
+    "an unknown family falls back to the default");
+  assert.match(fontSpec(12, { font: "Courier New" }), /"Courier New", system-ui, sans-serif$/);
+});
+
+test("mapFont only accepts the six offered families", () => {
+  for (const family of MAP_FONTS) assert.equal(mapFont(family), family);
+  assert.equal(mapFont("Comic Sans MS"), DEFAULT_MAP_FONT);
+  assert.equal(mapFont(undefined), DEFAULT_MAP_FONT);
+});
+
+test("normalizeSettings clamps sizes and repairs an unknown font or alignment", () => {
+  const merged = normalizeSettings({
+    font: "Comic Sans MS", titleSize: 900, subtitleSize: 1, creditSize: "x",
+    titleAlign: "middle", titleBold: false,
+    legend: { fontSize: 999 }, scaleBar: { fontSize: -3 }, northArrow: { size: 5000 },
+  }, { name: "sample.jpg", source: "upload" });
+  assert.equal(merged.font, "Arial", "an unknown family is repaired");
+  assert.equal(merged.titleSize, TEXT_SIZE_RANGE.max);
+  assert.equal(merged.subtitleSize, TEXT_SIZE_RANGE.min);
+  assert.equal(merged.creditSize, MAP_DEFAULTS.creditSize, "a non-number falls back");
+  assert.equal(merged.titleAlign, "center", "an unknown alignment is repaired");
+  assert.equal(merged.titleBold, false, "a deliberate false stays false");
+  assert.equal(merged.legend.fontSize, TEXT_SIZE_RANGE.max);
+  assert.equal(merged.scaleBar.fontSize, TEXT_SIZE_RANGE.min);
+  assert.equal(merged.northArrow.size, 160);
+});
+
+test("the frame grows with the title, subtitle and credit sizes", () => {
+  const base = frameMetrics(800, 600, { scale: 1, hasSubtitle: true });
+  const bigTitle = frameMetrics(800, 600, { scale: 1, hasSubtitle: true, titleSize: 60 });
+  const bigCredit = frameMetrics(800, 600, { scale: 1, creditSize: 30 });
+  const smallCredit = frameMetrics(800, 600, { scale: 1, creditSize: 8 });
+  assert.ok(bigTitle.titleHeight > base.titleHeight, "a bigger title needs a taller strip");
+  assert.ok(bigTitle.height > base.height);
+  assert.ok(bigCredit.footerHeight > smallCredit.footerHeight,
+    "a bigger credit line needs a taller footer");
+  const doubled = frameMetrics(800, 600, { scale: 2, hasSubtitle: true, titleSize: 60 });
+  assert.equal(doubled.titleHeight, bigTitle.titleHeight * 2, "2x stays exactly 2x");
+  assert.equal(studioSize(800, 600, 1, { titleSize: 60, subtitle: "sub" }).height, bigTitle.height,
+    "studioSize follows the same settings metrics");
+  assert.ok(studioSize(800, 600, 1, { titleSize: 60 }).height > base.height,
+    "and a bigger title alone already grows the composed canvas");
+});
+
+test("the title is drawn with the chosen font, weight and alignment", () => {
+  const documentStub = fakeDocument();
+  const canvas = documentStub.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  const drawn = [];
+  ctx.fillText = (text, x, y) => drawn.push({ text, x, y, font: ctx.font, align: ctx.textAlign });
+  const settings = normalizeSettings({
+    title: "Karachi study area", titleSize: 40, titleBold: true, titleAlign: "center", font: "Verdana",
+  }, { name: "sample.jpg" });
+  const size = frameMetrics(800, 600, { scale: 1, titleSize: settings.titleSize });
+  drawStudioMap(ctx, { image: null, settings, imageWidth: 800, imageHeight: 600, scale: 1 });
+  const title = drawn.find((entry) => entry.text === "Karachi study area");
+  assert.ok(title, "the title was drawn");
+  assert.equal(title.font, '700 40px "Verdana", system-ui, sans-serif');
+  assert.equal(title.align, "center");
+  assert.equal(title.x, size.width / 2, "centred horizontally");
+  assert.ok(title.y < size.image.y, "and above the image, i.e. at the top");
+
+  drawn.length = 0;
+  settings.titleAlign = "left";
+  drawStudioMap(ctx, { image: null, settings, imageWidth: 800, imageHeight: 600, scale: 1 });
+  assert.equal(drawn.find((entry) => entry.text === "Karachi study area").x, size.pad);
+});
+
+test("every text on the composed canvas uses the one selected font", () => {
+  const documentStub = fakeDocument();
+  const canvas = documentStub.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  const fonts = [];
+  ctx.fillText = () => fonts.push(ctx.font);
+  const settings = normalizeSettings({
+    title: "T", subtitle: "S", credit: "C", font: "Trebuchet MS", cornerCoordinates: false,
+    legend: { rows: [{ name: "Water", color: [0, 0, 255], percentage: 25 }] },
+  }, { name: "sample.jpg" });
+  drawStudioMap(ctx, { image: null, settings, imageWidth: 800, imageHeight: 600, scale: 1 });
+  assert.ok(fonts.length >= 4, `several texts were drawn: ${fonts.join(" | ")}`);
+  for (const font of fonts) {
+    assert.match(font, /^("?[\w ]+\d+px )?"Trebuchet MS", system-ui, sans-serif$/,
+      `every drawn font starts with the chosen family: ${font}`);
+  }
 });

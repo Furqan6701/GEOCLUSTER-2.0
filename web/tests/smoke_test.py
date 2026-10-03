@@ -269,15 +269,26 @@ def check_workstation_layout() -> None:
     studio_js = _js_text("js/mapstudio.js")
     for token in ["drawStudioMap", "composeStudioMap", "drawScaleBar", "drawNorthArrow",
                   "drawLegendBox", "groundWidthMeters", "cornerLabels", "roundScaleLength",
-                  "SCALE_UNITS", "NORTH_STYLES", "EXPORT_SCALES"]:
+                  "SCALE_UNITS", "NORTH_STYLES", "EXPORT_SCALES",
+                  "MAP_FONTS", "fontSpec", "TITLE_ALIGNS", "TEXT_SIZE_RANGE"]:
         check(token in studio_js, f"mapstudio.js provides {token}")
     check('createElement("canvas")' in studio_js,
           "the whole map (image + legend + bar + arrow) is composited on one canvas")
-    check("drawImage" in studio_js and "not to scale" in studio_js,
-          "the image is drawn in and unknown scales are labelled honestly")
+    # the ONLY family literal left is fontSpec's own fallback list
+    check(len(re.findall(r"system-ui", studio_js)) == 1,
+          "no text is drawn with a hard-coded font family any more",
+          str(len(re.findall(r"system-ui", studio_js))))
+    check(studio_js.count("fontSpec(") >= 6,
+          "title, subtitle, corner labels, legend, scale bar and credit all use fontSpec")
     ui_js = _js_text("js/mapstudio_ui.js")
     for token in ['role="dialog"', 'aria-modal', "Escape", "FOCUSABLE", "MapStudio"]:
         check(token in ui_js, f"mapstudio_ui.js implements {token}")
+    check("MAP_FONTS" in ui_js and "titleBold" in ui_js and "titleAlign" in ui_js and "arrowSize" in ui_js,
+          "the composer offers the Font dropdown, the bold toggle, the alignment and the arrow size")
+    check("arrowRotation" not in ui_js and "arrowSize" in ui_js,
+          "the north arrow has a Size control and NO rotation control")
+    check("drawImage" in studio_js and "not to scale" in studio_js,
+          "the image is drawn in and unknown scales are labelled honestly")
     # ---- item 3: the composer is opaque and clears the page toolbar
     # every var() the stylesheet uses has to be defined: `var(--panel)` was a
     # typo for --bg-panel, which made the dialog and its sidebar transparent

@@ -33,9 +33,32 @@ export const EXPORT_SCALES = Object.freeze([1, 2, 3]);
 /** The credit line satellite imagery must carry by default. */
 export const SATELLITE_CREDIT = "Contains modified Copernicus Sentinel data";
 
+/** The one font family every piece of canvas text is drawn with. */
+export const MAP_FONTS = Object.freeze([
+  "Arial", "Times New Roman", "Georgia", "Verdana", "Courier New", "Trebuchet MS",
+]);
+
+export const DEFAULT_MAP_FONT = MAP_FONTS[0];
+
+/** Where the title block sits across the top of the map. */
+export const TITLE_ALIGNS = Object.freeze([
+  { key: "left", label: "Left" },
+  { key: "center", label: "Center" },
+  { key: "right", label: "Right" },
+]);
+
+/** Size limits shared by the controls and the clamp in normalizeSettings. */
+export const TEXT_SIZE_RANGE = Object.freeze({ min: 8, max: 96 });
+
 export const MAP_DEFAULTS = Object.freeze({
   title: "",
   subtitle: "",
+  font: DEFAULT_MAP_FONT,   // applies to EVERY text drawn on the canvas
+  titleSize: 26,            // larger than the subtitle by default
+  titleBold: true,
+  titleAlign: "center",     // centred at the top by default
+  subtitleSize: 14,
+  creditSize: 12,
   legend: Object.freeze({
     visible: true,
     title: "Legend",
@@ -48,15 +71,33 @@ export const MAP_DEFAULTS = Object.freeze({
     unit: "m",
     length: null,          // null = the round default for the ground width
     divisions: 4,
+    fontSize: 12,
     imageWidth: null,      // "image width = X unit" when the API has no scale
     imageWidthUnit: "m",
   }),
-  northArrow: Object.freeze({ visible: true, style: "classic", rotation: 0, position: "tr" }),
+  northArrow: Object.freeze({ visible: true, style: "classic", position: "tr", size: 36 }),
   credit: "",
   cornerCoordinates: false,
   border: true,
   background: "#0d1115",
 });
+
+/** A family name from the Font dropdown, or the default for anything else. */
+export function mapFont(font) {
+  return MAP_FONTS.includes(font) ? font : DEFAULT_MAP_FONT;
+}
+
+/**
+ * One CSS font shorthand for every text on the map — same family everywhere,
+ * only the size/weight differ.
+ */
+export function fontSpec(size, { font = DEFAULT_MAP_FONT, weight = "", style = "" } = {}) {
+  const px = Math.max(1, Math.round(Number(size) || 0));
+  // the family list MUST be comma separated or the whole shorthand is invalid
+  // and canvas silently keeps the previous font
+  const prefix = [style, weight, `${px}px`].filter(Boolean).join(" ");
+  return `${prefix} "${mapFont(font)}", system-ui, sans-serif`;
+}
 
 /** "sample.jpg" → "sample" (the default map title). */
 export function titleFromName(name) {
@@ -180,6 +221,22 @@ export function normalizeSettings(saved, { name, source, info } = {}) {
   }
   merged.northArrow = { ...base.northArrow, ...(saved?.northArrow ?? {}) };
   if (!Array.isArray(merged.legend.rows)) merged.legend.rows = [];
+  // one font for the whole canvas, and sizes inside the control limits
+  merged.font = mapFont(merged.font);
+  merged.titleAlign = TITLE_ALIGNS.some((entry) => entry.key === merged.titleAlign)
+    ? merged.titleAlign : base.titleAlign;
+  merged.titleBold = merged.titleBold !== false;
+  const clamp = (value, fallback) => {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return fallback;
+    return Math.max(TEXT_SIZE_RANGE.min, Math.min(TEXT_SIZE_RANGE.max, Math.round(number)));
+  };
+  merged.titleSize = clamp(merged.titleSize, base.titleSize);
+  merged.subtitleSize = clamp(merged.subtitleSize, base.subtitleSize);
+  merged.creditSize = clamp(merged.creditSize, base.creditSize);
+  merged.legend.fontSize = clamp(merged.legend.fontSize, base.legend.fontSize);
+  merged.scaleBar.fontSize = clamp(merged.scaleBar.fontSize, base.scaleBar.fontSize);
+  merged.northArrow.size = Math.max(12, Math.min(160, Math.round(Number(merged.northArrow.size) || base.northArrow.size)));
   return merged;
 }
 
@@ -196,20 +253,28 @@ export function cornerAnchor(corner, rect, box, margin) {
 }
 
 /** Layout of the frame around the image: title strip on top, credit below. */
-export function frameMetrics(imageWidth, imageHeight, { scale = 1, hasSubtitle = false } = {}) {
+export function frameMetrics(imageWidth, imageHeight, {
+  scale = 1, hasSubtitle = false,
+  titleSize: titleSizeIn = MAP_DEFAULTS.titleSize,
+  subtitleSize: subtitleSizeIn = MAP_DEFAULTS.subtitleSize,
+  creditSize: creditSizeIn = MAP_DEFAULTS.creditSize,
+  scaleBarSize = MAP_DEFAULTS.scaleBar.fontSize,
+} = {}) {
   // the base numbers are integers and every one of them is multiplied by the
-  // scale, so 2x and 3x are exactly 2x and 3x of the 1x canvas (no drift)
+  // scale, so 2x and 3x are exactly 2x and 3x of the 1x canvas (no drift).
+  // The three text sizes come from the composer's own controls.
   const basePad = Math.max(10, Math.round(imageWidth * 0.02));
-  const baseTitle = 22;
-  const baseSubtitle = 14;
-  const baseCredit = 12;
+  const baseTitle = Math.round(Number(titleSizeIn) || MAP_DEFAULTS.titleSize);
+  const baseSubtitle = Math.round(Number(subtitleSizeIn) || MAP_DEFAULTS.subtitleSize);
+  const baseCredit = Math.round(Number(creditSizeIn) || MAP_DEFAULTS.creditSize);
+  const baseScale = Math.round(Number(scaleBarSize) || MAP_DEFAULTS.scaleBar.fontSize);
   const pad = basePad * scale;
   const titleSize = baseTitle * scale;
   const subtitleSize = baseSubtitle * scale;
   const creditSize = baseCredit * scale;
   // heights are computed at 1x and then multiplied, so 2x/3x are exact
   const baseTitleHeight = Math.round(basePad * 0.6 + baseTitle + (hasSubtitle ? baseSubtitle * 1.5 : 0));
-  const baseFooterHeight = Math.round(basePad * 0.8 + baseCredit * 2.6);
+  const baseFooterHeight = Math.round(basePad * 0.8 + Math.max(baseCredit * 2.6, baseScale * 2.4));
   const titleHeight = baseTitleHeight * scale;
   const footerHeight = baseFooterHeight * scale;
   const width = Math.round(imageWidth * scale);
@@ -252,14 +317,14 @@ export function fitToWidth(ctx, text, maxWidth) {
  * when the image has no known ground scale.
  */
 export function drawScaleBar(ctx, {
-  x, y, width, divisions = 4, label = "", unitSize = 12, notToScale = false,
+  x, y, width, divisions = 4, label = "", unitSize = 12, notToScale = false, font = DEFAULT_MAP_FONT,
 }) {
   const height = Math.max(6, Math.round(unitSize * 0.7));
   const count = Math.max(1, Math.round(divisions));
   const segment = width / count;
   ctx.save();
   ctx.textBaseline = "alphabetic";
-  ctx.font = `${unitSize}px system-ui, sans-serif`;
+  ctx.font = fontSpec(unitSize, { font });
   ctx.textAlign = "center";
   const labelText = notToScale ? "not to scale" : label;
   ctx.fillStyle = "#e8f1f5";
@@ -275,12 +340,11 @@ export function drawScaleBar(ctx, {
   return { x, y, width, height };
 }
 
-/** North arrow: three styles, rotated about its own centre. */
-export function drawNorthArrow(ctx, { x, y, size = 36, style = "classic", rotation = 0 }) {
+/** North arrow: three styles, north-up (no rotation control any more). */
+export function drawNorthArrow(ctx, { x, y, size = 36, style = "classic" }) {
   const radius = size / 2;
   ctx.save();
   ctx.translate(x + radius, y + radius);
-  ctx.rotate((Number(rotation) || 0) * (Math.PI / 180));
 
   if (style === "compass") {
     ctx.strokeStyle = "rgba(232, 241, 245, 0.9)";
@@ -327,7 +391,8 @@ export function drawNorthArrow(ctx, { x, y, size = 36, style = "classic", rotati
 
 /** One legend box: title, swatch + name + optional percentage per class. */
 export function drawLegendBox(ctx, {
-  x, y, rows = [], title = "Legend", unitSize = 14, showPercentages = true, background = "rgba(10, 15, 19, 0.92)",
+  x, y, rows = [], title = "Legend", unitSize = 14, showPercentages = true,
+  background = "rgba(10, 15, 19, 0.92)", font = DEFAULT_MAP_FONT,
 }) {
   const pad = Math.max(6, Math.round(unitSize * 0.7));
   const rowHeight = Math.round(unitSize * 1.9);
@@ -352,7 +417,7 @@ export function drawLegendBox(ctx, {
 
   ctx.textBaseline = "middle";
   ctx.fillStyle = "#e8f1f5";
-  ctx.font = `${Math.round(unitSize * 1.05)}px system-ui, sans-serif`;
+  ctx.font = fontSpec(Math.round(unitSize * 1.05), { font, weight: "600" });
   ctx.textAlign = "left";
   ctx.fillText(fitToWidth(ctx, title, width - pad * 2), x + pad, y + pad + titleHeight / 2);
   ctx.strokeStyle = "rgba(255, 255, 255, 0.16)";
@@ -361,7 +426,7 @@ export function drawLegendBox(ctx, {
   ctx.lineTo(x + width - pad, y + pad + titleHeight);
   ctx.stroke();
 
-  ctx.font = `${unitSize}px system-ui, sans-serif`;
+  ctx.font = fontSpec(unitSize, { font });
   rows.forEach((row, index) => {
     const rowTop = y + pad + titleHeight + index * rowHeight;
     const middle = rowTop + rowHeight / 2;
@@ -396,7 +461,12 @@ export function percentTextFor(row) {
 }
 
 /** Legend layout preview (used by the modal to keep the rows in sync). */
-export function legendBoxSize(ctx, rows, { unitSize = 14, showPercentages = true, title = "Legend" } = {}) {
+export function legendBoxSize(ctx, rows, {
+  unitSize = 14, showPercentages = true, title = "Legend", font = DEFAULT_MAP_FONT,
+} = {}) {
+  // measure with the very font the box is drawn with, or the box will clip
+  const previousFont = ctx.font;
+  ctx.font = fontSpec(unitSize, { font });
   const pad = Math.max(6, Math.round(unitSize * 0.7));
   const rowHeight = Math.round(unitSize * 1.9);
   const swatch = Math.round(unitSize * 1.35);
@@ -405,6 +475,7 @@ export function legendBoxSize(ctx, rows, { unitSize = 14, showPercentages = true
     ? Math.max(...rows.map((row) => ctx.measureText(percentTextFor(row)).width), unitSize * 3)
     : 0;
   const nameWidth = Math.max(unitSize * 6, ...rows.map((row) => ctx.measureText(String(row.name ?? "")).width));
+  if (previousFont !== undefined) ctx.font = previousFont;
   return {
     width: Math.round(pad * 2 + swatch + unitSize * 0.6 + nameWidth + (showPercentages ? unitSize * 0.8 + percentWidth : 0)),
     height: titleHeight + rows.length * rowHeight + pad * 2,
@@ -418,7 +489,15 @@ export function legendBoxSize(ctx, rows, { unitSize = 14, showPercentages = true
 export function drawStudioMap(ctx, { image, settings, imageWidth, imageHeight, scale = 1, info = null } = {}) {
   const width = Math.round(imageWidth * scale);
   const height = Math.round(imageHeight * scale);
-  const metrics = frameMetrics(imageWidth, imageHeight, { scale, hasSubtitle: Boolean(settings.subtitle) });
+  const metrics = frameMetrics(imageWidth, imageHeight, {
+    scale,
+    hasSubtitle: Boolean(settings.subtitle),
+    titleSize: settings.titleSize,
+    subtitleSize: settings.subtitleSize,
+    creditSize: settings.creditSize,
+    scaleBarSize: settings.scaleBar?.fontSize,
+  });
+  const font = mapFont(settings.font);
   const legendRows = (settings.legend?.rows ?? []).filter(Boolean);
   const metres = groundWidthMeters({ info, settings });
   const metresPerPixel = metres && width > 0 ? metres / width : null;
@@ -430,16 +509,24 @@ export function drawStudioMap(ctx, { image, settings, imageWidth, imageHeight, s
   ctx.fillRect(0, 0, metrics.width, metrics.height);
   ctx.restore();
 
-  // title + subtitle
-  drawText(ctx, settings.title, metrics.pad, metrics.pad + metrics.titleSize * 0.95, {
-    font: `600 ${metrics.titleSize}px system-ui, sans-serif`,
+  // title + subtitle — one alignment for the block, centred at the top by default
+  const align = TITLE_ALIGNS.some((entry) => entry.key === settings.titleAlign)
+    ? settings.titleAlign
+    : MAP_DEFAULTS.titleAlign;
+  const titleX = align === "left" ? metrics.pad
+    : align === "right" ? metrics.width - metrics.pad
+      : metrics.width / 2;
+  drawText(ctx, settings.title, titleX, metrics.pad + metrics.titleSize * 0.95, {
+    font: fontSpec(metrics.titleSize, { font, weight: settings.titleBold === false ? "" : "700" }),
     color: "#f2f7f9",
+    align,
     maxWidth: metrics.width - metrics.pad * 2,
   });
   if (settings.subtitle) {
-    drawText(ctx, settings.subtitle, metrics.pad, metrics.pad + metrics.titleSize + metrics.subtitleSize * 1.5, {
-      font: `${metrics.subtitleSize}px system-ui, sans-serif`,
+    drawText(ctx, settings.subtitle, titleX, metrics.pad + metrics.titleSize + metrics.subtitleSize * 1.5, {
+      font: fontSpec(metrics.subtitleSize, { font }),
       color: "#9fb3bd",
+      align,
       maxWidth: metrics.width - metrics.pad * 2,
     });
   }
@@ -468,7 +555,7 @@ export function drawStudioMap(ctx, { image, settings, imageWidth, imageHeight, s
       ];
       for (const [key, x, y, align, baseline] of spots) {
         drawText(ctx, labels[key], x, y, {
-          font: `${size}px system-ui, sans-serif`,
+          font: fontSpec(size, { font }),
           color: "#e8f1f5",
           align,
           baseline,
@@ -480,34 +567,37 @@ export function drawStudioMap(ctx, { image, settings, imageWidth, imageHeight, s
 
   // legend overlay at its corner
   if (settings.legend?.visible && legendRows.length) {
+    const legendUnit = Math.round((settings.legend.fontSize ?? MAP_DEFAULTS.legend.fontSize) * scale);
     const size = legendBoxSize(ctx, legendRows, {
-      unitSize: Math.round((settings.legend.fontSize ?? 14) * scale),
+      unitSize: legendUnit,
       showPercentages: settings.legend.showPercentages !== false,
       title: settings.legend.title,
+      font,
     });
     const margin = Math.round(12 * scale);
     const anchor = cornerAnchor(settings.legend.corner ?? "br", metrics.image, size, margin);
     boxes.legend = drawLegendBox(ctx, {
       x: anchor.x, y: anchor.y, rows: legendRows, title: settings.legend.title ?? "Legend",
-      unitSize: Math.round((settings.legend.fontSize ?? 14) * scale),
+      unitSize: legendUnit,
       showPercentages: settings.legend.showPercentages !== false,
+      font,
     });
   }
 
   // north arrow at its corner
   if (settings.northArrow?.visible) {
-    const size = Math.round(34 * scale);
+    const size = Math.round((settings.northArrow.size ?? MAP_DEFAULTS.northArrow.size) * scale);
     const margin = Math.round(12 * scale);
     const anchor = cornerAnchor(settings.northArrow.position ?? "tr", metrics.image, { width: size, height: size }, margin);
     boxes.northArrow = drawNorthArrow(ctx, {
-      x: anchor.x, y: anchor.y, size, style: settings.northArrow.style, rotation: settings.northArrow.rotation,
+      x: anchor.x, y: anchor.y, size, style: settings.northArrow.style,
     });
   }
 
   // scale bar + credit live in the footer strip
   const footerTop = metrics.image.y + height;
   if (settings.scaleBar?.visible) {
-    const unitSize = Math.max(10, Math.round(11 * scale));
+    const unitSize = Math.max(8, Math.round((settings.scaleBar.fontSize ?? MAP_DEFAULTS.scaleBar.fontSize) * scale));
     const barHeight = Math.max(6, Math.round(unitSize * 0.7));
     const requested = settings.scaleBar.length == null
       ? roundScaleLength(metres, settings.scaleBar.unit)
@@ -523,12 +613,13 @@ export function drawStudioMap(ctx, { image, settings, imageWidth, imageHeight, s
       unitSize,
       label: formatLength(requested, settings.scaleBar.unit),
       notToScale: !metresPerPixel,
+      font,
     });
     void barHeight;
   }
   if (settings.credit) {
     drawText(ctx, settings.credit, metrics.pad, metrics.height - Math.round(metrics.pad * 0.6), {
-      font: `${metrics.creditSize}px system-ui, sans-serif`,
+      font: fontSpec(metrics.creditSize, { font }),
       color: "#8ea3ad",
       maxWidth: metrics.width - metrics.pad * 2,
     });
@@ -536,9 +627,16 @@ export function drawStudioMap(ctx, { image, settings, imageWidth, imageHeight, s
   return boxes;
 }
 
-/** Composition size for a given scale factor. */
-export function studioSize(imageWidth, imageHeight, scale = 1) {
-  const metrics = frameMetrics(imageWidth, imageHeight, { scale, hasSubtitle: false });
+/** Composition size for a given scale factor (sizes follow the settings). */
+export function studioSize(imageWidth, imageHeight, scale = 1, settings = MAP_DEFAULTS) {
+  const metrics = frameMetrics(imageWidth, imageHeight, {
+    scale,
+    hasSubtitle: Boolean(settings?.subtitle),
+    titleSize: settings?.titleSize,
+    subtitleSize: settings?.subtitleSize,
+    creditSize: settings?.creditSize,
+    scaleBarSize: settings?.scaleBar?.fontSize,
+  });
   return { width: metrics.width, height: metrics.height };
 }
 
@@ -549,7 +647,14 @@ export function studioSize(imageWidth, imageHeight, scale = 1) {
 export function composeStudioMap({ image, settings, scale = 1, info = null, documentRef = globalThis.document } = {}) {
   const imageWidth = Math.max(1, Math.round(image?.width ?? 0));
   const imageHeight = Math.max(1, Math.round(image?.height ?? 0));
-  const metrics = frameMetrics(imageWidth, imageHeight, { scale, hasSubtitle: Boolean(settings?.subtitle) });
+  const metrics = frameMetrics(imageWidth, imageHeight, {
+    scale,
+    hasSubtitle: Boolean(settings?.subtitle),
+    titleSize: settings?.titleSize,
+    subtitleSize: settings?.subtitleSize,
+    creditSize: settings?.creditSize,
+    scaleBarSize: settings?.scaleBar?.fontSize,
+  });
   const canvas = documentRef.createElement("canvas");
   canvas.width = metrics.width;
   canvas.height = metrics.height;

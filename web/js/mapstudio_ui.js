@@ -13,7 +13,8 @@
 import { downloadBlob, el, icon, setChildren, toggleButton } from "./ui.js";
 import { mapCanvasToBlob } from "./map.js";
 import {
-  CORNERS, EXPORT_SCALES, MAP_DEFAULTS, NORTH_STYLES, SCALE_UNITS, composeStudioMap,
+  CORNERS, EXPORT_SCALES, MAP_DEFAULTS, MAP_FONTS, NORTH_STYLES, SCALE_UNITS,
+  TEXT_SIZE_RANGE, TITLE_ALIGNS, composeStudioMap,
   formatLength, groundWidthMeters, hasGroundScale, normalizeSettings, roundScaleLength, titleFromName,
 } from "./mapstudio.js";
 
@@ -76,7 +77,7 @@ export class MapStudio {
     const body = el("div", { class: "map-modal-body" }, [
       previewHost,
       el("aside", { class: "map-props", "aria-label": "Map properties" }, [
-        this._group("Title & subtitle", this._titleControls()),
+        this._group("Text", this._titleControls()),
         this._group("Legend", this._legendControls()),
         this._group("Scale bar", this._scaleControls()),
         this._group("North arrow", this._arrowControls()),
@@ -171,14 +172,36 @@ export class MapStudio {
     return el("label", { class: "map-check-row" }, [input, el("span", { text: labelText })]);
   }
 
+  /** One font for the whole canvas, then a size per piece of text. */
   _titleControls() {
-    const s = () => this.settings;
+    const size = (key, fallback, set) => this._number(fallback, (value) => this._update((settings) => {
+      set(settings, Math.max(TEXT_SIZE_RANGE.min, Math.min(TEXT_SIZE_RANGE.max, Math.round(Number(value) || fallback))));
+    }), { key, min: TEXT_SIZE_RANGE.min, max: TEXT_SIZE_RANGE.max });
     return [
+      this._field("Font", this._select(
+        MAP_FONTS.map((family) => ({ key: family, label: family })),
+        MAP_DEFAULTS.font,
+        (value) => this._update((settings) => { settings.font = value; }),
+        "font",
+      )),
       this._field("Title", this._text("", (value) => this._update((settings) => { settings.title = value; }), { key: "title" })),
+      this._field("Title size (px)", size("titleSize", MAP_DEFAULTS.titleSize,
+        (settings, value) => { settings.titleSize = value; })),
+      this._checkbox("Bold title", MAP_DEFAULTS.titleBold,
+        (value) => this._update((settings) => { settings.titleBold = value; }), "titleBold"),
+      this._field("Title alignment", this._select(
+        TITLE_ALIGNS.map((entry) => ({ key: entry.key, label: entry.label })),
+        MAP_DEFAULTS.titleAlign,
+        (value) => this._update((settings) => { settings.titleAlign = value; }),
+        "titleAlign",
+      )),
       this._field("Subtitle (optional)", this._text("", (value) => this._update((settings) => { settings.subtitle = value; }), { key: "subtitle" })),
+      this._field("Subtitle size (px)", size("subtitleSize", MAP_DEFAULTS.subtitleSize,
+        (settings, value) => { settings.subtitleSize = value; })),
       this._field("Credit line", this._text("", (value) => this._update((settings) => { settings.credit = value; }), { key: "credit" })),
-      void s,
-    ].filter(Boolean);
+      this._field("Credit size (px)", size("creditSize", MAP_DEFAULTS.creditSize,
+        (settings, value) => { settings.creditSize = value; })),
+    ];
   }
 
   _legendControls() {
@@ -189,9 +212,9 @@ export class MapStudio {
       this._field("Legend title", this._text("Legend", (value) => this._update((settings) => { settings.legend.title = value; }), { key: "legendTitle" })),
       this._field("Position", this._select(CORNERS, "br", (value) => this._update((settings) => { settings.legend.corner = value; }), "legendCorner")),
       this._checkbox("Show percentages", true, (value) => this._update((settings) => { settings.legend.showPercentages = value; }), "legendPercent"),
-      this._field("Font size (px)", this._number(14, (value) => this._update((settings) => {
-        settings.legend.fontSize = Math.max(8, Math.min(40, Number(value) || 14));
-      }), { key: "legendFont", min: 8, max: 40 })),
+      this._field("Legend text size (px)", this._number(MAP_DEFAULTS.legend.fontSize, (value) => this._update((settings) => {
+        settings.legend.fontSize = Math.max(TEXT_SIZE_RANGE.min, Math.min(TEXT_SIZE_RANGE.max, Math.round(Number(value) || MAP_DEFAULTS.legend.fontSize)));
+      }), { key: "legendFont", min: TEXT_SIZE_RANGE.min, max: TEXT_SIZE_RANGE.max })),
       el("p", { class: "map-field-hint", text: "Class names and colours are edited here or in the Clusters table — they stay in sync." }),
       rowsHost,
     ];
@@ -224,6 +247,9 @@ export class MapStudio {
         (value) => this._update((settings) => { settings.scaleBar.unit = value; }),
         "scaleUnit",
       )),
+      this._field("Label size (px)", this._number(MAP_DEFAULTS.scaleBar.fontSize, (value) => this._update((settings) => {
+        settings.scaleBar.fontSize = Math.max(TEXT_SIZE_RANGE.min, Math.min(TEXT_SIZE_RANGE.max, Math.round(Number(value) || MAP_DEFAULTS.scaleBar.fontSize)));
+      }), { key: "scaleFont", min: TEXT_SIZE_RANGE.min, max: TEXT_SIZE_RANGE.max })),
       this.fields.scaleNote,
       this.fields.manualScale,
     ];
@@ -233,9 +259,9 @@ export class MapStudio {
     return [
       this._checkbox("Show north arrow", true, (value) => this._update((settings) => { settings.northArrow.visible = value; }), "arrowVisible"),
       this._field("Style", this._select(NORTH_STYLES, "classic", (value) => this._update((settings) => { settings.northArrow.style = value; }), "arrowStyle")),
-      this._field("Rotation (°)", this._number(0, (value) => this._update((settings) => {
-        settings.northArrow.rotation = Number(value) || 0;
-      }), { key: "arrowRotation", min: -180, max: 180 }), "satellite crops are north-up"),
+      this._field("Size (px)", this._number(MAP_DEFAULTS.northArrow.size, (value) => this._update((settings) => {
+        settings.northArrow.size = Math.max(12, Math.min(160, Math.round(Number(value) || MAP_DEFAULTS.northArrow.size)));
+      }), { key: "arrowSize", min: 12, max: 160 })),
       this._field("Position", this._select(CORNERS, "tr", (value) => this._update((settings) => { settings.northArrow.position = value; }), "arrowPosition")),
     ];
   }
@@ -428,9 +454,15 @@ export class MapStudio {
     const s = this.settings;
     const f = this.fields;
     const set = (node, value) => { if (node) node.value = value == null ? "" : String(value); };
+    set(f.font, s.font);
     set(f.title, s.title);
+    set(f.titleSize, s.titleSize);
+    if (f.titleBold) f.titleBold.checked = s.titleBold !== false;
+    set(f.titleAlign, s.titleAlign);
     set(f.subtitle, s.subtitle);
+    set(f.subtitleSize, s.subtitleSize);
     set(f.credit, s.credit);
+    set(f.creditSize, s.creditSize);
     if (f.legendVisible) f.legendVisible.checked = Boolean(s.legend.visible);
     set(f.legendTitle, s.legend.title);
     set(f.legendCorner, s.legend.corner);
@@ -439,12 +471,13 @@ export class MapStudio {
     if (f.scaleVisible) f.scaleVisible.checked = Boolean(s.scaleBar.visible);
     set(f.scaleLength, s.scaleBar.length == null ? "" : s.scaleBar.length);
     set(f.scaleDivisions, s.scaleBar.divisions);
+    set(f.scaleFont, s.scaleBar.fontSize);
     set(f.scaleUnit, s.scaleBar.unit);
     set(f.imageWidth, s.scaleBar.imageWidth == null ? "" : s.scaleBar.imageWidth);
     set(f.imageWidthUnit, s.scaleBar.imageWidthUnit);
     if (f.arrowVisible) f.arrowVisible.checked = Boolean(s.northArrow.visible);
     set(f.arrowStyle, s.northArrow.style);
-    set(f.arrowRotation, s.northArrow.rotation);
+    set(f.arrowSize, s.northArrow.size);
     set(f.arrowPosition, s.northArrow.position);
     set(f.background, s.background);
     if (f.border) f.border.checked = Boolean(s.border);

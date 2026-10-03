@@ -156,7 +156,7 @@ let lastDownloadedBlob = null;
 
 function fakeContext2D(canvas) {
   const noop = () => {};
-  return {
+  const api = {
     canvas,
     imageSmoothingEnabled: true,
     fillStyle: "#000",
@@ -186,13 +186,19 @@ function fakeContext2D(canvas) {
     drawImage: (image, ...args) => {
       drawnImages.push({ width: image?.width ?? null, height: image?.height ?? null, args });
     },
-    fillText: (text) => {
+    // record what each text was drawn WITH (font/align/x) so the map-composer
+    // typography checks can assert on real drawing calls, not on settings
+    fillText: (text, x, y) => {
       (canvas.__texts ??= []).push(String(text));
+      (canvas.__textStyles ??= []).push({
+        text: String(text), font: String(api.font ?? ""), align: api.textAlign ?? null, x, y,
+      });
     },
     measureText: () => ({ width: 10 }),
     createImageData: (w, h) => ({ width: w, height: h, data: new Uint8ClampedArray(w * h * 4) }),
     getImageData: (_x, _y, w, h) => ({ width: w, height: h, data: new Uint8ClampedArray(w * h * 4) }),
   };
+  return api;
 }
 
 window.HTMLCanvasElement.prototype.getContext = function getContext() {
@@ -1042,18 +1048,126 @@ if (!bootFailed) {
       "the default bar length follows the ground width", (realScale.__texts ?? []).join(" | "));
     studio.open({ image: studio.image, info: state().result.info, rows, name: "sample.jpg" });
 
+    // ---- item 4: ONE font for every text, a size per text, title options
+    {
+      const FAMILIES = ["Arial", "Times New Roman", "Georgia", "Verdana", "Courier New", "Trebuchet MS"];
+      const fontField = field("font");
+      check(fontField != null, "the composer has a Font dropdown");
+      check([...fontField.querySelectorAll("option")].map((node) => node.value).join("|") === FAMILIES.join("|"),
+        "the Font dropdown offers the six families",
+        [...fontField.querySelectorAll("option")].map((node) => node.value).join("|"));
+      check(studio.getSettings().font === "Arial", "the default font is Arial", studio.getSettings().font);
+
+      // every text on the canvas uses the selected family
+      const stylesOf = () => studio.getCanvas().__textStyles ?? [];
+      check(stylesOf().length >= 4, "the preview drew several texts", String(stylesOf().length));
+      check(stylesOf().every((entry) => entry.font.includes('"Arial"')),
+        "every canvas text starts with the selected family",
+        stylesOf().map((entry) => entry.font).join(" | "));
+      fontField.value = "Georgia";
+      fontField.dispatchEvent(new window.Event("change", { bubbles: true }));
+      check(studio.getSettings().font === "Georgia", "the font is editable");
+      check(stylesOf().length > 0 && stylesOf().every((entry) => entry.font.includes('"Georgia"')),
+        "changing the font redraws EVERY text with it",
+        stylesOf().map((entry) => entry.font).join(" | "));
+      check(stylesOf().every((entry) => entry.font.indexOf('"Georgia"') < entry.font.indexOf("system-ui")),
+        "the chosen family comes FIRST in every font shorthand (comma separated)",
+        stylesOf().map((entry) => entry.font).join(" | "));
+      check(stylesOf().every((entry) => /^[\w ]*\d+px "Georgia", system-ui, sans-serif$/.test(entry.font)),
+        "every shorthand is valid CSS font syntax",
+        stylesOf().map((entry) => entry.font).join(" | "));
+      fontField.value = "Arial";
+      fontField.dispatchEvent(new window.Event("change", { bubbles: true }));
+
+      // one size field per text, and the title's default is the biggest
+      for (const key of ["titleSize", "subtitleSize", "legendFont", "scaleFont", "creditSize"]) {
+        check(field(key) != null, `the composer has a size field for ${key}`);
+      }
+      const sizes = studio.getSettings();
+      check(sizes.titleSize > sizes.subtitleSize,
+        "the title defaults larger than the subtitle", `${sizes.titleSize} vs ${sizes.subtitleSize}`);
+      check(sizes.titleSize === 26 && sizes.subtitleSize === 14,
+        "title 26 / subtitle 14 are the defaults", `${sizes.titleSize}/${sizes.subtitleSize}`);
+
+      // changing the title size really changes the drawn title
+      const titleEntry = () => stylesOf().find((entry) => entry.text === "Karachi study area");
+      check(titleEntry() != null, "the title was drawn",
+        stylesOf().map((entry) => entry.text).join(" | "));
+      const before26 = titleEntry().font;
+      field("titleSize").value = "40";
+      field("titleSize").dispatchEvent(new window.Event("change", { bubbles: true }));
+      check(studio.getSettings().titleSize === 40, "the title size is editable");
+      check(titleEntry().font.includes("40px") && !before26.includes("40px"),
+        "the title is redrawn at the new size", `${before26} → ${titleEntry().font}`);
+      field("titleSize").value = "26";
+      field("titleSize").dispatchEvent(new window.Event("change", { bubbles: true }));
+
+      // bold toggle
+      check(field("titleBold")?.checked === true, "the title is bold by default");
+      check(/700|bold/.test(titleEntry().font), "the bold weight reaches the canvas", titleEntry().font);
+      field("titleBold").checked = false;
+      field("titleBold").dispatchEvent(new window.Event("change", { bubbles: true }));
+      check(studio.getSettings().titleBold === false, "the bold toggle is editable");
+      check(!/700|bold/.test(titleEntry().font), "unbolded title loses the weight", titleEntry().font);
+      field("titleBold").checked = true;
+      field("titleBold").dispatchEvent(new window.Event("change", { bubbles: true }));
+
+      // alignment: centered at the top by default, left/center/right choice
+      const alignField = field("titleAlign");
+      check(alignField != null &&
+        [...alignField.querySelectorAll("option")].map((node) => node.value).join("|") === "left|center|right",
+        "the title offers left / center / right");
+      check(studio.getSettings().titleAlign === "center", "the title is centered by default",
+        studio.getSettings().titleAlign);
+      const canvasWidth = studio.getCanvas().width;
+      check(titleEntry().align === "center" && Math.abs(titleEntry().x - canvasWidth / 2) < 1,
+        "the centred title is drawn at the middle of the canvas",
+        `${titleEntry().align} @ ${titleEntry().x} / ${canvasWidth}`);
+      alignField.value = "left";
+      alignField.dispatchEvent(new window.Event("change", { bubbles: true }));
+      check(titleEntry().align === "left" && titleEntry().x < canvasWidth / 2,
+        "the left title is drawn at the left margin", `${titleEntry().align} @ ${titleEntry().x}`);
+      alignField.value = "right";
+      alignField.dispatchEvent(new window.Event("change", { bubbles: true }));
+      check(titleEntry().align === "right" && titleEntry().x > canvasWidth / 2,
+        "the right title is drawn at the right margin", `${titleEntry().align} @ ${titleEntry().x}`);
+      alignField.value = "center";
+      alignField.dispatchEvent(new window.Event("change", { bubbles: true }));
+
+      // the credit and legend sizes reach the canvas too
+      const creditEntry = () => stylesOf().find((entry) => /Sentinel|credit/i.test(entry.text));
+      if (creditEntry()) {
+        field("creditSize").value = "20";
+        field("creditSize").dispatchEvent(new window.Event("change", { bubbles: true }));
+        check(creditEntry().font.includes("20px"), "the credit line follows its size field", creditEntry().font);
+        field("creditSize").value = "12";
+        field("creditSize").dispatchEvent(new window.Event("change", { bubbles: true }));
+      }
+      const legendTitle = () => stylesOf().find((entry) => entry.text === "Legend");
+      const legendSize = studio.getSettings().legend.fontSize;
+      if (legendTitle()) {
+        check(legendTitle().font.includes('"Arial"') &&
+          legendTitle().font.startsWith(`600 ${Math.round(legendSize * 1.05)}px`),
+          "the legend title uses the one font at the legend size",
+          `${legendTitle().font} (legend ${legendSize})`);
+      }
+    }
+
     // ---- north arrow
     check(studio.getSettings().northArrow.visible === true, "the north arrow is on by default");
     check([...field("arrowStyle").querySelectorAll("option")].map((o) => o.value).join(",") === "classic,compass,triangle",
       "the north arrow offers styles",
       [...field("arrowStyle").querySelectorAll("option")].map((o) => o.value).join(","));
-    check(field("arrowRotation") != null && field("arrowPosition") != null,
-      "the north arrow has rotation and position controls");
+    check(field("arrowSize") != null && field("arrowPosition") != null,
+      "the north arrow has size and position controls");
+    check(field("arrowRotation") == null, "the north arrow has NO rotation control");
     const strokesBefore = studio.getCanvas().__strokes ?? 0;
-    field("arrowRotation").value = "45";
-    field("arrowRotation").dispatchEvent(new window.Event("change", { bubbles: true }));
-    check(studio.getSettings().northArrow.rotation === 45, "the arrow rotation is editable",
-      String(studio.getSettings().northArrow.rotation));
+    field("arrowSize").value = "54";
+    field("arrowSize").dispatchEvent(new window.Event("change", { bubbles: true }));
+    check(studio.getSettings().northArrow.size === 54, "the arrow size is editable",
+      String(studio.getSettings().northArrow.size));
+    field("arrowSize").value = "36";
+    field("arrowSize").dispatchEvent(new window.Event("change", { bubbles: true }));
     field("arrowStyle").value = "compass";
     field("arrowStyle").dispatchEvent(new window.Event("change", { bubbles: true }));
     check((studio.getCanvas().__strokes ?? 0) >= strokesBefore, "the arrow style changes what is drawn", "");

@@ -64,6 +64,26 @@ the server's `image_id`: "Result — sample.jpg#negative (1600×1066)", not
 "new image EkEkL0bUvBYg". A boot assertion collects every `/images/<id>` id the
 session used and fails if any of them appears in a toast.
 
+### Composer typography (item 4)
+
+* **One font for every text on the canvas.** `MAP_FONTS` = Arial (default),
+  Times New Roman, Georgia, Verdana, Courier New, Trebuchet MS. Every draw
+  call goes through `fontSpec(size, { font, weight })`, which builds a valid
+  CSS shorthand — `700 26px "Georgia", system-ui, sans-serif`. The comma
+  matters: `"Georgia" system-ui sans-serif` is invalid CSS, and canvas
+  silently keeps the PREVIOUS font instead of erroring. `mapFont()` maps an
+  unknown family back to Arial.
+* **A size per text** (all clamped by `normalizeSettings` to 8…96 px, the
+  arrow to 12…160): title 26, subtitle 14, legend 14 (`legend.fontSize`),
+  scale-bar label 12 (`scaleBar.fontSize`), credit 12. `frameMetrics()` takes
+  those sizes so the title strip and the footer grow with the text — the frame
+  can never clip a bigger title, and 2x/3x exports stay exact multiples.
+* **Title options**: a bold toggle (`titleBold`, on by default) and
+  left/center/right alignment (`titleAlign`, **center** by default, drawn at
+  the top of the map). The subtitle follows the same alignment.
+* The north arrow lost its Rotation control and setting; it now has a
+  **Size** field (36 px default) instead, and is always drawn north-up.
+
 ### Map composer modal: opaque, and clear of the toolbar
 
 * The dialog and its sidebar were **transparent**: `.map-modal-dialog`,
