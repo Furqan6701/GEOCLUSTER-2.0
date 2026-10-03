@@ -415,6 +415,27 @@ if (!bootFailed) {
   check((window.geocluster.viewers.original.canvas.__texts ?? []).length > 0,
     "the empty Original viewport paints its own placeholder");
 
+  // ---- item 13: an empty viewport must not offer tools that look active.
+  // This is the state the "Distance button looks active with no image" report
+  // was about: both footer tools are disabled and nothing is pressed.
+  for (const [role, viewer] of Object.entries(window.geocluster.viewers)) {
+    check(viewer.hasImage === false, `the ${role} viewport starts empty`);
+    check(viewer.distanceButton.disabled === true,
+      `the ${role} footer Distance button is disabled with no image`);
+    check(viewer.distanceButton.getAttribute("aria-pressed") === "false" &&
+      !viewer.distanceButton.classList.contains("primary") &&
+      !viewer.distanceButton.classList.contains("active"),
+      `…the ${role} Distance button is not pressed and carries no active/primary class`,
+      `${viewer.distanceButton.getAttribute("aria-pressed")} / ${viewer.distanceButton.className}`);
+    check(viewer.histogramButton.disabled === true,
+      `the ${role} footer Histogram button is disabled with no image either`);
+    check(!viewer.canvas.classList.contains("distance-mode") &&
+      viewer.distanceMode === false &&
+      !/Distance ●/.test(viewer.distanceButton.textContent),
+      `…and no measuring look is left over on the ${role} viewport`,
+      viewer.distanceButton.textContent.trim());
+  }
+
   const chips = document.getElementById("status-chips").textContent;
   check(/session [0-9A-Za-z_-]{8}/.test(chips), "status chip shows the session id", chips);
   check(/AI (ready|not configured)/.test(chips), "status chip shows the AI state", chips);
@@ -2736,6 +2757,7 @@ if (!bootFailed) {
   check(
     String(emptyResult.placeholder).includes("Run a filter or K-Means to see the result here"),
     "the empty Result viewport carries the STEP 2 hint", String(emptyResult.placeholder));
+
 
   // truncated text keeps its full value in a tooltip
   const meta = document.querySelector("#viewer-original .meta");

@@ -251,8 +251,9 @@ pointer behaviour, and layout at the two widths the user asked about.
     the two clearly different icons with their tooltips.
 41e. **[both]** The footer **Distance** button looks pressed **only while
     measuring** (its label gains a ● and its tooltip changes); Esc or a second
-    press clears the highlight. On an empty viewport the button is greyed out
-    instead of looking available.
+    press clears the highlight. Check this on a **fresh page before uploading
+    anything**: with both viewports empty, Distance and Histogram are greyed out
+    and neither shows any active/pressed styling.
 42. **[both]** Distance: with a plain upload the unit is **pixels** and the
     pixel-size field is hidden. Measure on a viewport (toolbar **Measure** or
     the viewport's **Distance** button, two clicks): the panel shows ONE line
