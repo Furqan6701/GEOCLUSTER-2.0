@@ -11,7 +11,109 @@
  */
 
 export const SCALES = ["linear", "log"];
+
+/** Clearly labelled controls instead of raw numbers (item 9). */
+export const SCALE_OPTIONS = Object.freeze([
+  { key: "linear", label: "Linear" },
+  { key: "log", label: "Log" },
+]);
+
+/** Off / Low / High smoothing, with the moving-average window each means. */
+export const SMOOTHING_LEVELS = Object.freeze([
+  { key: "off", label: "Off", window: 0 },
+  { key: "low", label: "Low", window: 5 },
+  { key: "high", label: "High", window: 11 },
+]);
+
+export const DISPLAY_MODES = Object.freeze([
+  { key: "counts", label: "Counts" },
+  { key: "density", label: "Density" },
+  { key: "cumulative", label: "Cumulative" },
+]);
+
+export const THEME_OPTIONS = Object.freeze([
+  { key: "dark", label: "Dark" },
+  { key: "light", label: "Light" },
+]);
+
+/** The second series' colour when the Compare switch is on. */
+export const COMPARE_COLOR = "#ffb454";
+
+/** Keep the very old numeric window list working. */
 export const SMOOTHING_WINDOWS = [0, 3, 5, 9];
+
+/** Label of a smoothing level (or of a raw window number). */
+export function smoothingLabel(value) {
+  if (typeof value === "string") {
+    return SMOOTHING_LEVELS.find((entry) => entry.key === value)?.label ?? "Off";
+  }
+  const window = Math.max(0, Math.round(Number(value) || 0));
+  return window < 3 ? "Off" : window <= 5 ? "Low" : "High";
+}
+
+/** The moving-average window a smoothing level (key or number) stands for. */
+export function smoothingWindow(value) {
+  if (typeof value === "string") {
+    return SMOOTHING_LEVELS.find((entry) => entry.key === value)?.window ?? 0;
+  }
+  return Math.max(0, Math.round(Number(value) || 0));
+}
+
+/** The display mode of a set of display flags (cumulative wins over density). */
+export function displayModeOf({ cumulative = false, density = false } = {}) {
+  if (cumulative) return "cumulative";
+  return density ? "density" : "counts";
+}
+
+/** The flags a display mode stands for. */
+export function displayFlags(mode) {
+  return { cumulative: mode === "cumulative", density: mode === "density" };
+}
+
+/**
+ * Statistics computed from the 256 bins alone (no extra request): the lowest
+ * and highest intensity that occurs, the mean, the standard deviation and the
+ * number of pixels the histogram counted.
+ */
+export function binStats(bins) {
+  const values = (bins ?? []).map((value) => Number(value) || 0);
+  const total = values.reduce((sum, value) => sum + value, 0);
+  if (!total) return { count: 0, min: null, max: null, mean: null, std: null };
+  let weighted = 0;
+  let lowest = null;
+  let highest = null;
+  values.forEach((count, intensity) => {
+    if (!count) return;
+    weighted += intensity * count;
+    if (lowest == null) lowest = intensity;
+    highest = intensity;
+  });
+  const mean = weighted / total;
+  let variance = 0;
+  values.forEach((count, intensity) => {
+    if (!count) return;
+    variance += count * (intensity - mean) ** 2;
+  });
+  return {
+    count: total,
+    min: lowest,
+    max: highest,
+    mean,
+    std: Math.sqrt(variance / total),
+  };
+}
+
+/** The five numbers shown beside the chart. */
+export function formatStats(stats) {
+  const number = (value, digits = 2) => (Number.isFinite(value) ? value.toFixed(digits) : "—");
+  return [
+    { key: "min", label: "Min", text: stats?.count ? String(stats.min) : "—" },
+    { key: "max", label: "Max", text: stats?.count ? String(stats.max) : "—" },
+    { key: "mean", label: "Mean", text: number(stats?.mean) },
+    { key: "std", label: "Std dev", text: number(stats?.std) },
+    { key: "count", label: "Pixels", text: Number.isFinite(stats?.count) ? stats.count.toLocaleString() : "—" },
+  ];
+}
 
 export const THEMES = Object.freeze({
   dark: {
@@ -73,7 +175,7 @@ export function densityBins(bins) {
 export function prepareBins(bins, { scale = "linear", smoothing = 0, cumulative = false, density = false } = {}) {
   const source = (bins ?? []).map((value) => Number(value) || 0);
   if (!source.length) return { values: [], max: 1, total: 0, label: "no data" };
-  let values = smoothBins(source, smoothing);
+  let values = smoothBins(source, smoothingWindow(smoothing));
   if (cumulative) values = cumulativeBins(values);
   if (density) values = densityBins(values);
   const total = source.reduce((sum, value) => sum + value, 0);
@@ -91,7 +193,8 @@ export function prepareBins(bins, { scale = "linear", smoothing = 0, cumulative 
 /** "log scale · smoothed 5 · cumulative · density" — used in captions and the PNG. */
 export function describeOptions({ scale = "linear", smoothing = 0, cumulative = false, density = false } = {}) {
   const parts = [scale === "log" ? "log scale" : "linear scale"];
-  if (smoothing >= 3) parts.push(`smoothed ${smoothing}`);
+  const window = smoothingWindow(smoothing);
+  if (window >= 3) parts.push(`${smoothingLabel(smoothing).toLowerCase()} smoothing`);
   if (cumulative) parts.push("cumulative");
   if (density) parts.push("density");
   return parts.join(" · ");
@@ -118,6 +221,8 @@ export function drawHistogram(ctx, {
   density = false,
   title = "",
   fontSize = 10,
+  /** Optional second series: { bins, label, color } drawn as an outline. */
+  compare = null,
 } = {}) {
   const palette = THEMES[theme] ?? THEMES.dark;
   ctx.clearRect(0, 0, width, height);
@@ -184,6 +289,52 @@ export function drawHistogram(ctx, {
       Math.max(barWidth, 0.8), barHeight);
   });
 
+  // optional second image, same options, drawn as an outline in its own colour
+  if (compare?.bins?.length) {
+    const other = prepareBins(compare.bins, { scale, smoothing, cumulative, density });
+    const otherMax = Math.max(other.max, max);
+    const step = plotWidth / Math.max(other.values.length, 1);
+    ctx.save();
+    ctx.strokeStyle = compare.color ?? COMPARE_COLOR;
+    ctx.lineWidth = Math.max(1.5, fontSize / 8);
+    ctx.beginPath();
+    other.values.forEach((value, index) => {
+      const x = plotLeft + index * step + step / 2;
+      const y = plotBottom - (value / otherMax) * plotHeight;
+      if (index === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+    // a two-row legend so the outline explains itself on screen and in the PNG
+    const legendFont = Math.max(8, Math.round(fontSize * 0.95));
+    ctx.font = `${legendFont}px system-ui, sans-serif`;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    const rows = [
+      { color: palette.bar, label: title || "this image" },
+      { color: compare.color ?? COMPARE_COLOR, label: compare.label ?? "compared image" },
+    ];
+    const widest = Math.max(...rows.map((row) => ctx.measureText(String(row.label)).width));
+    const boxWidth = Math.round(widest + legendFont * 2.4);
+    const boxHeight = Math.round(rows.length * legendFont * 1.6 + legendFont * 0.6);
+    const boxX = plotRight - boxWidth - 4;
+    const boxY = plotTop + 4;
+    ctx.fillStyle = theme === "light" ? "rgba(244, 247, 249, 0.92)" : "rgba(11, 14, 21, 0.9)";
+    ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
+    ctx.strokeStyle = palette.grid;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(boxX + 0.5, boxY + 0.5, boxWidth - 1, boxHeight - 1);
+    rows.forEach((row, index) => {
+      const middle = boxY + legendFont * 1.1 + index * legendFont * 1.6;
+      ctx.fillStyle = row.color;
+      ctx.fillRect(boxX + legendFont * 0.6, middle - legendFont * 0.35, legendFont, legendFont * 0.7);
+      ctx.fillStyle = palette.title;
+      ctx.fillText(fitLabel(ctx, String(row.label), boxWidth - legendFont * 2.4),
+        boxX + legendFont * 2.1, middle);
+    });
+    ctx.restore();
+  }
+
   // axis captions: x below the plot, y rotated up the left margin
   ctx.fillStyle = palette.axis;
   ctx.font = `${fontSize}px system-ui, sans-serif`;
@@ -205,6 +356,17 @@ export function drawHistogram(ctx, {
   ctx.textAlign = "center";
   ctx.fillText(labels.x, plotLeft + plotWidth / 2, height - 1);
   return { values, max, plotLeft, plotTop, plotWidth, plotHeight, palette, labels };
+}
+
+/** Trim a legend label to the width the box can hold. */
+function fitLabel(ctx, text, maxWidth) {
+  if (typeof ctx?.measureText !== "function" || maxWidth <= 0) return text;
+  if (ctx.measureText(text).width <= maxWidth) return text;
+  let cut = text;
+  while (cut.length > 1 && ctx.measureText(`${cut}…`).width > maxWidth) {
+    cut = cut.slice(0, -1);
+  }
+  return `${cut}…`;
 }
 
 export function histogramFileName(sourceName = "", extension = "png") {

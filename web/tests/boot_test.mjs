@@ -1792,84 +1792,245 @@ if (!bootFailed) {
       "the kernel slider commits");
   }
 
-  // ------------------------------------------------- 5. histogram + stats
+  // ---------------------------------------- 5. floating histogram windows (item 9)
   expandSection("Analysis");
-  clickButton("Histogram & stats");
-  const statsText = await until(() => {
-    const text = document.getElementById("toolbox-sections").textContent;
-    return /mean/i.test(text) && /std/i.test(text) ? text : null;
-  }, "histogram and stats render");
-  check(Boolean(statsText), "histogram/stats rendered in the Analysis section");
-  check(/256/.test(statsText ?? ""), "histogram reports 256 bins", (statsText ?? "").slice(0, 80));
-  check(document.querySelectorAll("#toolbox-sections .histogram-canvas").length >= 1, "histogram canvas created");
-
-  // ---------------------------- 5b. STEP 5: histogram options + distance
   {
     const gh = window.geocluster;
     const analysis = gh.panels.get("analysis");
-    const histCanvas = document.querySelector("#toolbox-sections .histogram-canvas");
-    const texts = () => (histCanvas.__texts ?? []).join(" | ");
+    const hist = gh.histograms;
+    const section = document.getElementById("section-analysis");
+    // a desktop-sized viewport, so four windows can really tile side by side
+    Object.defineProperty(window, "innerWidth", { value: 1600, configurable: true });
+    Object.defineProperty(window, "innerHeight", { value: 900, configurable: true });
+    const sectionText = () => section.textContent;
+
+    // ---- the panel itself is now a single button, with no chart or hints
+    check(section.querySelectorAll("canvas").length === 0,
+      "the Analysis panel holds no canvas at all",
+      String(section.querySelectorAll("canvas").length));
+    check(section.querySelector(".histogram-canvas") == null, "the inline histogram canvas is gone");
+    check(section.querySelectorAll(".stat-strip").length === 0, "the Statistics block is gone");
+    check(!/Statistics\b/i.test(sectionText()), "no Statistics heading is left");
+    check(!/Export PNG/.test(sectionText()), "the panel's Export button is gone");
+    check(!/No statistics yet|Load an image, then compute|Options apply|computed in the browser/.test(sectionText()),
+      "no hint or status lines are left in the panel", sectionText().slice(0, 160));
+    check(section.querySelectorAll("select").length === 1,
+      "the only select left in the panel is the distance unit",
+      String(section.querySelectorAll("select").length));
+    const histButtons = [...section.querySelectorAll("button")]
+      .filter((node) => node.textContent.trim() === "Histogram");
+    check(histButtons.length === 1, "there is exactly one Histogram button",
+      String(histButtons.length));
+
+    // ---- pressing it opens a floating window
     const requestsBefore = requests.length;
+    const opened = analysis.actions.openHistogram();
+    const win = await until(() => hist.windows.at(-1) ?? null, "the Histogram button opens a window");
+    check(opened === win && win != null, "the button returned the window it opened");
+    check(hist.count === 1, "one window is open", String(hist.count));
+    check(document.querySelectorAll(".histo-window").length === 1, "one window is in the page");
+    check(document.querySelectorAll(".histo-layer").length === 1, "the windows live in one layer");
+    check(win.root.classList.contains("histo-window") &&
+      win.root.getAttribute("role") === "dialog" &&
+      win.root.getAttribute("aria-modal") === "false",
+      "the window is a non-modal dialog",
+      `${win.root.className} ${win.root.getAttribute("aria-modal")}`);
+    check(win.root.getAttribute("aria-labelledby") === win.title.id,
+      "the window is labelled by its own title");
+    await until(() => win.bins?.length === 256, "the window's bins arrive");
+    check(/^Histogram: sample\.jpg(#|$)/.test(win.title.textContent),
+      "the window is titled with its image (name#step)", win.title.textContent);
+    check(win.title.textContent.length <= 60, "the title stays readable",
+      String(win.title.textContent.length));
+    check(document.querySelectorAll(".histo-window .map-modal-backdrop").length === 0,
+      "there is no modal backdrop: the window is non-modal");
+    check(win.canvas.getContext("2d") != null, "the window owns its own chart canvas");
+    check(win.canvas.width === 560 && win.canvas.height === 260,
+      "the chart is large", `${win.canvas.width}×${win.canvas.height}`);
 
-    check(analysis.actions.lastBins()?.length === 256, "the panel kept the 256 bins in memory",
-      String(analysis.actions.lastBins()?.length));
-    check(/linear scale/.test(texts()), "the chart states the scale it is drawn with", texts().slice(0, 120));
+    // one request for the bins, and the statistics come from those numbers
+    check(requests.filter((entry) => /\/histogram$/.test(entry.url)).length === 1,
+      "the window fetched one histogram",
+      String(requests.filter((entry) => /\/histogram$/.test(entry.url)).length));
+    check(win.bins?.length === 256, "the window holds the 256 bins", String(win.bins?.length));
+    const texts = () => (win.canvas.__texts ?? []).join(" | ");
+    check(/linear scale/.test(texts()), "the chart states its scale", texts().slice(0, 120));
+    const statsText = win.statsHost.textContent;
+    for (const label of ["Min", "Max", "Mean", "Std dev", "Pixels"]) {
+      check(statsText.includes(label), `the statistics show ${label}`, statsText.slice(0, 120));
+    }
+    check(win.statsHost.querySelectorAll("dt").length === 5, "five statistics are listed",
+      String(win.statsHost.querySelectorAll("dt").length));
 
-    const controls = (id) => document.getElementById(id);
+    // ---- every option is a labelled control and recomputes in the browser
+    const optionNames = [...win.root.querySelectorAll(".histo-label")].map((node) => node.textContent);
+    check(optionNames.join("|") === "Image|Scale|Smoothing|Display|Theme|Compare",
+      "the options are labelled Image / Scale / Smoothing / Display / Theme / Compare",
+      optionNames.join("|"));
+    const optionsOf = (key) => [...win.fields[key].querySelectorAll("option")].map((node) => node.textContent);
+    check(optionsOf("scale").join("|") === "Linear|Log", "Scale offers Linear and Log", optionsOf("scale").join("|"));
+    check(optionsOf("smoothing").join("|") === "Off|Low|High",
+      "Smoothing offers Off, Low and High", optionsOf("smoothing").join("|"));
+    check(optionsOf("display").join("|") === "Counts|Density|Cumulative",
+      "Display offers Counts, Density and Cumulative", optionsOf("display").join("|"));
+    check(optionsOf("theme").join("|") === "Dark|Light", "Theme offers Dark and Light", optionsOf("theme").join("|"));
+
+    const setSelect = (node, value) => {
+      node.value = value;
+      node.dispatchEvent(new window.Event("change", { bubbles: true }));
+    };
+    const requestsBeforeOptions = requests.length;
+    setSelect(win.fields.scale, "log");
+    check(/log scale/.test(texts()), "Log redraws the chart", texts().slice(0, 140));
+    setSelect(win.fields.smoothing, "high");
+    check(/high smoothing/.test(texts()), "High smoothing redraws the chart", texts().slice(0, 160));
+    setSelect(win.fields.smoothing, "off");
+    setSelect(win.fields.display, "cumulative");
+    check(/cumulative/.test(texts()) && /pixels ≤ intensity/.test(texts()),
+      "Cumulative relabels the y axis", texts().slice(0, 200));
+    setSelect(win.fields.display, "density");
+    check(/density/.test(texts()) && /share of pixels/.test(texts()),
+      "Density relabels the y axis", texts().slice(0, 200));
+    setSelect(win.fields.display, "counts");
+    setSelect(win.fields.theme, "light");
+    check(win.options().theme === "light", "the theme switch is applied");
+    setSelect(win.fields.theme, "dark");
+    setSelect(win.fields.scale, "linear");
+    check(!/log scale|cumulative|density/.test(texts()), "Counts/Linear is a plain histogram",
+      texts().slice(0, 160));
+    check(requests.length === requestsBeforeOptions,
+      "every option change was recomputed in the browser — no new requests",
+      `${requestsBeforeOptions} → ${requests.length}`);
+
+    // ---- export
+    const downloadsBefore2 = downloads.length;
+    const exported = await win.exportPng();
+    check(exported?.ok === true, "the window exported its chart as a PNG");
+    check(exported.width === 1120 && exported.height === 520,
+      "the PNG is the on-screen chart at 2×", `${exported.width}×${exported.height}`);
+    check(/^histogram-.*\.png$/.test(exported.filename), "the filename is descriptive", exported.filename);
+    check(downloads.length > downloadsBefore2, "the PNG reached the browser");
+    check(toasts.some((text) => /Histogram exported/.test(text)), "the export is confirmed");
+
+    // ---- the image dropdown: Original, Result and every history state
+    const targetIds = [...win.fields.image.querySelectorAll("option")].map((node) => node.value);
+    check(targetIds.length >= 2, "the Image dropdown lists more than one image",
+      String(targetIds.length));
+    check(targetIds[0] === state().original.id, "the first entry is the original image");
+    check(targetIds.includes(state().result.id), "the result is listed");
+    const historyIds = gh.history.entries.map((entry) => entry.imageId);
+    check(historyIds.every((id) => targetIds.includes(id)) ||
+      historyIds.length > targetIds.length,
+      "every undo-history state that still exists is listed",
+      `${historyIds.length} history ids vs ${targetIds.length} options`);
+
+    // ---- up to four windows, tiled so none covers another
+    for (let index = 0; index < 3; index += 1) {
+      analysis.actions.openHistogram();
+      await until(() => hist.count === index + 2, `window ${index + 2} opens`);
+    }
+    check(hist.count === 4, "four windows can be open at once", String(hist.count));
+    const rects = hist.rects();
+    const overlapping = rects.filter((a, index) => rects.some((b, other) => other !== index &&
+      a.left < b.left + b.width && a.left + a.width > b.left &&
+      a.top < b.top + b.height && a.top + a.height > b.top));
+    check(overlapping.length === 0, "the new windows do not cover the existing ones",
+      JSON.stringify(rects));
+    // ...but one moved by the user may of course sit anywhere
+    const fifth = analysis.actions.openHistogram();
+    check(fifth == null && hist.count === 4, "a fifth window is refused", String(hist.count));
+    await until(() => toasts.some((text) => /close one first/.test(text)),
+      "the refusal is explained", { timeout: 8000 });
+
+    // ---- each window is independent
+    const first = hist.windows[0];
+    const second = hist.windows[1];
+    setSelect(second.fields.scale, "log");
+    setSelect(second.fields.theme, "light");
+    check(/log scale/.test((second.canvas.__texts ?? []).join(" | ")) &&
+      !/log scale/.test((first.canvas.__texts ?? []).join(" | ")),
+      "one window's options do not leak into another");
+
+    // ---- Compare overlays a second image with its own legend
+    if (targetIds.length >= 2) {
+      const other = targetIds[1];
+      setSelect(second.fields.compare, other);
+      await until(() => second.compareBins?.length > 0, "the compare image's bins arrive");
+      const compareTexts = (second.canvas.__texts ?? []).join(" | ");
+      const otherTitle = [...second.fields.compare.querySelectorAll("option")]
+        .find((node) => node.value === other)?.textContent ?? "";
+      check(compareTexts.includes(otherTitle), "the compare legend names the second image",
+        `${otherTitle} in ${compareTexts.slice(0, 200)}`);
+      const withCompare = (second.canvas.__texts ?? []).length;
+      setSelect(second.fields.compare, "off");
+      check(second.compareBins == null, "turning Compare off drops the second series");
+      check((second.canvas.__texts ?? []).length < withCompare,
+        "…and the overlay's legend leaves the chart",
+        `${withCompare} → ${(second.canvas.__texts ?? []).length}`);
+    }
+
+    // ---- dragging, keyboard movement and Escape
+    const left0 = Number.parseFloat(win.root.style.left);
+    const top0 = Number.parseFloat(win.root.style.top);
+    win.bar.dispatchEvent(new window.MouseEvent("mousedown", { bubbles: true, clientX: left0 + 20, clientY: top0 + 10 }));
+    window.dispatchEvent(new window.MouseEvent("mousemove", { bubbles: true, clientX: left0 + 90, clientY: top0 + 50 }));
+    window.dispatchEvent(new window.MouseEvent("mouseup", { bubbles: true }));
+    check(Number.parseFloat(win.root.style.left) === left0 + 70 &&
+      Number.parseFloat(win.root.style.top) === top0 + 40,
+      "the window follows the drag by its title bar",
+      `${win.root.style.left},${win.root.style.top}`);
+    const before = Number.parseFloat(win.root.style.left);
+    win.bar.dispatchEvent(new window.KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    check(Number.parseFloat(win.root.style.left) === before + 16,
+      "an arrow key moves the focused window", win.root.style.left);
+    win.bar.dispatchEvent(new window.KeyboardEvent("keydown", { key: "ArrowLeft", shiftKey: true, bubbles: true }));
+    check(Number.parseFloat(win.root.style.left) === before + 16 - 64,
+      "Shift+arrow moves further", win.root.style.left);
+
+    // ---- Escape closes the focused window (and only that one)
+    const before4 = hist.count;
+    const focused = hist.windows.at(-1);
+    focused.root.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    check(hist.count === before4 - 1, "Escape closed the focused window", String(hist.count));
+    check(!document.querySelector(`.histo-window[data-window="${focused.id}"]`),
+      "the closed window left the page");
+    check(hist.windows.length === hist.count, "the manager forgot the closed window");
+
+    // ---- the close button, and closing the last window removes the layer
+    const last = hist.windows.at(-1);
+    last.root.querySelector(".histo-close").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    check(hist.count === before4 - 2, "the close button closes its own window", String(hist.count));
+    while (hist.count) {
+      hist.close(hist.windows[0].id);
+    }
+    check(hist.count === 0 && document.querySelector(".histo-layer") == null,
+      "closing the last window removes the layer too");
+
+    // ---- a fresh window after all that still works (and reuses the bins)
+    const requestsBeforeReuse = requests.filter((entry) => /\/histogram$/.test(entry.url)).length;
+    const again = hist.open({ targetId: win.targetId });
+    await until(() => again.bins?.length === 256, "the reopened window has its bins");
+    check(requests.filter((entry) => /\/histogram$/.test(entry.url)).length === requestsBeforeReuse,
+      "the same image's bins are cached — no second request");
+    hist.closeAll();
+    check(hist.count === 0, "all windows closed");
+
+    // ---- the chat command still reaches the histogram
+    gh.bus.emit("histogram:request", {});
+    await until(() => hist.count === 1, "the histogram command opens a window");
+    check(hist.count === 1, "the histogram command opened exactly one window", String(hist.count));
+    hist.closeAll();
+    void requestsBefore;
+  }
+
+  // ---- distance units, including the original resolution of a downscaled upload
+  {
     const setControl = (node, value, event = "change") => {
       if (node.type === "checkbox") node.checked = Boolean(value);
       else node.value = String(value);
       node.dispatchEvent(new window.Event(event, { bubbles: true }));
     };
-
-    // log scale
-    setControl(controls("hist-scale"), "log");
-    check(/log scale/.test(texts()), "log scale is applied in the browser", texts().slice(0, 140));
-
-    // smoothing
-    const smoothSelect = controls("hist-smoothing");
-    check(smoothSelect != null, "there is a smoothing control");
-    setControl(smoothSelect, "5");
-    check(/smoothed 5/.test(texts()), "smoothing is applied in the browser", texts().slice(0, 160));
-    setControl(smoothSelect, "0");
-
-    // cumulative + density + light theme
-    setControl(controls("hist-cumulative"), true);
-    check(/cumulative/.test(texts()), "cumulative mode is applied", texts().slice(0, 160));
-    check(/pixels ≤ intensity/.test(texts()), "the y axis relabels for cumulative", texts().slice(0, 200));
-    setControl(controls("hist-cumulative"), false);
-    setControl(controls("hist-density"), true);
-    check(/density/.test(texts()), "density mode is applied", texts().slice(0, 160));
-    check(/share of pixels/.test(texts()), "the y axis relabels for density", texts().slice(0, 200));
-    setControl(controls("hist-density"), false);
-    setControl(controls("hist-theme"), true);
-    check(/light canvas/.test(document.getElementById("toolbox-sections").textContent),
-      "the light theme is reported next to the chart");
-    setControl(controls("hist-scale"), "linear");
-    check(/linear scale/.test(texts()) && !/cumulative|density/.test(texts()),
-      "with the extras off the chart is a plain linear histogram", texts().slice(0, 160));
-
-    check(requests.length === requestsBefore,
-      "every histogram option was recomputed in the browser (no extra requests)",
-      `${requestsBefore} → ${requests.length}`);
-
-    // PNG export: same options, larger canvas
-    const exportBefore = exportedCanvases.length;
-    const downloadsBefore = downloads.length;
-    const hist = await analysis.actions.exportPng();
-    check(hist?.ok === true, "the histogram exported", JSON.stringify(hist && { width: hist.width, height: hist.height }));
-    check(exportedCanvases.length === exportBefore + 1, "one canvas was rasterised for the export");
-    const exported = exportedCanvases[exportedCanvases.length - 1];
-    check(exported.width === 1040 && exported.height === 340,
-      "the exported PNG is the on-screen chart at 2×", `${exported.width}×${exported.height}`);
-    check(downloads.length > downloadsBefore, "the histogram PNG was downloaded");
-    check(/^histogram-.*\.png$/.test(hist.filename), "the histogram filename is descriptive", hist.filename);
-    check(toasts.some((text) => /Histogram exported/.test(text)), "the export is confirmed");
-    check(/light theme/.test(hist.filename) === false && downloads.at(-1).filename === hist.filename,
-      "the promoted download belongs to the histogram export", downloads.at(-1).filename);
-    void gh;
-
-    // ---- distance units, including the original resolution of a downscaled upload
+    const gh = window.geocluster;
     const original = state().original;
     original.info = { ...original.info, scale: 0.5, downscaled: true,
       original_width: (original.info.width ?? 0) * 2, original_height: (original.info.height ?? 0) * 2 };

@@ -16,6 +16,7 @@ import { ImageHistory, HISTORY_LIMIT, snapshotOf } from "./history.js";
 import { MapStudio } from "./mapstudio_ui.js";
 import { describeDistance } from "./measure.js";
 import { createChatPanel } from "./panels/chat.js";
+import { HistogramWindows } from "./histowindow.js";
 import { createPanels } from "./panels/index.js";
 import { SessionExpiredError, SessionManager, carryGroundMetadata } from "./session.js";
 import { activeImage, createAppState, createBus } from "./state.js";
@@ -460,6 +461,12 @@ syncToggle.node.id = "tb-sync";
 // -------------------------------------------------------------------- panels
 // the Filters panel replaces its own slider step instead of stacking
 ctx.history = history;
+// Floating histogram windows: one manager for the page, created after the
+// history (the Image dropdown lists every state) and before the panels, so the
+// Analysis section can open windows from its single button.
+const histograms = new HistogramWindows({ bus, state, session, api, history });
+ctx.histograms = histograms;
+
 const panels = createPanels(ctx);
 const panelById = new Map(panels.map((panel) => [panel.id, panel]));
 // the assistant dispatches operations through the same parameterised path
@@ -1044,6 +1051,7 @@ window.geocluster = {
   bus,
   viewers: { original: originalViewer, result: resultViewer },
   gate,
+  histograms,
   map: {
     open: openMapStudio,
     close: () => mapStudio.close(),

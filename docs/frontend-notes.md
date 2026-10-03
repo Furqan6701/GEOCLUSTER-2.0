@@ -64,6 +64,39 @@ the server's `image_id`: "Result — sample.jpg#negative (1600×1066)", not
 "new image EkEkL0bUvBYg". A boot assertion collects every `/images/<id>` id the
 session used and fails if any of them appears in a toast.
 
+### Histogram windows (item 9)
+
+The Analysis panel is now **one "Histogram" button plus the Distance controls**:
+the inline canvas, the option row, the panel's Export button, the Statistics
+block and every hint/status line are gone.
+
+Pressing the button opens a **floating, non-modal, opaque window**
+(`js/histowindow.js`, `.histo-layer` → `.histo-window`):
+
+* draggable by its title bar, **✕** closes it, **Escape closes the focused
+  window**, arrow keys move it (Shift = 64 px), Tab cycles inside, and focus
+  lands on the title bar when it opens (`role="dialog"`, `aria-modal="false"`);
+* **up to 4** at once (`MAX_WINDOWS`); a new one is tiled into the first free
+  slot of a 560×420 grid so it never covers an open window (it cascades only
+  when the screen has no free slot left), and the user can drag it anywhere;
+* titled with its image, e.g. `Histogram: sample.jpg#negative`. The API already
+  chains the step into derived names, so the suffix is only added when the name
+  does not carry it (`targetTitle`), and very long chains are clipped to
+  `head#…tail` (`clipTitle`);
+* an **Image** dropdown: Original, Result and **every state in the undo
+  history** (deduped by id, labelled the way the history labels them);
+* a **large chart** (560×260) with clearly labelled controls — Image, Scale
+  (Linear/Log), Smoothing (Off/Low/High), Display (Counts/Density/Cumulative),
+  Theme (Dark/Light), **Export PNG** (2×) — plus the five statistics beside it
+  (min, max, mean, std dev, pixel count) computed in the browser from the bins
+  (`binStats`);
+* a **Compare** dropdown that overlays a second image's bins as an outline in
+  `#ffb454` with a two-row legend naming both images.
+
+Bins are fetched **once per image** and cached in the manager, so changing any
+option (or reopening a window for the same image) makes no request at all —
+asserted in the boot test.
+
 ### North arrow and credit follow the image source (items 6 & 7)
 
 `sourceDefaults(source, info)` decides: an image is "satellite imagery" when the

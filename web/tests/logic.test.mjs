@@ -52,19 +52,36 @@ import {
   sharePercentage,
 } from "../js/panels/clusters.js";
 import {
+  DISPLAY_MODES,
   SCALES,
+  SCALE_OPTIONS,
+  SMOOTHING_LEVELS,
   SMOOTHING_WINDOWS,
+  THEME_OPTIONS,
   THEMES,
   axisLabels,
+  binStats,
   cumulativeBins,
   densityBins,
   describeOptions,
+  displayFlags,
+  displayModeOf,
   drawHistogram,
+  formatStats,
   histogramFileName,
   prepareBins,
   smoothBins,
+  smoothingLabel,
+  smoothingWindow,
 } from "../js/histogram.js";
 import { UNITS, convertPixels, describeDistance, formatMeasurement, unitRateLabel } from "../js/measure.js";
+import {
+  MAX_WINDOWS,
+  WINDOW_CHART,
+  clipTitle,
+  histogramTargets,
+  targetTitle,
+} from "../js/histowindow.js";
 import { formatPercentage, mapCanvasToBlob, mapFileName } from "../js/map.js";
 import {
   CORNERS,
@@ -1194,7 +1211,9 @@ test("prepareBins applies smoothing → cumulative → density → scale in that
   assert.equal(log.max, Math.log10(129));
 
   const all = prepareBins(BINS_SPIKE, { scale: "log", smoothing: 5, cumulative: true, density: true });
-  assert.equal(all.label, "log scale · smoothed 5 · cumulative · density");
+  assert.equal(all.label, "log scale · low smoothing · cumulative · density");
+  assert.equal(prepareBins(BINS_SPIKE, { smoothing: "high" }).label, "linear scale · high smoothing",
+    "a smoothing LEVEL key works like the raw window");
   assert.ok(all.values.every((value) => value >= 0), "log of a share is never negative");
 
   assert.deepEqual(prepareBins([]), { values: [], max: 1, total: 0, label: "no data" });
@@ -1203,7 +1222,8 @@ test("prepareBins applies smoothing → cumulative → density → scale in that
 test("describeOptions and axisLabels describe the current view", () => {
   assert.equal(describeOptions(), "linear scale");
   assert.equal(describeOptions({ scale: "log" }), "log scale");
-  assert.equal(describeOptions({ scale: "linear", smoothing: 9, cumulative: true }), "linear scale · smoothed 9 · cumulative");
+  assert.equal(describeOptions({ scale: "linear", smoothing: 9, cumulative: true }), "linear scale · high smoothing · cumulative");
+  assert.equal(describeOptions({ smoothing: "low" }), "linear scale · low smoothing");
   assert.equal(axisLabels().y, "pixels");
   assert.equal(axisLabels({ cumulative: true }).y, "pixels ≤ intensity");
   assert.equal(axisLabels({ density: true }).y, "share of pixels");
@@ -1789,4 +1809,115 @@ test("an invisible or empty legend reserves no space at all", () => {
   assert.equal(hidden.canvas.width, plain.width, "no legend, no extra band");
   assert.equal(hidden.boxes.outsideLegend, false);
   assert.ok(!hidden.canvas.__texts.includes("Legend"));
+});
+
+// ------------- item 9: clearly labelled options + statistics from the bins ----
+
+test("the histogram options are labelled Off/Low/High, Counts/Density/Cumulative", () => {
+  assert.deepEqual(SCALE_OPTIONS.map((entry) => entry.label), ["Linear", "Log"]);
+  assert.deepEqual(SMOOTHING_LEVELS.map((entry) => entry.label), ["Off", "Low", "High"]);
+  assert.deepEqual(SMOOTHING_LEVELS.map((entry) => entry.window), [0, 5, 11]);
+  assert.deepEqual(DISPLAY_MODES.map((entry) => entry.label), ["Counts", "Density", "Cumulative"]);
+  assert.deepEqual(THEME_OPTIONS.map((entry) => entry.label), ["Dark", "Light"]);
+  assert.equal(smoothingWindow("off"), 0);
+  assert.equal(smoothingWindow("high"), 11);
+  assert.equal(smoothingLabel("low"), "Low");
+  assert.equal(displayModeOf({ cumulative: true, density: true }), "cumulative");
+  assert.deepEqual(displayFlags("density"), { cumulative: false, density: true });
+  assert.deepEqual(displayFlags("counts"), { cumulative: false, density: false });
+});
+
+test("binStats computes min, max, mean, std and the pixel count from the bins", () => {
+  const bins = new Array(256).fill(0);
+  bins[10] = 3;
+  bins[20] = 1;
+  const stats = binStats(bins);
+  assert.equal(stats.count, 4, "pixel count is the sum of the bins");
+  assert.equal(stats.min, 10, "min is the first intensity that occurs");
+  assert.equal(stats.max, 20, "max is the last intensity that occurs");
+  assert.equal(stats.mean, (10 * 3 + 20) / 4);
+  const expectedStd = Math.sqrt((3 * (10 - stats.mean) ** 2 + (20 - stats.mean) ** 2) / 4);
+  assert.ok(Math.abs(stats.std - expectedStd) < 1e-12);
+  assert.deepEqual(binStats([]), { count: 0, min: null, max: null, mean: null, std: null });
+  const shown = formatStats(stats).map((entry) => `${entry.label}=${entry.text}`);
+  assert.deepEqual(shown, ["Min=10", "Max=20", "Mean=12.50", "Std dev=4.33", "Pixels=4"]);
+  assert.deepEqual(formatStats(null).map((entry) => entry.text), ["—", "—", "—", "—", "—"]);
+});
+
+test("drawHistogram can overlay a second image in its own colour with a legend", () => {
+  const documentStub = fakeDocument();
+  const canvas = documentStub.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  const strokes = [];
+  const fills = [];
+  ctx.stroke = () => strokes.push(ctx.strokeStyle);
+  ctx.fill = () => fills.push(ctx.fillStyle);
+  drawHistogram(ctx, {
+    bins: BINS_SPIKE, width: 400, height: 200, fontSize: 10,
+    title: "sample.jpg", compare: { bins: BINS_SPIKE.map((v) => v / 2), label: "sample.jpg#negative", color: "#ffb454" },
+  });
+  assert.ok(strokes.includes("#ffb454"), "the second series is stroked in its colour",
+    strokes.join(" | "));
+  assert.ok(canvas.__texts.includes("sample.jpg#negative"), "the legend names the second image",
+    canvas.__texts.join(" | "));
+});
+
+test("histogramFileName stays a safe file name", () => {
+  assert.equal(histogramFileName("sample.jpg"), "histogram-sample.png");
+  assert.equal(histogramFileName("my photo!!.png"), "histogram-my-photo-.png");
+});
+
+// ------------- item 9: histogram windows list their images and title them ----
+
+test("histogramTargets lists the original, the result and every history state", () => {
+  const state = {
+    original: { id: "img-orig", info: { name: "sample.jpg" } },
+    result: { id: "img-neg", info: { name: "sample.jpg#negative" } },
+  };
+  const history = {
+    entries: [
+      { imageId: "img-orig", info: { name: "sample.jpg" }, label: "Opened sample.jpg" },
+      { imageId: "img-neg", info: { name: "sample.jpg#negative" }, label: "Negative" },
+      { imageId: "img-blur", info: { name: "sample.jpg#negative#blur" }, label: "Mean filter w=9" },
+    ],
+  };
+  const targets = histogramTargets({ state, history });
+  assert.deepEqual(targets.map((entry) => entry.id), ["img-orig", "img-neg", "img-blur"],
+    "original, then result, then the rest of the history — each id once");
+  assert.equal(targets[0].kind, "original");
+  assert.equal(targets[1].kind, "result");
+  assert.equal(targets[2].kind, "history");
+  assert.deepEqual(histogramTargets({ state: {}, history: null }), []);
+  assert.deepEqual(histogramTargets({}).map((entry) => entry.id), []);
+});
+
+test("targetTitle names the image plus the step, without repeating the API's own chain", () => {
+  // the API already appends the operation: sample.jpg#negative
+  assert.equal(targetTitle({ name: "sample.jpg#negative" }, "Negative"), "sample.jpg#negative");
+  assert.equal(targetTitle({ name: "sample.jpg#kmeans-display" }, "K-Means display"),
+    "sample.jpg#kmeans-display", "punctuation and case do not matter");
+  // a plain original keeps its name
+  assert.equal(targetTitle({ name: "sample.jpg" }, "Opened sample.jpg"), "sample.jpg");
+  assert.equal(targetTitle({ name: "sample.jpg" }, ""), "sample.jpg");
+  // a step the name does not carry is appended, lower-cased like the API does
+  assert.equal(targetTitle({ name: "sample.jpg" }, "Negative"), "sample.jpg#negative");
+  assert.equal(targetTitle({ name: "sample.jpg#negative" }, "Mean filter w=9"),
+    "sample.jpg#negative#mean filter w=9");
+  assert.equal(targetTitle(null, ""), "image", "a missing name is still a title");
+});
+
+test("clipTitle keeps a long chained name readable", () => {
+  assert.equal(clipTitle("sample.jpg"), "sample.jpg");
+  assert.equal(clipTitle("a#b#c"), "a#b#c");
+  const long = ["sample.jpg", "negative", "blur", "brightness +40", "threshold", "mean filter w=9"].join("#");
+  const clipped = clipTitle(long);
+  assert.ok(clipped.length <= 56, clipped);
+  assert.ok(clipped.startsWith("sample.jpg#…") && clipped.endsWith("mean filter w=9"), clipped);
+  const veryLong = `sample.jpg#${"x".repeat(120)}`;
+  assert.ok(clipTitle(veryLong).length <= 56);
+});
+
+test("the window constants describe the required layout", () => {
+  assert.equal(MAX_WINDOWS, 4, "at most four windows");
+  assert.ok(WINDOW_CHART.width >= 500 && WINDOW_CHART.height >= 240, "the chart is large");
 });
