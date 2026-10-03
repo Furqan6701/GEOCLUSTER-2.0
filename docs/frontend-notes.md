@@ -32,6 +32,24 @@ alone. Everything here was verified against the API in this repository.
   `http://localhost:5173/?api=http://127.0.0.1:9000` or
   `localStorage.setItem("geocluster.apiBase", "http://127.0.0.1:9000")`.
 
+### Two serving modes (and why CORS is only half the story)
+
+Browsers resolve `localhost` to the **user's** machine, so a page that is not
+served from the dev box must never call `http://localhost:8000` — that request
+would go to the visitor's own computer. `resolveApiBase` therefore picks:
+
+| Page host | API base | Path |
+| --- | --- | --- |
+| `localhost` / `127.0.0.1` (the documented dev flow) | `http://localhost:8000` | direct call, needs CORS |
+| anything else — hosted preview, LAN, reverse proxy | `/api` | `serve.py` proxies `/api/*` to the backend (same-origin, no CORS) |
+
+`serve.py` has `--api <base>` (proxy target, default `http://127.0.0.1:8000`)
+and `--no-proxy`. Verified live: `/api/health`, `POST /api/sessions`, API error
+bodies (the 404 `detail` survives), the 405 for POSTs to static paths, a 502
+with a friendly `detail` when the backend is down while static files keep
+serving, and byte-identical PNG/GCH downloads through the proxy. The boot test
+runs in both modes (see the table below).
+
 ## Sessions (server memory, 60-minute TTL)
 
 Sessions live in the API process: a server restart or the TTL (60 minutes)
@@ -121,6 +139,10 @@ message. Raw JSON is never displayed.
 | `python web/tests/smoke_test.py` | Serves `web/` on 5173 (reuses a running server for the same root), checks assets + content types, that all 47 relative module imports resolve, that no key material exists under `web/`, that no `innerHTML` is used, and that the API's CORS allows the frontend origin. |
 | `python web/tests/integration_check.py` | Live contract check against a running API: the exact call sequence the browser makes (session → upload → 6 filters → kmeans k=5 → classify → histogram → stats → GCH2 round trip → satellite error paths → chat commands → 404/415). Requires `uvicorn main:app --port 8000`. |
 | `node web/tests/boot_test.mjs --jsdom <dir>` | Boot test: loads `index.html` in jsdom, imports `js/app.js` and drives the UI through DOM events against the live API — 49 assertions covering chips, tabs, upload, the six filters, the rendered K-Means range table, classify, histogram/stats, GCH2 compress → decompress, chat router commands and session-expiry recovery. jsdom is optional (not a dependency of the app); without it the test skips. |
+
+The boot test runs in both serving modes: the default (page on localhost →
+direct API calls) and hosted (`--page-host 5173-demo.e2b.app` → everything
+through the `/api` proxy, resolved against `--web http://127.0.0.1:5173`).
 
 The boot test earned its place immediately: it caught a `ReferenceError` in
 `Viewer._build()` (the constructor's `title` parameter was referenced outside

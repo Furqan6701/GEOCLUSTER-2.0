@@ -17,7 +17,11 @@ import { chip, el, setChildren, toast } from "./ui.js";
 import { Viewer } from "./viewer.js";
 
 // ------------------------------------------------------------------- context
-const apiBase = resolveApiBase({ search: window.location.search, storage: window.localStorage });
+const apiBase = resolveApiBase({
+  search: window.location.search,
+  storage: window.localStorage,
+  hostname: window.location.hostname,
+});
 const state = createAppState();
 state.apiBase = apiBase;
 const bus = createBus();

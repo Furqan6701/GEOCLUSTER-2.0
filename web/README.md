@@ -52,13 +52,34 @@ uvicorn main:app --reload --port 8000     # terminal 1
 cd web && python3 serve.py                # terminal 2 -> http://localhost:5173
 ```
 
+## Where the API request goes
+
+The frontend picks its API base in this order:
+
+1. `?api=…` on the page URL,
+2. `localStorage.geocluster.apiBase`,
+3. the page's hostname — **localhost** pages call `http://localhost:8000`
+   directly (the normal dev flow, allowed by the API's CORS list); any other
+   host uses the same-origin **`/api`** path.
+
+`serve.py` forwards `/api/*` to the backend, so the page works when the
+browser is not on the machine running the API (hosted preview, another device
+on the LAN, a reverse proxy). Browsers must never be told to call `localhost`
+for a service that runs on the server — that would mean *their* machine.
+
+```powershell
+python serve.py                                   # /api/* → http://127.0.0.1:8000
+python serve.py --api http://127.0.0.1:9000       # proxy another backend
+python serve.py --no-proxy                        # static files only
+```
+
 ## Configuration
 
 | Setting | How |
 | --- | --- |
-| API address | `http://localhost:5173/?api=http://127.0.0.1:8000`, or set `localStorage.geocluster.apiBase` |
+| API address | `http://localhost:5173/?api=http://127.0.0.1:8000`, `?api=/api` (force the proxy), or `localStorage.geocluster.apiBase` |
 | API port / credentials | `api/.env` (see `api/.env.example`) |
-| CORS | serve the frontend from an origin listed in the API's `ALLOWED_ORIGINS` (defaults include localhost:5173) |
+| CORS | only needed for the direct flow: serve the page from an origin listed in the API's `ALLOWED_ORIGINS` (defaults include localhost:5173). Hosted pages go through `/api`, which is same-origin — no CORS involved |
 | Frontend port | `python serve.py --port 5174` — remember to add that origin to `ALLOWED_ORIGINS` |
 
 Never put keys in `web/`: everything here is served to the browser verbatim.
@@ -88,6 +109,15 @@ range table), classify, histogram/stats, GCH2 compress → decompress, the chat
 router commands and the session-expired recovery path. It skips itself (exit 0)
 when jsdom or the API is missing.
 
+Run it twice to cover both ways the page is served:
+
+```powershell
+node web/tests/boot_test.mjs --jsdom /tmp/geocluster-jsdom/node_modules
+# hosted mode: the page is not on localhost, so every call goes through /api
+node web/tests/boot_test.mjs --jsdom /tmp/geocluster-jsdom/node_modules `
+     --page-host 5173-demo.e2b.app --web http://127.0.0.1:5173
+```
+
 `node --test` also works from inside `web/`: `node --test "tests/*.test.mjs"`.
 
 ## Troubleshooting
@@ -95,6 +125,7 @@ when jsdom or the API is missing.
 | Symptom | Fix |
 | --- | --- |
 | Banner "Can't reach the API…" | start the API (`uvicorn main:app --port 8000`) and confirm the base URL |
+| Banner mentions `/api` and the server could not reach the API | the proxy target is down — start the API, or point `serve.py --api http://host:port` at the right one |
 | Browser console shows a CORS error | the page's origin is missing from `ALLOWED_ORIGINS` (or you opened `file://`) — add the origin and restart the API |
 | "Your session expired…" toast | expected after an API restart or 60 minutes idle — the image must be uploaded again |
 | AI chip says "not configured" | `FIREWORKS_API_KEY` is missing in `api/.env`; commands still work |

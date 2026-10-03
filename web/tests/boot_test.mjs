@@ -16,6 +16,12 @@
  *     Without jsdom the test SKIPs (exit 0) so the rest of the suite still runs.
  *
  * Usage: node web/tests/boot_test.mjs [--jsdom <node_modules dir>] [--api <base>]
+ *                                     [--page-host <hostname>] [--web <origin>]
+ *
+ * --page-host simulates where the page is served from. With a local host the
+ * frontend calls the API directly (http://localhost:8000, the documented dev
+ * flow). With any other host — a hosted preview — it must fall back to the
+ * same-origin /api path, which this harness resolves against --web (serve.py).
  */
 
 import { readFile } from "node:fs/promises";
@@ -34,6 +40,10 @@ function arg(name, fallback = null) {
 }
 
 const API_BASE = arg("api", process.env.GEOCLUSTER_API ?? "http://localhost:8000");
+const PAGE_HOST = arg("page-host", process.env.GEOCLUSTER_PAGE_HOST ?? "localhost");
+const WEB_ORIGIN = arg("web", process.env.GEOCLUSTER_WEB ?? "http://127.0.0.1:5173");
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "0.0.0.0", ""]);
+const HOSTED = !LOCAL_HOSTS.has(PAGE_HOST);
 
 // ----------------------------------------------------------------- jsdom lookup
 
@@ -125,7 +135,7 @@ if (!apiUp) {
 
 const html = await readFile(path.join(WEB, "index.html"), "utf8");
 const dom = new JSDOM(html, {
-  url: "http://localhost:5173/",
+  url: `http://${PAGE_HOST}/`,
   pretendToBeVisual: true,
   runScripts: "outside-only",
 });
@@ -225,6 +235,9 @@ window.createImageBitmap = async (blob) => {
 // fetch: Node's, with jsdom FormData/Blob converted to Node's own types.
 async function patchedFetch(input, init = {}) {
   const options = { ...init };
+  // the page's own origin: a relative "/api/..." call belongs to the server
+  // that served the page (this is what a real browser does)
+  if (typeof input === "string" && input.startsWith("/")) input = WEB_ORIGIN + input;
   if (options.body && options.body.constructor?.name === "FormData") {
     const converted = new NodeFormData();
     for (const [key, value] of options.body.entries()) {
@@ -277,7 +290,8 @@ const uncaught = [];
 window.addEventListener("error", (event) => uncaught.push(String(event.message)));
 window.addEventListener("unhandledrejection", (event) => uncaught.push(String(event.reason)));
 
-console.log(`boot test — ${WEB} → ${API_BASE}\n`);
+console.log(`boot test — ${WEB} → ${HOSTED ? `same-origin /api via ${WEB_ORIGIN}` : API_BASE}`);
+console.log(`page host: ${PAGE_HOST} (${HOSTED ? "hosted: /api proxy" : "local: direct API"})\n`);
 let bootFailed = false;
 try {
   await import(pathToFileURL(path.join(WEB, "js", "app.js")).href);
@@ -292,6 +306,8 @@ if (!bootFailed) {
   // ------------------------------------------------------------- 1. bootstrap
   await until(() => state()?.sessionId, "bootstrap creates a session");
   check(Boolean(state()?.sessionId), "session created on load", String(state()?.sessionId));
+  check(state()?.apiBase === (HOSTED ? "/api" : API_BASE),
+    `API base resolved for a ${HOSTED ? "hosted" : "local"} page`, String(state()?.apiBase));
   check(state()?.ttlMinutes === 60, "session TTL reported (60 min)", String(state()?.ttlMinutes));
   check(state()?.maxImages === 6, "session image cap reported (6)", String(state()?.maxImages));
   check(state()?.health != null, "GET /health fetched and rendered");
@@ -304,7 +320,7 @@ if (!bootFailed) {
     "chat explains that math is not rendered");
 
   const chips = document.getElementById("status-chips").textContent;
-  check(/session [0-9a-zA-Z]{8}/.test(chips), "status chip shows the session id", chips);
+  check(/session [0-9A-Za-z_-]{8}/.test(chips), "status chip shows the session id", chips);
   check(/AI (ready|not configured)/.test(chips), "status chip shows the AI state", chips);
   check(/Satellite (ready|not configured)/.test(chips), "status chip shows the satellite state", chips);
 
@@ -419,12 +435,21 @@ if (!bootFailed) {
   };
   const bubbles = () => [...document.querySelectorAll(".chat-log .bubble")].map((node) => node.textContent);
 
+  // The API rate-limits /ai/chat. When the suite is run repeatedly the first
+  // attempt can come back "Too many chat requests" — wait out the window and
+  // try once more so the check still exercises the router.
+  const routerAnswered = () =>
+    bubbles().some((text) => /Satellite fetch requested for F-8/.test(text) || /F-8.*failed/.test(text));
   await sendChat("Show me F-8 imagery");
-  await until(() => bubbles().some((text) => text.startsWith("Router →")), "chat runs the router command");
-  const afterCommand = await until(() => {
-    const list = bubbles();
-    return list.some((text) => /Satellite fetch requested for F-8/.test(text) || /F-8.*failed/.test(text)) ? list : null;
-  }, "satellite command reported back");
+  await until(() => bubbles().some((text) => text.startsWith("Router →") || /Too many chat/.test(text)),
+    "chat answered (router or rate limit)");
+  let afterCommand = await until(() => (routerAnswered() ? bubbles() : null), "satellite command reported back", { timeout: 10000 });
+  if (!afterCommand && bubbles().some((text) => /Too many chat/.test(text))) {
+    console.log("note  chat rate limit hit — waiting 25 s and retrying once");
+    await sleep(25000);
+    await sendChat("Show me F-8 imagery");
+    afterCommand = await until(() => (routerAnswered() ? bubbles() : null), "satellite command reported back", { timeout: 20000 });
+  }
   check(Boolean(afterCommand), "satellite command executed without a language model",
     (afterCommand ?? bubbles()).slice(-2).join(" | "));
 

@@ -8,7 +8,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { DEFAULT_API_BASE, isValidHttpUrl, normalizeBase, resolveApiBase } from "../js/config.js";
+import {
+  DEFAULT_API_BASE,
+  PROXY_API_BASE,
+  isUsableApiBase,
+  isValidHttpUrl,
+  normalizeBase,
+  resolveApiBase,
+} from "../js/config.js";
 import { ApiError, detailToText, humanizeError } from "../js/errors.js";
 import { ApiClient } from "../js/api.js";
 import { defaultParamsFor, describeCommand, executeCommands } from "../js/commands.js";
@@ -63,6 +70,28 @@ test("resolveApiBase prefers the query string, then storage", () => {
   const storage = { getItem: (key) => (key === "geocluster.apiBase" ? "http://10.0.0.5:8000" : null) };
   assert.equal(resolveApiBase({ search: "", storage }), "http://10.0.0.5:8000");
   assert.equal(resolveApiBase({ search: "?api=http://127.0.0.1:9000", storage }), "http://127.0.0.1:9000");
+});
+
+test("resolveApiBase uses the same-origin /api path off the dev machine", () => {
+  assert.equal(resolveApiBase({ hostname: "localhost" }), DEFAULT_API_BASE);
+  assert.equal(resolveApiBase({ hostname: "127.0.0.1" }), DEFAULT_API_BASE);
+  assert.equal(resolveApiBase({ hostname: "" }), DEFAULT_API_BASE);
+  assert.equal(resolveApiBase({ hostname: "5173-abc.e2b.app" }), PROXY_API_BASE);
+  assert.equal(resolveApiBase({ hostname: "192.168.1.20" }), PROXY_API_BASE);
+  // an explicit choice always wins over the host default
+  assert.equal(resolveApiBase({ hostname: "5173-abc.e2b.app", search: "?api=http://127.0.0.1:9000" }),
+    "http://127.0.0.1:9000");
+  assert.equal(resolveApiBase({ hostname: "5173-abc.e2b.app", search: "?api=/api" }), "/api");
+  assert.equal(resolveApiBase({ hostname: "5173-abc.e2b.app", search: "?api=//evil.example" }), PROXY_API_BASE);
+});
+
+test("isUsableApiBase accepts http(s) URLs and same-origin paths only", () => {
+  assert.equal(isUsableApiBase("http://localhost:8000"), true);
+  assert.equal(isUsableApiBase("https://api.example.com/"), true);
+  assert.equal(isUsableApiBase("/api"), true);
+  assert.equal(isUsableApiBase("//evil.example/api"), false);
+  assert.equal(isUsableApiBase("javascript:alert(1)"), false);
+  assert.equal(isUsableApiBase(""), false);
 });
 
 test("resolveApiBase survives a storage that throws", () => {

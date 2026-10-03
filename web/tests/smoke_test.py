@@ -27,6 +27,7 @@ import pathlib
 import re
 import socket
 import threading
+import json
 import urllib.error
 import urllib.request
 
@@ -204,6 +205,45 @@ def check_cors() -> None:
         check(False, "API CORS preflight for POST+content-type", str(error))
 
 
+def check_proxy(port: int = PORT) -> None:
+    """serve.py forwards /api/* to the backend (used when the page is hosted)."""
+    if not port_open("127.0.0.1", port):
+        skip("serve.py /api proxy", f"nothing listening on :{port}")
+        return
+    origin = f"http://127.0.0.1:{port}"
+    try:
+        status, content_type, body = fetch(f"{origin}/api/health")
+        payload = json.loads(body)
+        check(status == 200 and "status" in payload, "GET /api/health proxied to the API",
+              f"{status} {content_type} {body[:80]!r}")
+    except urllib.error.HTTPError as error:
+        payload = error.read()
+        try:
+            detail = json.loads(payload).get("detail", "")
+        except Exception:  # noqa: BLE001
+            detail = payload[:80].decode("utf-8", "replace")
+        check(error.code == 502, "GET /api/health proxied (API down → 502 JSON)", f"{error.code} {detail[:80]}")
+    except Exception as error:  # noqa: BLE001
+        check(False, "GET /api/health proxied to the API", str(error))
+
+    try:
+        status, _, body = fetch(f"{origin}/api/sessions/nope/images/nope?format=png", headers={"Origin": origin})
+        check(False, "proxied 404 keeps the API's detail", f"unexpected {status}")
+    except urllib.error.HTTPError as error:
+        try:
+            detail = json.loads(error.read()).get("detail")
+        except Exception:  # noqa: BLE001
+            detail = None
+        check(error.code == 404 and isinstance(detail, str) and "session" in detail.lower(),
+              "proxied 404 keeps the API's detail", f"{error.code} {detail!r}")
+
+    try:
+        status, content_type, _ = fetch(f"{origin}/index.html", headers={"Origin": origin})
+        check("text/html" in content_type, "static files are unaffected by the proxy", content_type)
+    except Exception as error:  # noqa: BLE001
+        check(False, "static files are unaffected by the proxy", str(error))
+
+
 def main() -> int:
     print(f"web frontend smoke test — root: {WEB}\n")
     check_serving()
@@ -214,6 +254,8 @@ def main() -> int:
     check_no_innerhtml()
     print()
     check_cors()
+    print()
+    check_proxy()
     print()
     if FAILURES:
         print(f"RESULT: {len(FAILURES)} failure(s)")
