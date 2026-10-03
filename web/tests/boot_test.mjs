@@ -433,6 +433,15 @@ if (!bootFailed) {
   check(toasts.some((text) => /grayscale complete/.test(text)) && toasts.some((text) => /meanfilter complete/.test(text)),
     "filter completion toasts shown", toasts.slice(-3).join(" | "));
 
+  // the Result viewport must actually show the operation output
+  const rv = window.geocluster.viewers.result;
+  await until(() => rv.hasImage && rv.image.width > 0, "the Result viewport decodes the operation output");
+  check(rv.hasImage && rv.image.width > 0, "the Result viewport displays the operation output",
+    rv.image ? `${rv.image.width}×${rv.image.height}` : "no image");
+  check(/\d+ × \d+ px/.test(rv.metaLabel.textContent), "the Result viewport header shows its dimensions",
+    rv.metaLabel.textContent);
+  check(rv !== window.geocluster.viewers.original, "Original and Result are separate viewports");
+
   // ------------------------------------------------- 5. histogram + stats
   expandSection("Analysis");
   clickButton("Histogram & stats");
