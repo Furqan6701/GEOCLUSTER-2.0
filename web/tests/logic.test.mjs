@@ -248,6 +248,25 @@ test("satelliteFetch omits empty dates and includes chosen ones", async () => {
   });
 });
 
+test("satelliteFetch sends corner mode, refresh and no blank placeholders", async () => {
+  const { calls, fetchImpl } = recordingFetch({ image_id: "sat1" });
+  const api = new ApiClient({ fetchImpl });
+  const wire = () => parseBody(calls[calls.length - 1].init);
+
+  await api.satelliteFetch({ sessionId: "s1", mode: "bbox", corner1: "33.70, 73.05", corner2: "33.66, 73.10" });
+  assert.deepEqual(wire(), { session_id: "s1", mode: "bbox", corner1: "33.70, 73.05", corner2: "33.66, 73.10" });
+  assert.equal("size_km" in wire(), false, "corner mode does not send the place size box");
+
+  await api.satelliteFetch({
+    sessionId: "s1", mode: "bbox", corner1: "33.70, 73.05", corner2: null, sizeKm: 2, refresh: true,
+  });
+  assert.deepEqual(wire(), { session_id: "s1", mode: "bbox", corner1: "33.70, 73.05", refresh: true });
+
+  await api.satelliteFetch({ sessionId: "s1", mode: "place", location: "Karachi", sizeKm: 5, refresh: true });
+  assert.deepEqual(wire(), { session_id: "s1", location: "Karachi", size_km: 5, refresh: true });
+  assert.equal("mode" in wire(), false, "the default place mode stays off the wire");
+});
+
 test("uploadImage sends multipart FormData", async () => {
   const { calls, fetchImpl } = recordingFetch({ image_id: "img1" });
   const api = new ApiClient({ fetchImpl });

@@ -764,15 +764,6 @@ const menuBar = createMenuBar([
         icon: "route",
         onClick: () => byId("new-session").click(),
       },
-      {
-        label: "Session images…",
-        icon: "file",
-        note: "the Source section lists every image in this session",
-        onClick: () => {
-          focusSection("source");
-          panelById.get("source")?.actions?.renderFiles?.();
-        },
-      },
     ],
   },
   {

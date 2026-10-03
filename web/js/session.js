@@ -189,9 +189,9 @@ export class SessionManager {
     return this.useAsResult(info);
   }
 
-  async fetchSatellite({ location, start = null, end = null }) {
+  async fetchSatellite(request) {
     const info = await this.withSession((sid) =>
-      this.api.satelliteFetch({ sessionId: sid, location, start, end }),
+      this.api.satelliteFetch({ ...request, sessionId: sid }),
     );
     this.remember(info);
     this.state.original = { id: info.image_id, info };

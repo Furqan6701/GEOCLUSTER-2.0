@@ -289,6 +289,17 @@ p { margin: 0; }
 }
 .tool-group-actions { display: flex; gap: 4px; }
 
+/* Source ▸ Satellite: mode rows and the collapsed Advanced fold */
+.sat-row[hidden] { display: none; }
+.sat-row { display: grid; gap: 6px; }
+details.advanced { margin-top: 6px; }
+details.advanced > summary {
+  cursor: pointer; font-size: var(--fs-xs); letter-spacing: 0.4px;
+  text-transform: uppercase; color: var(--text-faint);
+}
+details.advanced > summary:hover { color: var(--text); }
+details.advanced[open] > summary { color: var(--text); }
+
 /* ───────────────────────── image workspace ───────────────────────────── */
 .image-workspace {
   background: var(--bg-canvas);

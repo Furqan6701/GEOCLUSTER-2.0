@@ -435,6 +435,160 @@ if (!bootFailed) {
     return node;
   };
 
+  // ---------------------------- 2b. Source panel: place / corner modes, no lists
+  {
+    const gh = window.geocluster;
+    const source = gh.panels.get("source");
+    const section = document.getElementById("section-source");
+    const text = () => section.textContent;
+
+    check(section != null && !section.hidden, "the Source section is open");
+    check(!/Working image/.test(text()),
+      "the working-image metadata block is gone from the panel");
+    check(!/Session files/.test(text()),
+      "the session file list is gone from the panel");
+    check(source.actions.renderFiles != null && source.actions.useAsOriginal != null,
+      "the bookkeeping those blocks relied on is still there internally");
+
+    const radios = [...section.querySelectorAll('input[type="radio"][name="sat-mode"]')];
+    check(radios.length === 2 && radios[0].value === "place" && radios[1].value === "bbox",
+      "the satellite block offers a Place mode and a Coordinates mode",
+      radios.map((node) => node.value).join(", "));
+    check(radios[0].checked && !radios[1].checked, "Place is the default mode");
+
+    const placeRow = section.querySelector('[data-sat-row="place"]');
+    const cornersRow = section.querySelector('[data-sat-row="bbox"]');
+    check(placeRow != null && !placeRow.hidden, "the place row is visible in place mode");
+    check(cornersRow != null && cornersRow.hidden, "the corner row is hidden in place mode");
+    check(cornersRow.querySelectorAll('input[type="text"]').length === 2,
+      "the coordinate mode has two corner fields");
+    const cornerLabels = [...cornersRow.querySelectorAll("label")].map((node) => node.textContent);
+    check(cornerLabels[0] === "Corner 1 (lat, lon)" && cornerLabels[1] === "Corner 2 (lat, lon)",
+      "the corner fields are labelled as the user types them", cornerLabels.join(" | "));
+
+    const sizeSelect = section.querySelector("#sat-size");
+    const sizes = [...sizeSelect.options].map((option) => option.value);
+    check(JSON.stringify(sizes) === JSON.stringify(["1", "2", "5"]),
+      "the size dropdown offers 1, 2 and 5 km", sizes.join(", "));
+    check(sizeSelect.value === "2", "the size defaults to 2 km", sizeSelect.value);
+
+    const advanced = section.querySelector("details.advanced");
+    check(advanced != null, "there is an Advanced fold");
+    check(advanced.open === false, "the Advanced fold starts collapsed");
+    check(advanced.querySelectorAll('input[type="date"]').length === 2,
+      "the optional dates live inside the Advanced fold");
+    check(/Advanced/.test(advanced.querySelector("summary")?.textContent ?? ""),
+      "the fold is labelled Advanced");
+
+    const refreshControl = section.querySelector("#sat-refresh");
+    check(refreshControl != null && !refreshControl.checked,
+      "there is a Refresh option that is off by default");
+
+    // --- mode switching
+    const click = (node) => node.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    radios[1].checked = true;
+    radios[1].dispatchEvent(new window.Event("change", { bubbles: true }));
+    check(cornersRow.hidden === false && placeRow.hidden === true,
+      "choosing Coordinates swaps the row that is shown");
+    const cornerInputs = [...cornersRow.querySelectorAll('input[type="text"]')];
+    cornerInputs[0].value = "33.70, 73.05";
+    cornerInputs[1].value = "33.66, 73.10";
+    radios[0].checked = true;
+    radios[0].dispatchEvent(new window.Event("change", { bubbles: true }));
+    check(placeRow.hidden === false && cornersRow.hidden === true,
+      "choosing Place swaps back");
+
+    // --- request bodies (transport stubbed: no satellite request is spent)
+    const realFetch = gh.api.satelliteFetch;
+    const originalBefore = state().original;
+    const resultBefore = state().result;
+    const sent = [];
+    gh.api.satelliteFetch = async (payload) => {
+      sent.push(payload);
+      return {
+        image_id: "satstub01", session_id: state()?.sessionId, name: "F-8.png", source: "satellite",
+        width: 200, height: 200, channels: 3, megapixels: 0.04, bytes: 1234,
+        original_width: 200, original_height: 200, original_megapixels: 0.04, scale: 1, downscaled: false,
+      };
+    };
+    try {
+      const placeInput = placeRow.querySelector('input[type="text"]');
+      placeInput.value = "Karachi";
+      sizeSelect.value = "5";
+      await source.actions.fetchSatellite();
+      check(sent.length === 1, "place mode sends exactly one request", String(sent.length));
+      const body = sent[0];
+      check(body.mode === "place" && body.location === "Karachi" && body.sizeKm === 5,
+        "place mode sends the place text and the chosen size", JSON.stringify(body));
+      check(!("start" in body) || body.start == null, "no start date is invented", JSON.stringify(body.start));
+      check(!("end" in body) || body.end == null, "no end date is invented", JSON.stringify(body.end));
+      check(body.refresh === false, "refresh is off unless asked for");
+      check(!/placeholder/i.test(String(body.location)), "placeholder text is never sent");
+
+      // dates + refresh come from the Advanced fold and the checkbox
+      const dateInputs = [...advanced.querySelectorAll('input[type="date"]')];
+      dateInputs[0].value = "2026-08-01";
+      dateInputs[1].value = "2026-09-01";
+      refreshControl.checked = true;
+      await source.actions.fetchSatellite();
+      const withDates = sent[sent.length - 1];
+      check(withDates.start === "2026-08-01" && withDates.end === "2026-09-01",
+        "chosen dates are sent as YYYY-MM-DD", `${withDates.start} → ${withDates.end}`);
+      check(withDates.refresh === true, "Refresh asks the server to skip the cache");
+
+      // corner mode
+      radios[1].checked = true;
+      radios[1].dispatchEvent(new window.Event("change", { bubbles: true }));
+      cornerInputs[0].value = "33.70, 73.05";
+      cornerInputs[1].value = "33.66, 73.10";
+      dateInputs[0].value = "";
+      dateInputs[1].value = "";
+      refreshControl.checked = false;
+      await source.actions.fetchSatellite();
+      const corners = sent[sent.length - 1];
+      check(corners.mode === "bbox" && corners.corner1 === "33.70, 73.05" && corners.corner2 === "33.66, 73.10",
+        "coordinate mode sends both pasted corners", JSON.stringify(corners));
+      check(!("location" in corners) || corners.location == null,
+        "coordinate mode does not invent a place name", JSON.stringify(corners.location));
+      check(corners.start == null && corners.end == null,
+        "with the fold empty no dates are sent at all");
+
+      // an empty field is caught before any request is made
+      cornerInputs[1].value = "";
+      await source.actions.fetchSatellite();
+      check(sent.length === 3, "an incomplete request is not sent", String(sent.length));
+      check(toasts.some((t) => /Paste both corners/.test(t)), "the user is told what is missing",
+        toasts.slice(-2).join(" | "));
+      cornerInputs[1].value = "33.66, 73.10";
+      placeInput.value = "";
+      radios[0].checked = true;
+      radios[0].dispatchEvent(new window.Event("change", { bubbles: true }));
+      await source.actions.fetchSatellite();
+      check(sent.length === 3, "an empty place name is not sent either", String(sent.length));
+    } finally {
+      gh.api.satelliteFetch = realFetch;
+      // the stub's image id does not exist server-side: put the real working
+      // image back so the rest of the run (K-Means, filters, history) is real
+      state().images.delete("satstub01");
+      state().original = originalBefore;
+      state().result = resultBefore;
+      gh.bus.emit("image:loaded", { role: "original", info: originalBefore.info });
+    }
+
+    // --- the live API rejects what the frontend must show in friendly words
+    const bad = await gh.api.satelliteFetch({
+      sessionId: state().sessionId, mode: "bbox", corner1: "91, 20", corner2: "33.66, 73.10",
+    }).then(() => null, (error) => error);
+    check(bad != null && bad.status === 422,
+      "an out-of-range latitude is rejected with 422", `status=${bad?.status}`);
+    const { humanizeError } = await import(pathToUrl("js/errors.js"));
+    const friendly = humanizeError(bad);
+    check(/Corner 1/.test(friendly) && /latitude/.test(friendly),
+      "the 422 names the field and the problem", friendly);
+    check(!/[{}[\]]/.test(friendly) && !/json/i.test(friendly),
+      "the friendly text contains no JSON", friendly);
+  }
+
   // ------------------------------------------------------- 3. K-Means first
   // clicking the toolbox section header expands it (dock behaviour)
   const expandSection = (title) => {
@@ -987,20 +1141,18 @@ if (!bootFailed) {
     check(!labels.some((label) => /Recent files/i.test(label)),
       "the never-implemented 'Recent files' entry is gone", labels.filter((l) => /recent/i.test(l)).join(", "));
 
-    // what replaced it is a real action: reveal the Source section and its list
+    // the session-image list was removed from the Source panel, so the File
+    // menu entry that pointed at it is gone as well (no dead entries)
     const fileButton = [...document.querySelectorAll("#menubar .menu-button")]
       .find((node) => node.textContent.trim() === "File");
     fileButton.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
-    const sessionItem = [...document.querySelectorAll("#menubar .menu-popup:not([hidden]) .menu-item")]
-      .find((node) => (node.querySelector(".menu-item-label")?.textContent ?? "").startsWith("Session images"));
-    check(sessionItem != null && !sessionItem.disabled,
-      "the File menu offers the session image list instead", sessionItem?.title);
-    sessionItem.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
-    const sourceBody = [...document.querySelectorAll("#toolbox-sections .section")]
-      .find((node) => /Source/.test(node.querySelector(".section-title")?.textContent ?? ""));
-    check(sourceBody != null && !sourceBody.hidden, "it opens the Source section");
-    check(/session/i.test(document.getElementById("toolbox-sections").textContent),
-      "the Source section lists the session's images");
+    const fileLabels = [...document.querySelectorAll("#menubar .menu-popup:not([hidden]) .menu-item")]
+      .map((node) => node.querySelector(".menu-item-label")?.textContent ?? "");
+    check(!fileLabels.some((label) => /session image/i.test(label)),
+      "no menu entry promises a session image list any more", fileLabels.join(", "));
+    check(fileLabels.some((label) => /Fetch Sentinel-2/.test(label)),
+      "the File menu still offers the satellite fetch", fileLabels.join(", "));
+    window.document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
 
     // toolbar buttons: disabled ones must say what they need
     const disabledToolbar = [...document.querySelectorAll("#toolbar button")].filter((node) => node.disabled);

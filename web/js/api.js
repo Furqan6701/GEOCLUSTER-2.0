@@ -119,8 +119,37 @@ export class ApiClient {
     return this.request("/locations");
   }
 
-  satelliteFetch({ sessionId, location, start = null, end = null }) {
-    const body = { session_id: sessionId, location };
+  /**
+   * Fetch a Sentinel-2 crop.
+   *
+   * Place mode sends the place text (a sector code, an alias or a place name)
+   * plus the requested square size; corner mode sends the two pasted corners.
+   * Optional values are only added when the user actually supplied them — a
+   * placeholder date or a blank corner must never reach the API.
+   */
+  satelliteFetch({
+    sessionId,
+    location = null,
+    start = null,
+    end = null,
+    mode = "place",
+    sizeKm = null,
+    corner1 = null,
+    corner2 = null,
+    refresh = false,
+  }) {
+    // "place" is the server-side default, so it is only sent when it differs;
+    // empty fields are omitted rather than sent as blank placeholders.
+    const body = { session_id: sessionId };
+    if (mode === "bbox") {
+      body.mode = "bbox";
+      if (corner1) body.corner1 = corner1;
+      if (corner2) body.corner2 = corner2;
+    } else if (location) {
+      body.location = location;
+    }
+    if (mode !== "bbox" && sizeKm != null && sizeKm !== "") body.size_km = Number(sizeKm);
+    if (refresh) body.refresh = true;
     // Dates are optional: only send them when the user actually chose them.
     if (start) body.start = start;
     if (end) body.end = end;

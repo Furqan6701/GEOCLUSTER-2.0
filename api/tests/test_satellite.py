@@ -6,6 +6,7 @@ Everything is mocked: no test touches the network.
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -13,7 +14,15 @@ import pytest
 
 from geocluster.errors import SatelliteError, SatelliteUnavailable
 from geocluster.locations import LocationNotFound
-from geocluster.satellite import SatelliteClient, default_date_window, sanitize_location
+from geocluster.places import NominatimThrottle, PlaceLookup
+from geocluster.satellite import (
+    RESOLUTION_M,
+    SatelliteClient,
+    cache_key,
+    default_date_window,
+    format_size_km,
+    sanitize_location,
+)
 
 
 class FakeResponse:
@@ -44,6 +53,47 @@ class FakeSession:
         if "token" in url:
             return FakeResponse(json_payload={"access_token": "SECRET-TOKEN", "expires_in": 600})
         return FakeResponse(content=self.png)
+
+
+class FakeNominatimSession:
+    """Stands in for requests.Session during place lookups (never networked)."""
+
+    def __init__(self, results=None, *, error=None):
+        self.results = results if results is not None else []
+        self.error = error
+        self.gets: list[dict] = []
+
+    def get(self, url, params=None, headers=None, timeout=None):
+        self.gets.append({"url": url, "params": params, "headers": headers})
+        if self.error is not None:
+            import requests
+
+            raise requests.RequestException(self.error)
+        return FakeResponse(json_payload=self.results)
+
+
+def fake_places(results=None, tmp_path=None, *, error=None, throttle=None):
+    """A PlaceLookup wired to a fake Nominatim session (no network, no waiting)."""
+    session = FakeNominatimSession(results, error=error)
+    lookup = PlaceLookup(
+        cache_dir=tmp_path or "/tmp/geocluster-test-places",
+        session=session,
+        throttle=throttle or NominatimThrottle(min_interval=0, clock=lambda: 0.0, sleep=lambda _s: None),
+    )
+    return lookup, session
+
+
+def client_with(tmp_path, session=None, *, places=None, **kwargs) -> SatelliteClient:
+    if places is None:
+        places = fake_places(tmp_path=tmp_path)[0]
+    return SatelliteClient(
+        client_id="id",
+        client_secret="secret",
+        cache_dir=tmp_path,
+        session=session or FakeSession(make_png()),
+        places=places,
+        **kwargs,
+    )
 
 
 def make_png() -> bytes:
@@ -77,15 +127,22 @@ def test_missing_credentials_raise_unavailable(monkeypatch):
     with pytest.raises(SatelliteUnavailable):
         client.fetch("F-8")
 
+    # an unknown place name must not paper over the missing credentials with a
+    # network lookup: the sector path is local, so the credentials error wins
+    with pytest.raises(SatelliteUnavailable):
+        client.fetch("F-8", size_km=2)
+
 
 def test_fetch_uses_the_cache_and_caches_the_token(tmp_path):
     session = FakeSession(make_png())
-    client = SatelliteClient(client_id="id", client_secret="secret", cache_dir=tmp_path, session=session)
+    client = client_with(tmp_path, session)
 
     first, meta = client.fetch("F-8")
     assert meta["cached"] is False
     assert first == session.png
-    assert (tmp_path / "F-8.png").is_file()
+    assert meta["key"].endswith(".png") and Path(meta["path"]).is_file()
+    # the key names the whole request, not just the location
+    assert "F-8" in meta["key"] and "2.6km" in meta["key"] and "260x260" in meta["key"]
 
     second, meta2 = client.fetch("F-8")
     assert meta2["cached"] is True
@@ -101,6 +158,53 @@ def test_fetch_uses_the_cache_and_caches_the_token(tmp_path):
     assert "SECRET-TOKEN" not in repr(meta)  # no token material in metadata
 
 
+def test_cache_key_covers_box_size_dates_and_resolution(tmp_path):
+    """The old key was the location name alone: two different requests collided."""
+    base = dict(label="F-8", bbox=[73.0, 33.6, 73.1, 33.7], size_km=2.0,
+                date_from="2026-08-03T00:00:00Z", date_to="2026-10-02T00:00:00Z", width=200, height=200)
+    key = cache_key(**base)
+    assert key != cache_key(**{**base, "bbox": [74.0, 33.6, 74.1, 33.7]}), "bbox must change the key"
+    assert key != cache_key(**{**base, "size_km": 5.0}), "size must change the key"
+    assert key != cache_key(**{**base, "date_from": "2026-01-01T00:00:00Z"}), "date window must change the key"
+    assert key != cache_key(**{**base, "date_to": "2026-12-02T00:00:00Z"}), "date window must change the key"
+    assert key != cache_key(**{**base, "width": 500, "height": 500}), "resolution must change the key"
+    assert key == cache_key(**base), "the same request is a stable key"
+    assert "2km" in key and "200x200" in key and "2026-08-03_2026-10-02" in key
+    assert format_size_km(2.0) == "2" and format_size_km(2.6) == "2.6" and format_size_km(0.75) == "0.75"
+
+
+def test_two_date_windows_do_not_share_a_cache_entry(tmp_path):
+    """Exactly the old bug: the second window reused the first window's pixels."""
+    session = FakeSession(make_png())
+    client = client_with(tmp_path, session)
+    _, first = client.fetch("F-8", start="2026-01-01", end="2026-02-01")
+    _, second = client.fetch("F-8", start="2026-07-01", end="2026-08-01")
+    assert first["cached"] is False and second["cached"] is False
+    assert first["path"] != second["path"]
+    _, again = client.fetch("F-8", start="2026-01-01", end="2026-02-01")
+    assert again["cached"] is True and again["path"] == first["path"]
+
+
+def test_refresh_skips_the_cache_and_overwrites_the_entry(tmp_path):
+    session = FakeSession(make_png())
+    client = client_with(tmp_path, session)
+    _, meta = client.fetch("F-8")
+    process_calls = lambda: len([url for url, _ in session.posts if "process" in url])  # noqa: E731
+    assert process_calls() == 1
+
+    _, cached = client.fetch("F-8")
+    assert cached["cached"] is True and process_calls() == 1
+
+    content, refreshed = client.fetch("F-8", refresh=True)
+    assert refreshed["cached"] is False, "refresh must not be answered from the cache"
+    assert process_calls() == 2
+    assert content == session.png
+    assert refreshed["path"] == meta["path"], "refresh overwrites the same cache entry"
+
+    _, cached_again = client.fetch("F-8")
+    assert cached_again["cached"] is True and process_calls() == 2
+
+
 def test_fetch_rejects_a_reversed_date_range(tmp_path):
     session = FakeSession(make_png())
     client = SatelliteClient(client_id="id", client_secret="secret", cache_dir=tmp_path, session=session)
@@ -110,10 +214,12 @@ def test_fetch_rejects_a_reversed_date_range(tmp_path):
 
 def test_unknown_location_raises_before_any_network(tmp_path):
     session = FakeSession(make_png())
-    client = SatelliteClient(client_id="id", client_secret="secret", cache_dir=tmp_path, session=session)
+    places, nominatim = fake_places(results=[], tmp_path=tmp_path / "places")
+    client = client_with(tmp_path, session, places=places)
     with pytest.raises(LocationNotFound):
         client.fetch("atlantis")
-    assert session.posts == []
+    assert session.posts == [], "no Copernicus traffic for a place that does not exist"
+    assert len(nominatim.gets) == 1, "the place was looked up exactly once"
 
 
 def test_client_reports_no_token_on_error(tmp_path, caplog):
@@ -141,12 +247,19 @@ def test_api_returns_503_without_credentials(app, client, monkeypatch):
     assert "not configured" in response.json()["detail"]
 
 
-def test_api_returns_404_for_unknown_location(app, client, monkeypatch):
+def test_api_returns_404_for_unknown_location(app, client, monkeypatch, tmp_path):
     monkeypatch.delenv("COPERNICUS_CLIENT_ID", raising=False)
-    app.state.satellite = SatelliteClient(client_id="id", client_secret="secret", cache_dir="/tmp/does-not-matter")
+    app.state.satellite = SatelliteClient(
+        client_id="id",
+        client_secret="secret",
+        cache_dir=tmp_path,
+        session=FakeSession(make_png()),
+        places=fake_places(results=[], tmp_path=tmp_path / "places")[0],
+    )
     session_id = client.post("/sessions").json()["session_id"]
     response = client.post("/satellite/fetch", json={"session_id": session_id, "location": "atlantis"})
     assert response.status_code == 404
+    assert "atlantis" in response.json()["detail"]
 
 
 def test_api_returns_404_for_unknown_session(app, client):
@@ -159,8 +272,9 @@ def test_api_stores_the_fetched_image(app, client):
     class StubSatellite:
         configured = True
 
-        def fetch(self, location, start=None, end=None, **kwargs):
-            return make_png(), {"cached": False}
+        def fetch(self, location_name=None, start=None, end=None, **kwargs):
+            assert kwargs.get("mode") == "place"
+            return make_png(), {"cached": False, "label": location_name}
 
     app.state.satellite = StubSatellite()
     session_id = client.post("/sessions").json()["session_id"]
@@ -178,7 +292,7 @@ def test_api_returns_502_for_provider_errors(app, client):
     class FailingSatellite:
         configured = True
 
-        def fetch(self, location, start=None, end=None, **kwargs):
+        def fetch(self, location_name=None, start=None, end=None, **kwargs):
             raise SatelliteError("The satellite imagery request failed.")
 
     app.state.satellite = FailingSatellite()
@@ -194,8 +308,9 @@ def test_api_rate_limits_satellite(app, client):
     class StubSatellite:
         configured = True
 
-        def fetch(self, location, start=None, end=None, **kwargs):
-            return make_png(), {"cached": False}
+        def fetch(self, location_name=None, start=None, end=None, **kwargs):
+            assert kwargs.get("mode") == "place"
+            return make_png(), {"cached": False, "label": location_name}
 
     app.state.satellite = StubSatellite()
     app.state.satellite_limiter = RateLimiter(1)
@@ -210,10 +325,10 @@ def test_api_validates_dates(app, client):
     class StubSatellite:
         configured = True
 
-        def fetch(self, location, start=None, end=None, **kwargs):
+        def fetch(self, location_name=None, start=None, end=None, **kwargs):
             if start and end and start > end:
                 raise SatelliteError("The start date must not be after the end date.")
-            return make_png(), {"cached": False}
+            return make_png(), {"cached": False, "label": location_name}
 
     app.state.satellite = StubSatellite()
     session_id = client.post("/sessions").json()["session_id"]

@@ -189,21 +189,54 @@ def main() -> int:
         check(png[:8] == b"\x89PNG\r\n\x1a\n", "decompressed payload is a PNG")
 
     # -------------------------------------------------------------- satellite
-    status, _, body = request("POST", "/satellite/fetch", body={"session_id": session_id, "location": "atlantis"})
-    check(status == 404, "unknown location → 404", f"{status} {str(body)[:120]}")
+    # STEP 2: the request shape is validated locally, so these hold whether or
+    # not credentials exist — they never reach Copernicus or Nominatim.
+    status, _, body = request("POST", "/satellite/fetch", body={"session_id": session_id, "location": "F-8", "size_km": 12})
+    check(status == 422 and "limit is 5 km" in json.dumps(body), "oversized area → 422 naming the limit", f"{status} {str(body)[:160]}")
+    status, _, body = request("POST", "/satellite/fetch", body={"session_id": session_id, "location": "F-8", "size_km": 0})
+    check(status == 422, "zero size → 422", f"{status} {str(body)[:160]}")
+    status, _, body = request("POST", "/satellite/fetch", body={"session_id": session_id, "location": "   "})
+    check(status == 422, "blank place → 422", f"{status} {str(body)[:160]}")
     status, _, body = request(
-        "POST",
-        "/satellite/fetch",
-        body={"session_id": session_id, "location": "F-8", "start": "not-a-date"},
+        "POST", "/satellite/fetch",
+        body={"session_id": session_id, "mode": "bbox", "corner1": "91, 20", "corner2": "33.66, 73.10"},
     )
-    check(status == 502 and "Invalid date" in json.dumps(body), "bad date → 502 with Invalid date", f"{status} {str(body)[:160]}")
-    status, _, body = request("POST", "/satellite/fetch", body={"session_id": session_id, "location": "F-8"})
-    if status == 200:
-        check(body.get("source") == "satellite", "satellite fetch returns source=satellite", str(body)[:160])
-        check(body.get("width") == 260 and body.get("height") == 260, "satellite tile is 260×260", f"{body.get('width')}×{body.get('height')}")
-    else:
+    check(status == 422 and "Corner 1" in json.dumps(body), "latitude out of range → 422 naming the corner", f"{status} {str(body)[:160]}")
+    status, _, body = request(
+        "POST", "/satellite/fetch",
+        body={"session_id": session_id, "mode": "bbox", "corner1": "somewhere", "corner2": "1, 2"},
+    )
+    check(status == 422, "unparseable coordinates → 422", f"{status} {str(body)[:160]}")
+    status, _, body = request(
+        "POST", "/satellite/fetch",
+        body={"session_id": session_id, "mode": "bbox", "corner1": "33.70, 73.05", "corner2": "33.66, 73.10"},
+    )
+    corner_status, corner_body = status, body
+
+    # Everything below needs real Copernicus credentials (api/.env).
+    status, _, probe = request("POST", "/satellite/fetch", body={"session_id": session_id, "location": "F-8"})
+    unconfigured = status == 503 and "not configured" in json.dumps(probe)
+    if unconfigured:
         check(status == 503, "satellite without credentials → 503", str(status))
-        check("not configured" in json.dumps(body), "503 explains the missing credentials", str(body)[:160])
+        check("not configured" in json.dumps(probe), "503 explains the missing credentials", str(probe)[:160])
+        check(corner_status == 503, "a valid corner request reaches the fetch step", f"{corner_status} {str(corner_body)[:160]}")
+        skip("unknown location → 404", "this sandbox has no api/.env, so the live fetch cannot run")
+        skip("bad date → 502 with Invalid date", "this sandbox has no api/.env, so the live fetch cannot run")
+        skip("satellite tile is 260×260", "this sandbox has no api/.env, so the live fetch cannot run")
+    else:
+        status, _, body = request("POST", "/satellite/fetch", body={"session_id": session_id, "location": "atlantis"})
+        check(status == 404, "unknown location → 404", f"{status} {str(body)[:120]}")
+        status, _, body = request(
+            "POST",
+            "/satellite/fetch",
+            body={"session_id": session_id, "location": "F-8", "start": "not-a-date"},
+        )
+        check(status == 502 and "Invalid date" in json.dumps(body), "bad date → 502 with Invalid date", f"{status} {str(body)[:160]}")
+        status, _, body = request("POST", "/satellite/fetch", body={"session_id": session_id, "location": "F-8"})
+        check(status == 200, "satellite fetch with credentials → 200", f"{status} {str(body)[:160]}")
+        if status == 200:
+            check(body.get("source") == "satellite", "satellite fetch returns source=satellite", str(body)[:160])
+            check(body.get("width") == 260 and body.get("height") == 260, "satellite tile is 260×260", f"{body.get('width')}×{body.get('height')}")
 
     # ------------------------------------------------------------------- chat
     for message, expected_intent, expected_action in [

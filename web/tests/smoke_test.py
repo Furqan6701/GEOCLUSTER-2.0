@@ -278,8 +278,12 @@ def check_workstation_layout() -> None:
           "no menu entry claims a feature is 'not implemented'")
     check("disabled-stub" not in css and "disabled-stub" not in index,
           "the disabled-stub placeholder styling is gone with the last stub")
-    check(re.search(r'label: "Session images…"', app_js) is not None,
-          "the File menu points at the real session image list instead")
+    # STEP 2 of the redesign removed the session-file list from the Source
+    # panel, so no menu entry may promise it any more.
+    check("Session images" not in app_js,
+          "no File menu entry promises a session image list (the list is gone)")
+    check(re.search(r'label: "Fetch Sentinel-2 tile…"', app_js) is not None,
+          "the File menu still offers the satellite fetch")
     check(re.search(r'label: "Map export \(PNG\)…"', app_js) is not None,
           "Map export is a real menu action")
     check(re.search(r'reason: "run Classify in the Clusters section first', app_js) is not None,
