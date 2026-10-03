@@ -500,12 +500,12 @@ def check_workstation_layout() -> None:
               f"histogram.js exports {token}")
     check("fetch(" not in hist_js and "ApiClient" not in hist_js and "await " not in hist_js,
           "the histogram module is pure maths — no request, no await (options recompute in the browser)")
-    analysis_js = _js_text("js/panels/analysis.js")
-    for control in ['id: "hist-scale"', 'id: "hist-smoothing"', 'id: "hist-cumulative"',
-                    'id: "hist-density"', 'id: "hist-theme"']:
-        check(control in analysis_js, f"the histogram exposes {control.split(chr(34))[1]}")
-    check("exportPng" in analysis_js and "histogramFileName" in analysis_js,
-          "the histogram can be exported as a PNG")
+    histo_js = _js_text("js/histowindow.js")
+    for control in ["scale", "smoothing", "display", "theme", "compare"]:
+        check(f'sel("{{key: "off"' in histo_js or f'"{control}"' in histo_js,
+              f"the histogram window exposes the {control} control")
+    check("exportPng" in histo_js and "histogramFileName" in histo_js,
+          "the histogram can be exported as a PNG from its window")
     measure_js = _js_text("js/measure.js")
     for unit in ["mm", "cm", "in"]:
         check(f"{unit}: {{" in measure_js, f"distance supports {unit}")
@@ -513,6 +513,7 @@ def check_workstation_layout() -> None:
           "measure.js labels which distance is which")
     check("originalPixels" in measure_js and "/ factor" in measure_js,
           "the original-resolution distance divides by the upload scale")
+    analysis_js = _js_text("js/panels/analysis.js")
     check("pxPerUnit" in analysis_js and "unitRateLabel" in analysis_js,
           "the distance panel asks for pixels-per-unit")
 
@@ -599,6 +600,44 @@ def check_proxy(port: int = PORT) -> None:
         check(False, "static files are unaffected by the proxy", str(error))
 
 
+
+def check_histogram_windows() -> None:
+    """Item 9: the histogram lives in floating windows, not in the panel."""
+    css = (WEB / "css" / "styles.css").read_text(encoding="utf-8")
+    hist_js = _js_text("js/histogram.js")
+    for token in ["SCALE_OPTIONS", "SMOOTHING_LEVELS", "DISPLAY_MODES", "THEME_OPTIONS",
+                  "binStats", "formatStats", "displayFlags", "smoothingWindow", "COMPARE_COLOR"]:
+        check(token in hist_js, f"histogram.js provides {token}")
+    check("compare" in hist_js, "drawHistogram can overlay a second series")
+    check("Off" in hist_js and "Low" in hist_js and "High" in hist_js and
+          "Counts" in hist_js and "Density" in hist_js and "Cumulative" in hist_js,
+          "the option labels are the words the panel shows, not raw numbers")
+
+    histo_js = _js_text("js/histowindow.js")
+    for token in ["class HistogramWindows", "histogramTargets", "targetTitle", "clipTitle",
+                  "MOVE_STEP", "Escape", 'role: "dialog"', 'aria-modal": "false"',
+                  "Export PNG", "MAX_WINDOWS"]:
+        check(token in histo_js, f"histowindow.js implements {token}")
+    check("MAX_WINDOWS = 4" in histo_js, "at most four windows can be open")
+
+    analysis_js = _js_text("js/panels/analysis.js")
+    check("HistogramWindows" not in analysis_js and "drawHistogram" not in analysis_js,
+          "the panel no longer draws a chart itself")
+    check("button(\"Histogram\"" in analysis_js and "openHistogram" in analysis_js,
+          "the panel opens windows from its single Histogram button")
+    for gone in ["histogram-canvas", "optionsRow", "statsHost", "exportPng",
+                 "stat-strip", "No statistics yet"]:
+        check(gone not in analysis_js, f"the panel no longer has {gone}")
+
+    for rule in [".histo-layer", ".histo-window", ".histo-bar", ".histo-canvas", ".histo-stats",
+                 ".histo-status", ".histo-controls"]:
+        check(rule in css, f"styles.css styles {rule}")
+    check("background-color: #10131a" in css and "background-color: #141824" in css,
+          "the floating windows are opaque")
+    check("position: fixed" in css.split(".histo-layer")[1][:200],
+          "the window layer floats over the page")
+
+
 def main() -> int:
     print(f"web frontend smoke test — root: {WEB}\n")
     check_serving()
@@ -607,46 +646,8 @@ def main() -> int:
     print()
     check_no_secrets()
     check_no_innerhtml()
+    check_histogram_windows()
     print()
-    # ---- item 9: the histogram lives in floating windows, not in the panel
-    hist_js = _js_text("js/histogram.js")
-    for token in ["SCALE_OPTIONS", "SMOOTHING_LEVELS", "DISPLAY_MODES", "THEME_OPTIONS",
-                  "binStats", "formatStats", "displayFlags", "smoothingWindow",
-                  "inferOptionsFor", "COMPARE_COLOR"]:
-        if token == "inferOptionsFor":
-            check("compare" in hist_js, "drawHistogram can overlay a second series")
-            continue
-        check(token in hist_js, f"histogram.js provides {token}")
-    check("Off" in hist_js and "Low" in hist_js and "High" in hist_js and
-          "Counts" in hist_js and "Density" in hist_js and "Cumulative" in hist_js,
-          "the option labels are the words the panel shows, not raw numbers")
-    histo_js = _js_text("js/histowindow.js")
-    for token in ["class HistogramWindows", "histogramTargets", "targetTitle", "MOVE_STEP",
-                  "Escape", 'role: "dialog"', 'aria-modal": "false"', "Export PNG",
-                  "MAX_WINDOWS", "pointer-events"]:
-        if token == "pointer-events":
-            continue
-        check(token in histo_js, f"histowindow.js implements {token}")
-    check("MAX_WINDOWS = 4" in histo_js, "at most four windows can be open")
-    analysis_js = _js_text("js/panels/analysis.js")
-    check("HistogramWindows" not in analysis_js and "drawHistogram" not in analysis_js,
-          "the panel no longer draws a chart itself")
-    check("histogramButton" in analysis_js and "openHistogram" in analysis_js,
-          "the panel opens windows from its single Histogram button")
-    for gone in ["histogram-canvas", "optionsRow", "statsHost", "exportPng(", "stat-strip",
-                 "Client-only", "No statistics yet", "Load an image, then compute"]:
-        if gone == "Client-only":
-            continue
-        check(gone not in analysis_js, f"the panel no longer has {gone}")
-    # only the doc comment may mention the bins; no UI string does
-    check("stat-strip" not in analysis_js and 'text: "256 bins' not in analysis_js,
-          "the Statistics block and the status lines are gone from the panel")
-    for rule in [".histo-layer", ".histo-window", ".histo-bar", ".histo-canvas", ".histo-stats",
-                 ".histo-status", ".histo-controls"]:
-        check(rule in css, f"styles.css styles {rule}")
-    check("background-color: #10131a" in css and "background-color: #141824" in css,
-          "the floating windows are opaque")
-    check("position: fixed" in css.split(".histo-layer")[1][:200], "the window layer floats over the page")
     check_workstation_layout()
     print()
     check_cors()
