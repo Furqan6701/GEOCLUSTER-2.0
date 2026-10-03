@@ -5,6 +5,7 @@
  *       node --test tests/         (from web/)
  */
 
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import assert from "node:assert/strict";
 
@@ -21,6 +22,7 @@ import {
   HELP_TEXTS,
   KEY_COMMIT_DELAY,
   OPERATIONS_WITH_PARAMS,
+  POINT_OPERATION_HELP,
   SLIDER_SPECS,
   describeOperation,
   paramsForValue,
@@ -1050,10 +1052,35 @@ test("the eight help texts are the verbatim strings from the brief", () => {
     "Each color value (red, green, blue) above the threshold is set to its maximum, and all others are set to zero.");
   assert.equal(HELP_TEXTS.meanfilter, "Smooths the image by averaging neighboring pixels.");
   assert.equal(HELP_TEXTS.clear,
-    "Resets the result viewport to the original image. The undo history is not affected.");
+    "Clears the result viewport. The original image and the undo history are not affected.");
   assert.equal(SLIDER_SPECS.meanfilter.label, "Kernel size");
   assert.equal(SLIDER_SPECS.meanfilter.choice(5), "5 x 5");
   assert.ok(KEY_COMMIT_DELAY > 0 && KEY_COMMIT_DELAY <= 1000, "the key pause is short");
+});
+
+test("the four point operations share one grouped help entry list", () => {
+  assert.equal(POINT_OPERATION_HELP.length, 4, "the grouped popover lists four entries");
+  assert.deepEqual(POINT_OPERATION_HELP.map(([name]) => name),
+    ["Grayscale", "Negative", "Laplacian", "Clear result"]);
+  assert.deepEqual(POINT_OPERATION_HELP.map(([, text]) => text), [
+    "Converts the image to a single-band grayscale image using a luminance-weighted combination of the color channels.",
+    "Inverts pixel values to produce a photographic negative.",
+    "Edge detection filter that highlights areas of rapid intensity change, such as boundaries and fine detail.",
+    "Clears the result viewport. The original image and the undo history are not affected.",
+  ]);
+  // each entry reuses the single source of truth for its text
+  assert.deepEqual(POINT_OPERATION_HELP.map(([, text]) => text),
+    [HELP_TEXTS.grayscale, HELP_TEXTS.negative, HELP_TEXTS.laplacian, HELP_TEXTS.clear]);
+});
+
+test("ui.helpList builds bold names from DOM nodes and never markup", async () => {
+  const { helpList } = await import("../js/ui.js");
+  const source = await readFile(new URL("../js/ui.js", import.meta.url), "utf8");
+  assert.match(source, /export function helpList\(entries\)/, "helpList is exported");
+  // the only mention is the guard that rejects markup, never an assignment
+  assert.equal(/innerHTML\s*=/.test(source), false, "ui.js never assigns innerHTML");
+  assert.equal(typeof helpList, "function");
+  // it needs a DOM to run in; the boot test exercises the rendered list
 });
 
 test("dropEntry removes one step and keeps the pointer on the same entry", () => {

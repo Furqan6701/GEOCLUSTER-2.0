@@ -257,14 +257,20 @@ message. Raw JSON is never displayed.
 
 ## Filters panel (Step 3 of the redesign)
 
-* Grey hint lines under the controls are gone. Every heading — the Filters
-  section head, Grayscale, Negative, Laplacian, Brightness, Threshold, Mean
-  filter, Clear result — carries a small **"?"** button that opens a popover
-  above the heading (flipping below when there is no room), with
-  `aria-expanded` / `aria-controls`, focus moved into the popover, and Escape
-  (or a second click, or an outside click) closing it and returning focus.
-  The popover is portaled to `<body>` with fixed coordinates so the scrolling
-  toolbox cannot clip it.
+* Grey hint lines under the controls are gone. There are **five** small
+  **"?"** buttons: one on the Filters section head (how filters combine), one
+  next to the **POINT OPERATIONS** label, and one each for Brightness,
+  Threshold and Mean filter. Each opens a popover above its heading (flipping
+  below when there is no room), with `aria-expanded` / `aria-controls`, focus
+  moved into the popover, and Escape (or a second click, or an outside click)
+  closing it and returning focus. The popover is portaled to `<body>` with
+  fixed coordinates so the scrolling toolbox cannot clip it.
+* The POINT OPERATIONS popover lists the four entries together, one per line
+  with the name in bold — Grayscale, Negative, Laplacian and Clear result —
+  built from DOM nodes by `ui.helpList` (a `<ul>` of `<li><strong>name:</strong>
+  text</li>`); no markup is ever parsed. Grayscale, Negative, Laplacian and
+  Clear result are therefore a clean 2 × 2 button grid at full width again,
+  with no individual "?" beside them.
 * Brightness (−255…255), Threshold (0…255) and Mean filter (labelled **Kernel
   size**, odd 3…31, shown as "5 x 5") are sliders with a synced number field —
   no Apply button. Dragging paints a **browser-side preview** of the operation
@@ -284,24 +290,22 @@ message. Raw JSON is never displayed.
 * The preview is a downscaled approximation: OpenCV's 8-bit mean filter uses a
   fixed-point reciprocal per pass, so smoothing can differ from the committed
   result by one grey level. The committed pixels always come from the server.
-* **Help-text check requested in the brief:** the Threshold text matches the
-  implementation (`cv2.threshold(…, 255, THRESH_BINARY)` per BGR channel, alpha
-  preserved, strictly `> value`). The Clear-result text does **not** fully
-  match: `clearResult()` empties the Result viewport (it shows the
-  "No image loaded" placeholder) and makes the *next* operation fall back to
-  the working image — it does not re-display the original in that viewport. The
-  second sentence is accurate (no history entry is added, removed or re-pointed
-  by clearing). The verbatim text was kept as instructed; this note is the
-  recorded mismatch.
+* **Help-text check (resolved):** the Threshold text matches the implementation
+  (`cv2.threshold(…, 255, THRESH_BINARY)` per BGR channel, alpha preserved,
+  strictly `> value`). The Clear-result wording mismatch recorded in the Step 3
+  report is **fixed**: the text is now "Clears the result viewport. The original
+  image and the undo history are not affected.", which is exactly what
+  `clearResult()` does (it empties the Result viewport; the working image and
+  the undo history are untouched).
 
 ## Verification / tests
 
 | Command | What it does |
 | --- | --- |
-| `node --test "web/tests/*.test.mjs"` | 70 logic tests: config resolution, error mapping, API client contract (URLs, bodies, multipart, session recovery), chat command mapping/execution, the satellite request shapes, the filter preview maths (reflect-101 box average, threshold/brightness clipping, the 512 px preview cap), the slider snapping/help texts and the history `dropEntry` replacement rule. No browser needed. |
+| `node --test "web/tests/*.test.mjs"` | 72 logic tests: config resolution, error mapping, API client contract (URLs, bodies, multipart, session recovery), chat command mapping/execution, the satellite request shapes, the filter preview maths (reflect-101 box average, threshold/brightness clipping, the 512 px preview cap), the slider snapping/help texts, the grouped point-operation help list and the history `dropEntry` replacement rule. No browser needed. |
 | `python web/tests/smoke_test.py` | Serves `web/` on 5173 (reuses a running server for the same root), checks assets + content types, that every relative module import resolves, that no key material exists under `web/`, that no `innerHTML` is used, the workstation layout contract (image workspace owns the flexible track, no `object-fit: cover`, technical corner radii), and that the API's CORS allows the frontend origin. |
 | `python web/tests/integration_check.py` | Live contract check against a running API: the exact call sequence the browser makes (session → upload → 6 filters → kmeans k=5 → classify → histogram → stats → GCH2 round trip → satellite validation and error paths → chat commands → 404/415). The three checks that need real Copernicus credentials report SKIP when the server has no `api/.env` instead of failing. Requires `uvicorn main:app --port 8000`. |
-| `node web/tests/boot_test.mjs --jsdom <dir>` | Boot test: loads `index.html` in jsdom, imports `js/app.js` and drives the UI through DOM events against the live API — 364 assertions covering the shell (menu bar, toolbar, status bar, dock collapse), viewport behaviour (pan, wheel zoom, pixel readout, distance measurement, sync mirroring), upload, the six filters, the Source panel's place/corner modes, the Filters panel's popovers and slider sessions (preview without requests, one request per release, replace-not-stack, Escape, arrow-key commits, one slider at a time), the rendered K-Means range table, classify, histogram/stats, GCH2 compress → decompress, PNG export, chat router commands, session-expiry recovery, and a clean browser console. jsdom is optional (not a dependency of the app); without it the test skips. |
+| `node web/tests/boot_test.mjs --jsdom <dir>` | Boot test: loads `index.html` in jsdom, imports `js/app.js` and drives the UI through DOM events against the live API — 378 assertions covering the shell (menu bar, toolbar, status bar, dock collapse), viewport behaviour (pan, wheel zoom, pixel readout, distance measurement, sync mirroring), upload, the six filters, the Source panel's place/corner modes, the Filters panel's popovers and slider sessions (preview without requests, one request per release, replace-not-stack, Escape, arrow-key commits, one slider at a time), the rendered K-Means range table, classify, histogram/stats, GCH2 compress → decompress, PNG export, chat router commands, session-expiry recovery, and a clean browser console. jsdom is optional (not a dependency of the app); without it the test skips. |
 
 The boot test runs in both serving modes: the default (page on localhost →
 direct API calls) and hosted (`--page-host 5173-demo.e2b.app` → everything

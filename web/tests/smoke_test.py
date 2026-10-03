@@ -304,9 +304,11 @@ def check_workstation_layout() -> None:
         "Shifts all pixel values by a constant amount from -255 to 255. Positive values brighten the image and negative values darken it. Results are limited to the valid 0 to 255 range.",
         "Each color value (red, green, blue) above the threshold is set to its maximum, and all others are set to zero.",
         "Smooths the image by averaging neighboring pixels.",
-        "Resets the result viewport to the original image. The undo history is not affected.",
+        "Clears the result viewport. The original image and the undo history are not affected.",
     ]:
         check(text in filters_js, f"the help text is present verbatim: {text[:46]}…")
+    check("Resets the result viewport to the original image" not in filters_js,
+          "the old Clear-result wording is gone (the mismatch is resolved)")
     for hint in ["Adds a constant, clipped to 0…255.", "Pixels above the value become white.",
                  "OpenCV blur with a square kernel."]:
         check(hint not in filters_js, f"the old hint line is gone: {hint[:40]}")
@@ -315,15 +317,23 @@ def check_workstation_layout() -> None:
           "the parameterised filters have no Apply button any more")
     for token in ["helpPopover", "aria-expanded", "aria-controls", "below"]:
         check(token in ui_js, f"ui.js popovers handle {token}")
-    for token in [".help-btn", ".help-popover", ".help-popover.below", ".slider-row", ".slider-choice"]:
+    for token in [".help-btn", ".help-popover", ".help-popover.below", ".slider-row", ".slider-choice",
+                  ".help-list", ".help-entry", ".help-entry strong"]:
         check(token in css, f"the STEP 3 styling exists: {token}")
     check("export function helpPopover" in ui_js, "helpPopover is a reusable component")
-    # three factories (helpCell for the 4 point operations, sliderGroup for the
-    # 3 sliders, the section head) render the eight "?" buttons the boot test counts
-    check(filters_js.count("helpPopover(") == 3 and "HELP_TEXTS[helpKey]" in filters_js
+    check("export function helpList" in ui_js, "helpList builds the grouped popover from DOM nodes")
+    check("op-cell" not in filters_js and "op-cell" not in css,
+          "the per-button help cells are gone")
+    # three factories (the point-operations group, sliderGroup for the 3
+    # sliders, the section head) render the five "?" buttons the boot test counts
+    check(filters_js.count("helpPopover(") == 3 and "helpList(POINT_OPERATION_HELP)" in filters_js
           and "HELP_TEXTS[key]" in filters_js and "HELP_TEXTS.filters" in filters_js,
-          "each Filters heading wires its own popover",
+          "one grouped popover for the point operations plus one per slider and the section head",
           str(filters_js.count("helpPopover(")))
+    check(filters_js.count("makeButton(\"Grayscale\"") == 1 and "helpCell" not in filters_js,
+          "the point-operation buttons carry no individual \"?\" any more")
+    check("grid-template-columns: 1fr 1fr" in css,
+          "the 2 x 2 grid rule still lays the four buttons out at full width")
     check("Kernel size" in filters_js and "choice: (value) => `${value} x ${value}`" in filters_js,
           "the mean filter slider is labelled Kernel size and shows N x N")
     check("requestAnimationFrame" in filters_js and '"preview:show"' in filters_js,

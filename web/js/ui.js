@@ -300,7 +300,25 @@ function installHelpDocumentListeners() {
 }
 
 /**
+ * A list of "Name: explanation" entries for a popover — built from DOM nodes
+ * (never markup), one entry per line with the name in bold.
+ */
+export function helpList(entries) {
+  const list = el("ul", { class: "help-list" });
+  for (const [name, text] of entries) {
+    list.append(el("li", { class: "help-entry" }, [
+      el("strong", { text: `${name}:` }),
+      ` ${text}`,
+    ]));
+  }
+  return list;
+}
+
+/**
  * Small "?" button with a popover, placed next to a heading.
+ *
+ * `content` is either a string (shown as a paragraph) or a DOM node built by
+ * the caller (e.g. `helpList`) — markup is never accepted.
  *
  * Opens on click / tap / Enter / Space, closes on a second click, an outside
  * click or Escape (which returns focus to the button). The popover is portaled
@@ -308,7 +326,7 @@ function installHelpDocumentListeners() {
  * clip it; when there is no room above the button it flips below. The button
  * carries `aria-expanded` and `aria-controls`.
  */
-export function helpPopover(text, { label = "What does this do?" } = {}) {
+export function helpPopover(content, { label = "What does this do?" } = {}) {
   const id = `help-popover-${(nextHelpId += 1)}`;
   const button = el("button", {
     class: "help-btn",
@@ -319,7 +337,10 @@ export function helpPopover(text, { label = "What does this do?" } = {}) {
     "aria-expanded": "false",
     "aria-controls": id,
   });
-  const body = el("p", { class: "help-popover-text", text });
+  // a DOM node is appended as-is (duck-typed, so it works across realms);
+  // anything else is plain text
+  const isNode = content != null && typeof content === "object" && typeof content.nodeType === "number";
+  const body = isNode ? content : el("p", { class: "help-popover-text", text: content });
   const popover = el("div", {
     class: "help-popover",
     id,
@@ -409,7 +430,7 @@ export function helpPopover(text, { label = "What does this do?" } = {}) {
     button,
     popover,
     id,
-    text,
+    text: isNode ? null : content,
     open,
     close,
     toggle,

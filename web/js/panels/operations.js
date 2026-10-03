@@ -26,7 +26,7 @@
 import { humanizeError } from "../errors.js";
 import { SessionExpiredError } from "../session.js";
 import { activeImage } from "../state.js";
-import { button, createSection, el, helpPopover, numberInput, toast, toolGroup } from "../ui.js";
+import { button, createSection, el, helpList, helpPopover, numberInput, toast, toolGroup } from "../ui.js";
 import { preview as defaultPreview } from "../preview.js";
 
 export const OPERATION_LABELS = Object.freeze({
@@ -42,12 +42,13 @@ export const OPERATION_LABELS = Object.freeze({
 export const OPERATIONS_WITH_PARAMS = Object.freeze(["brightness", "threshold", "meanfilter"]);
 
 /**
- * Help texts, verbatim from the redesign brief. They sit next to the code that
- * implements the behaviour so the two can be compared:
+ * Help texts. They sit next to the code that implements the behaviour so the
+ * two can be compared; all four parameter/point texts now match the code:
  *   - brightness / threshold / mean filter mirror api/geocluster/filters.py;
- *   - "Clear result" is kept verbatim even though the viewport is emptied
- *     rather than re-showing the original — the mismatch is documented in
- *     docs/frontend-notes.md and in the Step 3 report.
+ *   - "Clear result" says the viewport is cleared (which is what clearResult()
+ *     does) and that the original and the undo history are untouched.
+ * The four point-operation entries are listed together in one popover next to
+ * the POINT OPERATIONS heading (see POINT_OPERATION_HELP below).
  */
 export const HELP_TEXTS = Object.freeze({
   filters: "Each filter is applied to the latest result, so filters can be combined. Use Undo to step back.",
@@ -57,8 +58,19 @@ export const HELP_TEXTS = Object.freeze({
   brightness: "Shifts all pixel values by a constant amount from -255 to 255. Positive values brighten the image and negative values darken it. Results are limited to the valid 0 to 255 range.",
   threshold: "Each color value (red, green, blue) above the threshold is set to its maximum, and all others are set to zero.",
   meanfilter: "Smooths the image by averaging neighboring pixels.",
-  clear: "Resets the result viewport to the original image. The undo history is not affected.",
+  clear: "Clears the result viewport. The original image and the undo history are not affected.",
 });
+
+/**
+ * The entries of the single "?" next to the POINT OPERATIONS heading, one per
+ * line, name first. Rendered by ui.helpList — DOM nodes, no markup.
+ */
+export const POINT_OPERATION_HELP = Object.freeze([
+  ["Grayscale", HELP_TEXTS.grayscale],
+  ["Negative", HELP_TEXTS.negative],
+  ["Laplacian", HELP_TEXTS.laplacian],
+  ["Clear result", HELP_TEXTS.clear],
+]);
 
 /** Slider definitions: range, default and how the current value is shown. */
 export const SLIDER_SPECS = Object.freeze({
@@ -544,14 +556,6 @@ export function createOperationsPanel(ctx) {
     return node;
   }
 
-  /** An action button with its own "?" popover (point operations). */
-  function helpCell(node, helpKey, title) {
-    return el("div", { class: "op-cell" }, [
-      node,
-      helpPopover(HELP_TEXTS[helpKey], { label: `About ${title}` }).node,
-    ]);
-  }
-
   const grayscale = makeButton("Grayscale", "grayscale");
   const negative = makeButton("Negative", "negative");
   const laplacian = makeButton("Laplacian", "laplacian");
@@ -564,20 +568,20 @@ export function createOperationsPanel(ctx) {
     });
   }
 
+  // one "?" for the whole group: the four buttons stay a clean 2 x 2 grid
+  const pointOperations = toolGroup("Point operations", [
+    el("div", { class: "btn-grid" }, [grayscale, negative, laplacian, clearButton]),
+  ], {
+    actions: [helpPopover(helpList(POINT_OPERATION_HELP), { label: "About the point operations" }).node],
+  });
+
   const section = createSection({
     id: "filters",
     title: "Filters",
     iconName: "filters",
     actions: [helpPopover(HELP_TEXTS.filters, { label: "About the Filters panel" }).node],
     body: [
-      toolGroup("Point operations", [
-        el("div", { class: "btn-grid" }, [
-          helpCell(grayscale, "grayscale", "Grayscale"),
-          helpCell(negative, "negative", "Negative"),
-          helpCell(laplacian, "laplacian", "Laplacian"),
-          helpCell(clearButton, "clear", "Clear result"),
-        ]),
-      ]),
+      pointOperations,
       sliderGroup("brightness", "Brightness"),
       sliderGroup("threshold", "Threshold"),
       sliderGroup("meanfilter", "Mean filter"),
@@ -615,6 +619,7 @@ export function createOperationsPanel(ctx) {
       committed: () => ({ ...committedValue }),
       controls: () => controls,
       help: (key) => HELP_TEXTS[key] ?? null,
+      pointHelp: () => POINT_OPERATION_HELP,
     },
   };
 }

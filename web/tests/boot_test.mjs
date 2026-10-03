@@ -839,28 +839,64 @@ if (!bootFailed) {
       "the status line stays out of the way while an image is loaded",
       statusLine ? `hidden=${statusLine.hidden}` : "missing");
 
-    // --- a "?" next to every heading, with the verbatim text
+    // --- five "?" buttons: the Filters heading, POINT OPERATIONS, 3 sliders
     const helpButtons = [...section.querySelectorAll(".help-btn")];
-    check(helpButtons.length === 8, "eight help buttons (7 controls + the Filters heading)",
+    check(helpButtons.length === 5, "five help buttons (Filters heading + POINT OPERATIONS + 3 sliders)",
       `${helpButtons.length}: ${helpButtons.map((b) => b.getAttribute("aria-label")).join(", ")}`);
-    const helpText = Object.fromEntries(helpButtons.map((node) => [
-      node.closest(".help").querySelector(".help-popover")?.id,
-      node.closest(".help").querySelector(".help-popover-text")?.textContent,
-    ]));
-    const texts = Object.values(helpText);
+    const singleTexts = [...section.querySelectorAll(".help-popover-text")].map((n) => n.textContent);
     const expectedTexts = [
       "Each filter is applied to the latest result, so filters can be combined. Use Undo to step back.",
-      "Converts the image to a single-band grayscale image using a luminance-weighted combination of the color channels.",
-      "Inverts pixel values to produce a photographic negative.",
-      "Edge detection filter that highlights areas of rapid intensity change, such as boundaries and fine detail.",
       "Shifts all pixel values by a constant amount from -255 to 255. Positive values brighten the image and negative values darken it. Results are limited to the valid 0 to 255 range.",
       "Each color value (red, green, blue) above the threshold is set to its maximum, and all others are set to zero.",
       "Smooths the image by averaging neighboring pixels.",
-      "Resets the result viewport to the original image. The undo history is not affected.",
     ];
-    check(expectedTexts.every((text) => texts.includes(text)),
-      "all eight help texts are present verbatim",
-      expectedTexts.filter((text) => !texts.includes(text)).join(" | "));
+    check(expectedTexts.every((text) => singleTexts.includes(text)) &&
+      singleTexts.length === expectedTexts.length,
+      "Filters, Brightness, Threshold and Mean filter keep their own help texts verbatim",
+      singleTexts.join(" | "));
+
+    // --- the point-operation buttons are a clean 2 x 2 grid again
+    const pointGroup = [...section.querySelectorAll(".tool-group")].find(
+      (node) => node.querySelector(".tool-group-title")?.textContent.trim() === "Point operations");
+    check(Boolean(pointGroup), "the Point operations group exists");
+    const grid = pointGroup?.querySelector(".btn-grid");
+    check(grid != null && grid.children.length === 4 &&
+      [...grid.children].every((node) => node.tagName === "BUTTON"),
+      "the four point-operation buttons are direct grid children (nothing wrapping them)",
+      [...(grid?.children ?? [])].map((n) => n.tagName).join(","));
+    check(grid != null && !grid.querySelector(".help-btn"),
+      "no individual \"?\" is left next to Grayscale / Negative / Laplacian / Clear result");
+    check([...(grid?.children ?? [])].map((node) => node.textContent.trim()).join("|") ===
+      "Grayscale|Negative|Laplacian|Clear result",
+      "the grid holds exactly the four point operations in order",
+      [...(grid?.children ?? [])].map((n) => n.textContent.trim()).join("|"));
+
+    // --- ONE "?" next to the POINT OPERATIONS label, listing all four entries
+    const groupHelp = pointGroup?.querySelector(".help-btn");
+    check(groupHelp != null &&
+      groupHelp.closest(".help")?.parentElement === pointGroup.querySelector(".tool-group-actions") &&
+      pointGroup.querySelector(".tool-group-title")?.textContent.trim() === "Point operations",
+      "the grouped \"?\" sits next to the Point operations label (in the head actions)",
+      groupHelp?.closest(".help")?.parentElement?.className);
+    const groupPopover = groupHelp?.closest(".help")?.querySelector(".help-popover");
+    check(groupPopover != null && groupPopover.querySelector(".help-popover-text") == null,
+      "the grouped popover is not a single text paragraph");
+    const entries = [...(groupPopover?.querySelectorAll(".help-entry") ?? [])];
+    check(entries.length === 4, "the grouped popover lists four entries", String(entries.length));
+    const names = entries.map((node) => node.querySelector("strong")?.textContent);
+    check(names.join("|") === "Grayscale:|Negative:|Laplacian:|Clear result:",
+      "each entry names an operation in bold, one per line", names.join("|"));
+    check(entries.every((node) => node.tagName === "LI" && node.parentElement?.tagName === "UL"),
+      "the entries are list items built with DOM elements (no innerHTML)",
+      entries.map((n) => n.tagName).join(","));
+    const entryTexts = entries.map((node, index) =>
+      node.textContent.slice(names[index].length).trim());
+    check(entryTexts[0] === "Converts the image to a single-band grayscale image using a luminance-weighted combination of the color channels." &&
+      entryTexts[1] === "Inverts pixel values to produce a photographic negative." &&
+      entryTexts[2] === "Edge detection filter that highlights areas of rapid intensity change, such as boundaries and fine detail." &&
+      entryTexts[3] === "Clears the result viewport. The original image and the undo history are not affected.",
+      "the four grouped help texts are verbatim", entryTexts.join(" | "));
+
     check(helpButtons.every((node) => node.getAttribute("aria-expanded") === "false" && node.textContent.trim() === "?"),
       "every help button starts closed, labelled \"?\"", helpButtons.map((n) => n.textContent).join(","));
     check([...section.querySelectorAll(".help-popover")].every((node) => node.hidden),
@@ -883,6 +919,15 @@ if (!bootFailed) {
     brightnessHelp.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
     check(brightnessHelp.getAttribute("aria-expanded") === "false" && popover.hidden,
       "a second click closes it");
+
+    // the grouped "?" behaves exactly like the single-text ones
+    groupHelp.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+    check(groupHelp.getAttribute("aria-expanded") === "true" && !groupPopover.hidden &&
+      groupPopover.parentElement === document.body,
+      "the grouped \"?\" opens its popover (portaled, aria-expanded set)");
+    groupHelp.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+    check(groupHelp.getAttribute("aria-expanded") === "false" && groupPopover.hidden,
+      "a second click closes the grouped popover");
 
     // outside click
     brightnessHelp.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
