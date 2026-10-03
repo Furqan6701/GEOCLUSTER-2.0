@@ -298,3 +298,4 @@ table.grid input[type="color"] { height: 24px; }
 .dropzone { border: 1px dashed var(--border-strong); border-radius: 9px; padding: 14px; text-align: center; color: var(--text-dim); font-size: 12px; }
 .dropzone.drag { border-color: var(--accent); color: var(--accent); background: rgba(53, 208, 186, 0.06); }
 .hr { height: 1px; background: var(--border); margin: 12px 0; }
+.visually-hidden { display: none !important; }
