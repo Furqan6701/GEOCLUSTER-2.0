@@ -43,6 +43,7 @@ const resultViewer = new Viewer(document.getElementById("viewer-result"), {
   title: "Result",
   role: "result",
   bus,
+  placeholder: "Run a filter or K-Means to see the result here",
 });
 
 const loadTokens = { original: 0, result: 0 };
@@ -236,13 +237,8 @@ wireToolbarButton("tb-satellite", "satellite", "Satellite", () => {
 });
 wireToolbarButton("tb-export", "download", "Export", () => bus.emit("export:request"));
 wireToolbarButton("tb-compress", "archive", "Compress", () => bus.emit("huffman:compress-request"));
-wireToolbarButton("tb-zoom-out", "zoomOut", "Zoom −", () => withActiveViewer((viewer) => viewer.zoomBy(1 / 1.25)));
-wireToolbarButton("tb-zoom-in", "zoomIn", "Zoom +", () => withActiveViewer((viewer) => viewer.zoomBy(1.25)));
-wireToolbarButton("tb-fit", "fit", "Fit", () => withActiveViewer((viewer) => viewer.fit()));
-wireToolbarButton("tb-1to1", "grid", "1:1", () => withActiveViewer((viewer) => viewer.zoomTo(1)));
-for (const [id, factor] of [["tb-zoom-25", 0.25], ["tb-zoom-50", 0.5], ["tb-zoom-100", 1]]) {
-  byId(id)?.addEventListener("click", () => withActiveViewer((viewer) => viewer.zoomTo(factor)));
-}
+// Zoom lives in the viewport footers (per-viewport) and the View menu — there
+// is deliberately no second set of zoom buttons in the toolbar.
 
 const panToggle = toggleButton("pan", {
   label: "Pan",
@@ -281,6 +277,25 @@ bus.on("viewer:distance-mode", ({ role, enabled }) => {
   if (role !== activeRole) return;
   if (measureToggle.isPressed() !== enabled) measureToggle.setPressed(enabled);
 });
+
+/**
+ * The toolbar must never wrap or overlap. Labels are dropped when the row
+ * would overflow (narrow windows, long session chips, extra zoom levels),
+ * which is measured on every resize rather than guessed from a breakpoint.
+ */
+const toolbarNode = byId("toolbar");
+
+function fitToolbar() {
+  if (!toolbarNode) return;
+  toolbarNode.classList.remove("tb-compact");
+  // measured after a reflow so scrollWidth reflects the un-compacted state
+  if (toolbarNode.scrollWidth > toolbarNode.clientWidth) toolbarNode.classList.add("tb-compact");
+}
+
+window.addEventListener("resize", () => requestAnimationFrame(fitToolbar));
+bus.on("session", () => requestAnimationFrame(fitToolbar));
+bus.on("health", () => requestAnimationFrame(fitToolbar));
+requestAnimationFrame(fitToolbar);
 
 byId("tb-toggle-toolbox").addEventListener("click", () => setDockVisible("toolbox", !dockVisibility.toolbox));
 byId("tb-toggle-assistant").addEventListener("click", () => setDockVisible("assistant", !dockVisibility.assistant));
@@ -550,6 +565,13 @@ function channelLabel(info) {
   return `${info.channels} ch`;
 }
 
+/** Write a status-bar cell, keeping the untruncated text in its tooltip. */
+function setCell(node, text, title = null) {
+  if (!node) return;
+  node.textContent = text ?? "";
+  node.title = title ?? (text ?? "");
+}
+
 function updateStatusBar() {
   const active = activeViewer();
   const viewer = active.hasImage ? active : (activeImage(state) ? (active === originalViewer ? resultViewer : originalViewer) : null);
@@ -558,26 +580,33 @@ function updateStatusBar() {
     : null;
   const shown = viewer?.image ? { width: viewer.image.width, height: viewer.image.height } : null;
 
-  sb.viewer.textContent = viewer?.hasImage ? `Viewport: ${viewer === originalViewer ? "Original" : "Result"}` : "Viewport: —";
-  sb.size.textContent = shown ? `${shown.width} × ${shown.height} px` : "—";
-  sb.mode.textContent = channelLabel(info);
-  sb.zoom.textContent = viewer?.hasImage ? `Zoom ${Math.round(viewer.scale * 100)}%` : "Zoom —";
-  sb.source.textContent = viewer !== originalViewer && state.result?.info
+  setCell(sb.viewer, viewer?.hasImage ? `Viewport: ${viewer === originalViewer ? "Original" : "Result"}` : "Viewport: —");
+  setCell(sb.size, shown ? `${shown.width} × ${shown.height} px` : "—",
+    shown ? `${shown.width} × ${shown.height} pixels (${viewer === originalViewer ? "original" : "result"})` : "No image");
+  setCell(sb.mode, channelLabel(info), info ? `${channelLabel(info)} — ${info.channels} channel(s), ${info.name ?? ""}`.trim() : "No image");
+  setCell(sb.zoom, viewer?.hasImage ? `Zoom ${Math.round(viewer.scale * 100)}%` : "Zoom —",
+    viewer?.hasImage ? `Zoom ${Math.round(viewer.scale * 100)}% — ${viewer.image.width} × ${viewer.image.height} px image` : "No image");
+  setCell(sb.source, viewer !== originalViewer && state.result?.info
     ? `Result: ${state.result.info.source ?? "derived"}`
     : state.original?.info
       ? `Working: ${state.original.info.source ?? "upload"}`
-      : "";
-  sb.session.textContent = state.sessionId
-    ? `Session ${state.sessionId.slice(0, 8)}… · ${state.ttlMinutes ?? "?"} min · max ${state.maxImages ?? "?"}`
-    : "Session —";
+      : "");
+  // short id in the bar, the full details on hover
+  setCell(
+    sb.session,
+    state.sessionId ? `Session ${state.sessionId.slice(0, 6)}…` : "Session —",
+    state.sessionId
+      ? `Session ${state.sessionId}\nTTL ${state.ttlMinutes ?? "?"} minutes\nMax ${state.maxImages ?? "?"} images per session`
+      : "No session yet",
+  );
   if (state.lastOperation && !state.lastOperation.error) {
-    sb.lastOp.textContent = `Last: ${state.lastOperation.operation}`;
-    sb.lastOp.title = `Last operation: ${state.lastOperation.operation}`;
+    setCell(sb.lastOp, `Last: ${state.lastOperation.operation}`,
+      `Last operation: ${state.lastOperation.operation}${state.lastOperation.imageId ? ` → image ${state.lastOperation.imageId}` : ""}`);
   } else if (state.lastOperation?.error) {
-    sb.lastOp.textContent = `Last: ${state.lastOperation.operation}`;
-    sb.lastOp.title = "The last operation did not complete";
+    setCell(sb.lastOp, `Last: ${state.lastOperation.operation}`, "The last operation did not complete");
   }
-  sb.api.textContent = state.health ? `API ${apiBase} ●` : `API ${apiBase} ○`;
+  setCell(sb.api, `API ${state.health ? "●" : "○"}`,
+    state.health ? `Connected to ${apiBase}` : `Cannot reach ${apiBase}`);
   sb.api.className = `sb-item ${state.health ? "ok" : "bad"}`;
 }
 
@@ -598,8 +627,9 @@ bus.on("viewer:cursor", ({ role, inside, x, y, r, g, b, gray }) => {
     sb.pixel.textContent = "";
     return;
   }
-  sb.cursor.textContent = `X: ${x}  Y: ${y}`;
-  sb.pixel.textContent = r === undefined ? `Gray: ${gray}` : `RGB: ${r},${g},${b}`;
+  setCell(sb.cursor, `X: ${x}  Y: ${y}`, `Cursor at column ${x}, row ${y}`);
+  setCell(sb.pixel, r === undefined ? `Gray: ${gray}` : `RGB: ${r},${g},${b}`,
+    r === undefined ? `Grayscale value ${gray}` : `Red ${r}, green ${g}, blue ${b}`);
 });
 
 // ------------------------------------------------------------- session ops

@@ -25,9 +25,10 @@ const MIN_SCALE = 0.02;
 const MAX_SCALE = 32;
 
 export class Viewer {
-  constructor(root, { title = "Viewer", role = "viewer", bus = null } = {}) {
+  constructor(root, { title = "Viewer", role = "viewer", bus = null, placeholder = "" } = {}) {
     this.root = root;
     this.title = title;
+    this.placeholder = placeholder || `No image loaded — ${title} viewport`;
     this.role = role;
     this.bus = bus;
     this.image = null;
@@ -474,10 +475,15 @@ export class Viewer {
         ctx.lineTo(width, y);
         ctx.stroke();
       }
-      ctx.fillStyle = "rgba(139, 152, 171, 0.6)";
+      ctx.fillStyle = "rgba(139, 152, 171, 0.65)";
       ctx.font = "12px 'Segoe UI', system-ui, sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText(`No image loaded — ${this.title} viewport`, width / 2, height / 2);
+      const lines = String(this.placeholder).split("\n");
+      const lineHeight = 18;
+      const startY = height / 2 - ((lines.length - 1) * lineHeight) / 2;
+      lines.forEach((line, index) => {
+        ctx.fillText(line, width / 2, startY + index * lineHeight);
+      });
     }
   }
 
@@ -521,15 +527,21 @@ export class Viewer {
 
   _updateLabels() {
     if (this.image) {
-      this.metaLabel.textContent = `${this.image.width} × ${this.image.height} px${this.description ? ` · ${this.description}` : ""}`;
-      this.nameLabel.textContent = this.name || this.description || "image";
-      this.nameLabel.title = this.name || this.description || "";
+      const meta = `${this.image.width} × ${this.image.height} px${this.description ? ` · ${this.description}` : ""}`;
+      const name = this.name || this.description || "image";
+      this.metaLabel.textContent = meta;
+      this.metaLabel.title = meta;              // full text when truncated
+      this.nameLabel.textContent = name;
+      this.nameLabel.title = name;
       this.zoomLabel.textContent = `${Math.round(this.scale * 100)}%`;
+      this.zoomLabel.title = `Zoom ${Math.round(this.scale * 100)}% (image pixels × ${this.scale.toFixed(3)})`;
     } else {
       this.metaLabel.textContent = "—";
+      this.metaLabel.title = "";
       this.nameLabel.textContent = "no image";
       this.nameLabel.title = "";
       this.zoomLabel.textContent = "—";
+      this.zoomLabel.title = "";
     }
     this._updateModeBadge();
   }

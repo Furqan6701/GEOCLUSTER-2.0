@@ -176,6 +176,10 @@ def check_no_innerhtml() -> None:
     check(not hits, "no innerHTML/insertAdjacentHTML/document.write usage", ", ".join(hits))
 
 
+def _js_text(relative: str) -> str:
+    return (WEB / relative).read_text(encoding="utf-8")
+
+
 def check_workstation_layout() -> None:
     """The layout contract of the redesign: image workspace first."""
     index = (WEB / "index.html").read_text(encoding="utf-8")
@@ -221,6 +225,42 @@ def check_workstation_layout() -> None:
     # density: the toolbox must not be styled as a stack of big cards
     check("--fs-md: 12px" in css and "--status-h: 26px" in css,
           "compact typography and status bar are configured")
+
+    # STEP 2.1: the shell fills the dynamic viewport height, status bar last
+    body_rule = re.search(r"\nbody \{([^}]*)\}", css)
+    check(body_rule is not None, "the body rule exists")
+    if body_rule:
+        body = body_rule.group(1)
+        check("100dvh" in body, "the shell uses the dynamic viewport height (dvh)")
+        check("100vh" in body, "100vh remains as the fallback for older browsers")
+        check("position: fixed" in body and "inset: 0" in body,
+              "the shell is pinned to the viewport so nothing can push it up")
+        check("overflow: hidden" in body, "the page itself never scrolls")
+    rows = re.search(r"grid-template-rows:\s*auto auto minmax\(0, 1fr\) auto", css)
+    check(rows is not None, "header/banner/workspace/status bar are grid rows (status bar last)")
+
+    # STEP 2.4: the toolbar never wraps or overlaps
+    toolbar_rule = re.search(r"\.toolbar \{([^}]*)\}", css)
+    check(toolbar_rule is not None and "flex-wrap: nowrap" in toolbar_rule.group(1),
+          "the toolbar is a single non-wrapping row")
+    check(".toolbar.tb-compact .tb-label { display: none; }" in css,
+          "the toolbar can drop to icons when space runs out")
+    check("@media (max-width: 1440px)" in css, "narrow desktops get the compact toolbar CSS")
+
+    # STEP 2.2: truncated text keeps a tooltip
+    check("text-overflow: ellipsis" in css, "long strings are ellipsised")
+    check(".viewer-head .meta" in css and ".sb-item" in css,
+          "both the viewport header and the status bar participate in truncation")
+
+    # STEP 2.3: zoom controls exist in exactly one place
+    index_zoom_ids = [i for i in ["tb-zoom-in", "tb-zoom-out", "tb-fit", "tb-1to1", "tb-zoom-25"] if f'id="{i}"' in index]
+    check(not index_zoom_ids, "the toolbar has no zoom buttons (no duplicate controls)",
+          ", ".join(index_zoom_ids))
+    viewer_js = _js_text("js/viewer.js")
+    check('"viewer-foot"' in viewer_js
+          and 'this.zoomInButton' in viewer_js and 'this.zoomOutButton' in viewer_js
+          and 'this.fitButton' in viewer_js,
+          "the per-viewport footer is where the zoom buttons live")
 
     # responsiveness: the image workspace survives narrow windows
     check("@media (max-width: 1080px)" in css and "minmax(160px, 1fr)" in css,

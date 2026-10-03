@@ -121,6 +121,7 @@ export function createFilesPanel(ctx) {
     id: "files",
     title: "Files",
     iconName: "archive",
+    collapsed: true,
     body: [
       toolGroup("Huffman (GCH2)", [
         compressButton,

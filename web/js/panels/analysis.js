@@ -141,6 +141,7 @@ export function createAnalysisPanel(ctx) {
     id: "analysis",
     title: "Analysis",
     iconName: "chart",
+    collapsed: true,
     body: [
       toolGroup("Histogram", [
         canvas,

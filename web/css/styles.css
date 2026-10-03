@@ -48,9 +48,20 @@
 
 * { box-sizing: border-box; }
 
-html, body { margin: 0; padding: 0; height: 100%; }
+html { margin: 0; padding: 0; height: 100%; overflow: hidden; }
 
+/**
+ * The app shell is a fixed, viewport-filling grid so the workspace always
+ * reaches the bottom edge and the status bar sits on it. `dvh` tracks the
+ * visible height while browser chrome shows/hides; `100vh` is the fallback for
+ * browsers without `dvh`, and `position: fixed` guarantees the fill even if a
+ * stray child would otherwise make the document taller than the viewport.
+ */
 body {
+  position: fixed;
+  inset: 0;
+  margin: 0;
+  padding: 0;
   background: var(--bg);
   color: var(--text);
   font-family: var(--font);
@@ -59,6 +70,7 @@ body {
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
 }
 
@@ -142,7 +154,10 @@ p { margin: 0; }
 .toolbar {
   display: flex; align-items: center; gap: 3px;
   padding: 3px 8px; height: 30px;
-  overflow-x: auto; overflow-y: hidden;
+  /* never wrap, never overlap: labels drop out instead (see below) */
+  flex-wrap: nowrap;
+  overflow-x: hidden; overflow-y: hidden;
+  min-width: 0;
 }
 .tb-group { display: flex; align-items: center; gap: 2px; }
 .tb-group.tb-right { margin-left: auto; }
@@ -161,6 +176,12 @@ p { margin: 0; }
 .tb-btn.text { padding: 0 6px; font-family: var(--mono); font-size: var(--fs-xs); }
 .tb-presets { display: flex; align-items: center; gap: 1px; border-left: 1px solid var(--border); border-right: 1px solid var(--border); margin: 0 4px; padding: 0 3px; }
 .tb-label { display: inline; }
+/* compact mode: icons only, with their tooltips carrying the meaning. The
+   class is added by app.js when the toolbar would overflow (and by the media
+   query below for known-narrow desktops). */
+.toolbar.tb-compact .tb-label { display: none; }
+.toolbar.tb-compact .tb-btn { padding: 0 5px; }
+.toolbar.tb-compact .tb-presets { display: none; }
 .disabled-stub { font-style: normal; }
 
 .chips { display: flex; flex-wrap: nowrap; gap: 5px; overflow: hidden; }
@@ -319,6 +340,7 @@ p { margin: 0; }
   color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .viewer-mode { flex: none; }
+.viewer-head .meta { min-width: 0; }
 .viewer-mode.warn { color: var(--warn); border-color: rgba(245, 185, 66, 0.45); }
 
 .viewer-foot {
@@ -386,6 +408,7 @@ p { margin: 0; }
   max-width: 34ch; overflow: hidden; text-overflow: ellipsis;
 }
 .sb-item:empty { display: none; }
+.sb-item[title] { cursor: help; }
 .sb-item.ok { color: var(--ok); }
 .sb-item.warn { color: var(--warn); }
 .sb-item.bad { color: var(--danger); }
@@ -526,10 +549,14 @@ table.grid input[type="color"] { height: 18px; }
 @media (max-width: 1500px) {
   :root { --toolbox-w: 254px; --assistant-w: 288px; }
 }
-@media (max-width: 1240px) {
-  :root { --toolbox-w: 238px; --assistant-w: 260px; }
+@media (max-width: 1440px) {
+  /* 1366-class screens: icons only, no wrapping, no overlap */
   .tb-label { display: none; }
   .tb-btn { padding: 0 5px; }
+  .tb-presets { display: none; }
+}
+@media (max-width: 1240px) {
+  :root { --toolbox-w: 238px; --assistant-w: 260px; }
 }
 @media (max-width: 1080px) {
   .image-workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(160px, 1fr) minmax(160px, 1fr); }

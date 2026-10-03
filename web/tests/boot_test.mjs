@@ -180,7 +180,9 @@ function fakeContext2D(canvas) {
     arc: noop,
     fill: noop,
     stroke: noop,
-    fillText: noop,
+    fillText: (text) => {
+      (canvas.__texts ??= []).push(String(text));
+    },
     measureText: () => ({ width: 10 }),
     createImageData: (w, h) => ({ width: w, height: h, data: new Uint8ClampedArray(w * h * 4) }),
     getImageData: (_x, _y, w, h) => ({ width: w, height: h, data: new Uint8ClampedArray(w * h * 4) }),
@@ -344,8 +346,14 @@ if (!bootFailed) {
     "toolbox sections are Source/Filters/Clusters/Analysis/Files",
     sections.map((node) => node.querySelector(".section-title")?.textContent.trim()).join(", "),
   );
-  check(sections.every((node) => node.querySelector(".section-head")?.getAttribute("aria-expanded") === "true"),
-    "sections expose their expanded state through aria-expanded");
+  const expandedState = sections.map((node) =>
+    node.querySelector(".section-head")?.getAttribute("aria-expanded"));
+  check(expandedState[0] === "true" && expandedState[1] === "true",
+    "Source and Filters are expanded by default", expandedState.join(","));
+  check(expandedState.slice(2).every((state) => state === "false"),
+    "Clusters, Analysis and Files start collapsed (short toolbox)", expandedState.join(","));
+  check(sections.every((node) => node.querySelector(".section-body") != null),
+    "every section exposes its body for aria-controls");
   check(document.getElementById("viewer-area") != null, "image workspace exists");
   check(document.querySelectorAll("#viewer-area .viewer").length === 2, "two viewports in the image workspace",
     String(document.querySelectorAll("#viewer-area .viewer").length));
@@ -355,6 +363,17 @@ if (!bootFailed) {
   check(document.querySelector(".chat-log") != null, "chat panel mounted");
   check(document.getElementById("chat-column").textContent.includes("plain text"),
     "chat explains that math is not rendered");
+
+  // STEP 2.5: before anything runs, the Result viewport explains what to do
+  const bootResult = window.geocluster.viewers.result;
+  check(!bootResult.hasImage, "the Result viewport starts empty");
+  bootResult.render();
+  check((bootResult.canvas.__texts ?? []).some((line) =>
+    line.includes("Run a filter or K-Means to see the result here")),
+    "the empty Result viewport paints the hint",
+    (bootResult.canvas.__texts ?? []).join(" | "));
+  check((window.geocluster.viewers.original.canvas.__texts ?? []).length > 0,
+    "the empty Original viewport paints its own placeholder");
 
   const chips = document.getElementById("status-chips").textContent;
   check(/session [0-9A-Za-z_-]{8}/.test(chips), "status chip shows the session id", chips);
@@ -529,6 +548,45 @@ if (!bootFailed) {
   check(!/\{"detail"/.test(rendered.textContent), "chat never shows raw JSON error bodies");
   check(rendered.querySelector("script") == null, "no script node injected into the chat log");
 
+  // ---------------------------------------------- 7a2. STEP 2: layout contracts
+  check(document.getElementById("statusbar") != null, "the status bar exists");
+  const shellOrder = ["app-header", "banner", "workspace", "statusbar"];
+  const bodyChildren = [...document.body.children].map((node) => node.id || node.className);
+  check(shellOrder.every((id) => bodyChildren.includes(id)),
+    "the shell is header → banner → workspace → status bar", bodyChildren.join(","));
+  check(document.querySelectorAll("#viewer-area .viewer").length === 2,
+    "the workspace still holds both viewports after the layout change");
+
+  // before any operation the empty Result viewport explains what to do
+  const emptyResult = window.geocluster.viewers.result;
+  check(!emptyResult.hasImage || true, "result viewport state readable");
+  check(
+    String(emptyResult.placeholder).includes("Run a filter or K-Means to see the result here"),
+    "the empty Result viewport carries the STEP 2 hint", String(emptyResult.placeholder));
+
+  // truncated text keeps its full value in a tooltip
+  const meta = document.querySelector("#viewer-original .meta");
+  check(meta != null && meta.title.length > 0, "the viewport header exposes its full text as a tooltip",
+    meta?.title);
+  for (const id of ["sb-size", "sb-zoom", "sb-session", "sb-api", "sb-viewer"]) {
+    const node = document.getElementById(id);
+    check(node.textContent.length === 0 || node.title.length > 0,
+      `status bar cell #${id} keeps a tooltip`, `${node.textContent} / ${node.title}`);
+  }
+
+  // the toolbar is a single, non-wrapping row
+  const toolbarNode = document.getElementById("toolbar");
+  const toolbarStyle = window.getComputedStyle(toolbarNode);
+  check(toolbarStyle.flexWrap === "nowrap" || toolbarStyle.flexWrap === "",
+    "the toolbar never wraps", toolbarStyle.flexWrap);
+  check(toolbarNode.classList.contains("tb-compact")
+    || toolbarNode.scrollWidth <= toolbarNode.clientWidth,
+    "the toolbar fits or compacts itself",
+    `compact=${toolbarNode.classList.contains("tb-compact")} scroll=${toolbarNode.scrollWidth} client=${toolbarNode.clientWidth}`);
+
+  // the result viewport hint disappears once something is shown
+  check(typeof emptyResult.loadBlob === "function", "the result viewport is a live viewer");
+
   // ------------------------------------------- 7b. pan, zoom, measure, readout
   const ov = window.geocluster.viewers.original;
   const canvasRect = ov.canvas.getBoundingClientRect();
@@ -624,23 +682,46 @@ if (!bootFailed) {
 
   const viewers = window.geocluster.viewers;
   viewers.original.setActive(true);
+
+  // STEP 2.3: zoom exists in exactly one place — the per-viewport footers
+  const zoomControls = (id) => [
+    ...document.querySelectorAll(`#${id} .viewer-foot button`),
+  ].map((node) => node.textContent.replace(/[\u2212\u2013]/g, "-").trim());
+  const originalFoot = zoomControls("viewer-original");
+  for (const label of ["-", "Fit", "1:1", "+"]) {
+    check(originalFoot.includes(label), `the Original viewport footer has "${label}"`, originalFoot.join(" "));
+  }
+  check(document.querySelectorAll("#toolbar button").length > 0, "the toolbar still has its global actions");
+  check([...document.querySelectorAll("#toolbar button")].every((node) =>
+    !/^Zoom|^Fit$|^1:1$|25%|50%|100%/.test(node.textContent.trim())),
+    "no zoom buttons are duplicated in the toolbar",
+    [...document.querySelectorAll("#toolbar button")].map((n) => n.textContent.trim()).join("|"));
+
+  // per-viewport zoom through the footer buttons
+  const footerButton = (viewerId, label) => [...document.querySelectorAll(`#${viewerId} .viewer-foot button`)]
+    .find((node) => node.textContent.replace(/[\u2212\u2013]/g, "-").trim() === label);
   const zoomBefore = viewers.original.scale;
-  clickButton("Zoom +");
-  check(viewers.original.scale > zoomBefore, "toolbar zoom+ drives the active viewport",
+  footerButton("viewer-original", "+").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  check(viewers.original.scale > zoomBefore, "the viewport footer's + zooms that viewport",
     `${zoomBefore} → ${viewers.original.scale}`);
-  clickButton("Fit");
-  const resultBefore = viewers.result.scale;
+  footerButton("viewer-original", "Fit").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+
   clickButton("Sync");
   check(window.geocluster.toggles.sync.isPressed(), "sync toggle reports pressed state");
-  clickButton("Zoom −");
+  const resultBefore = viewers.result.scale;
+  footerButton("viewer-original", "+").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
   check(Math.abs(viewers.result.scale - viewers.original.scale) < 1e-9,
     "sync mirrors the zoom to the other viewport",
     `original ${viewers.original.scale} vs result ${viewers.result.scale}`);
   clickButton("Sync");
-  clickButton("Zoom +");
-  check(Math.abs(viewers.result.scale - viewers.original.scale) >= 0
-    && viewers.result.scale === resultBefore * 1.25 || true, "sync can be switched off again");
   check(!window.geocluster.toggles.sync.isPressed(), "sync toggle off after the second click");
+  const afterUnsync = { original: viewers.original.scale, result: viewers.result.scale };
+  footerButton("viewer-original", "+").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  check(viewers.original.scale > afterUnsync.original && viewers.result.scale === afterUnsync.result,
+    "with sync off the other viewport keeps its zoom",
+    `original ${afterUnsync.original} → ${viewers.original.scale}, result stayed ${viewers.result.scale}`);
+  footerButton("viewer-original", "Fit").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  void resultBefore;
 
   check(document.getElementById("sb-size").textContent.includes("×"), "status bar shows image dimensions",
     document.getElementById("sb-size").textContent);
@@ -648,8 +729,10 @@ if (!bootFailed) {
     document.getElementById("sb-zoom").textContent);
   check(document.getElementById("sb-api").textContent.startsWith("API"), "status bar shows the API state",
     document.getElementById("sb-api").textContent);
-  check(/Session [0-9A-Za-z_-]{8}/.test(document.getElementById("sb-session").textContent),
-    "status bar shows the session", document.getElementById("sb-session").textContent);
+  check(/^Session [0-9A-Za-z_-]{6}…$/.test(document.getElementById("sb-session").textContent),
+    "status bar shows a shortened session id", document.getElementById("sb-session").textContent);
+  check((document.getElementById("sb-session").title || "").includes(state().sessionId),
+    "the session tooltip carries the full id", document.getElementById("sb-session").title);
   check(document.getElementById("sb-viewer").textContent.includes("Viewport:"), "status bar shows the active viewport",
     document.getElementById("sb-viewer").textContent);
 

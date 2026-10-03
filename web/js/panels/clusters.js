@@ -196,6 +196,7 @@ export function createClustersPanel(ctx) {
     id: "clusters",
     title: "Clusters",
     iconName: "layers",
+    collapsed: true,
     body: [
       toolGroup("K-Means", [
         el("div", { class: "row center" }, [
