@@ -13,6 +13,7 @@ import { resolveApiBase } from "./config.js";
 import { ApiError, humanizeError } from "./errors.js";
 import { ImageHistory, HISTORY_LIMIT, snapshotOf } from "./history.js";
 import { composeMap, mapCanvasToBlob, mapFileName } from "./map.js";
+import { describeDistance } from "./measure.js";
 import { createChatPanel } from "./panels/chat.js";
 import { createPanels } from "./panels/index.js";
 import { SessionExpiredError, SessionManager } from "./session.js";
@@ -122,9 +123,23 @@ bus.on("session:reset", () => {
   state.kmeans = null;
 });
 
-bus.on("viewer:distance", ({ text }) => {
-  toast(text, "", { timeout: 9000 });
-  bus.emit("status", { message: text });
+bus.on("viewer:distance", ({ distance, role, text }) => {
+  // Units + original resolution: the analysis panel explains this in full, the
+  // toast repeats the two numbers with the label that says which is which.
+  const info = role === "original" ? state.original?.info : role === "result" ? state.result?.info : null;
+  const settings = state.measure ?? { unit: "px", pxPerUnit: null };
+  const description = Number.isFinite(Number(distance))
+    ? describeDistance({
+      pixels: Number(distance),
+      unit: settings.unit ?? "px",
+      pxPerUnit: settings.pxPerUnit ?? null,
+      scale: Number(info?.scale) > 0 ? Number(info.scale) : 1,
+      info,
+    })
+    : { lines: [text] };
+  const message = description.lines.join(" · ");
+  toast(message, "", { timeout: 12000 });
+  bus.emit("status", { message });
 });
 
 bus.on("viewer:distance-mode", ({ enabled, role }) => {

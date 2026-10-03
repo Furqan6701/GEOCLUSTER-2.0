@@ -270,6 +270,30 @@ def check_workstation_layout() -> None:
     check("@media (max-width: 1500px)" in css and "map-open" in css,
           "three viewports never squeeze the image panes on a laptop")
 
+    # STEP 5: histogram options are browser-side, distance has real units
+    hist_js = _js_text("js/histogram.js")
+    for token in ["smoothBins", "cumulativeBins", "densityBins", "prepareBins",
+                  "drawHistogram", "THEMES", "histogramFileName"]:
+        check(f"export function {token}" in hist_js or f"export const {token}" in hist_js,
+              f"histogram.js exports {token}")
+    check("fetch(" not in hist_js and "ApiClient" not in hist_js and "await " not in hist_js,
+          "the histogram module is pure maths — no request, no await (options recompute in the browser)")
+    analysis_js = _js_text("js/panels/analysis.js")
+    for control in ['id: "hist-scale"', 'id: "hist-smoothing"', 'id: "hist-cumulative"',
+                    'id: "hist-density"', 'id: "hist-theme"']:
+        check(control in analysis_js, f"the histogram exposes {control.split(chr(34))[1]}")
+    check("exportPng" in analysis_js and "histogramFileName" in analysis_js,
+          "the histogram can be exported as a PNG")
+    measure_js = _js_text("js/measure.js")
+    for unit in ["mm", "cm", "in"]:
+        check(f"{unit}: {{" in measure_js, f"distance supports {unit}")
+    check("export function describeDistance" in measure_js,
+          "measure.js labels which distance is which")
+    check("originalPixels" in measure_js and "/ factor" in measure_js,
+          "the original-resolution distance divides by the upload scale")
+    check("pxPerUnit" in analysis_js and "unitRateLabel" in analysis_js,
+          "the distance panel asks for pixels-per-unit")
+
     # STEP 2.3: zoom controls exist in exactly one place
     index_zoom_ids = [i for i in ["tb-zoom-in", "tb-zoom-out", "tb-fit", "tb-1to1", "tb-zoom-25"] if f'id="{i}"' in index]
     check(not index_zoom_ids, "the toolbar has no zoom buttons (no duplicate controls)",

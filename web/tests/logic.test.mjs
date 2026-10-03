@@ -21,6 +21,20 @@ import { OPERATIONS_WITH_PARAMS, describeOperation } from "../js/panels/operatio
 import { ApiClient } from "../js/api.js";
 import { HISTORY_LIMIT, ImageHistory, snapshotOf } from "../js/history.js";
 import {
+  SCALES,
+  SMOOTHING_WINDOWS,
+  THEMES,
+  axisLabels,
+  cumulativeBins,
+  densityBins,
+  describeOptions,
+  drawHistogram,
+  histogramFileName,
+  prepareBins,
+  smoothBins,
+} from "../js/histogram.js";
+import { UNITS, convertPixels, describeDistance, formatMeasurement, unitRateLabel } from "../js/measure.js";
+import {
   composeMap,
   drawLegend,
   fitText,
@@ -716,4 +730,149 @@ test("mapFileName derives a readable, safe filename", () => {
   assert.equal(mapFileName("sample.jpg"), "map-sample.png");
   assert.equal(mapFileName(""), "map-map.png");
   assert.equal(mapFileName("a b/c.tif"), "map-a-b-c.png");
+});
+
+// ------------------------------------- STEP 5: histogram options + distance
+
+const BINS_SPIKE = [0, 0, 0, 0, 1, 2, 4, 8, 16, 32, 64, 128, 64, 32, 16, 8, 4, 2, 1, 0];
+
+test("smoothBins averages neighbouring bins and keeps the 256-bin length", () => {
+  const bins = Array.from({ length: 256 }, () => 0);
+  bins[128] = 100;
+  const smoothed = smoothBins(bins, 5);
+  assert.equal(smoothed.length, 256, "the bin count never changes");
+  assert.equal(smoothed[128], 20, "the spike is spread over five bins (100/5)");
+  assert.equal(smoothed[127], 20);
+  assert.equal(smoothed[125], 0);
+  assert.deepEqual(smoothBins(BINS_SPIKE, 0), BINS_SPIKE, "0 means no smoothing");
+  assert.deepEqual(smoothBins(BINS_SPIKE, 1), BINS_SPIKE, "a 1-bin window is a no-op");
+});
+
+test("cumulativeBins ends at the total and never decreases", () => {
+  const cumulative = cumulativeBins(BINS_SPIKE);
+  assert.equal(cumulative.at(-1), BINS_SPIKE.reduce((sum, value) => sum + value, 0));
+  assert.equal(cumulative.at(-1), 382);
+  for (let i = 1; i < cumulative.length; i += 1) {
+    assert.ok(cumulative[i] >= cumulative[i - 1], `monotonic at ${i}`);
+  }
+});
+
+test("densityBins is a share of pixels, summing to 1", () => {
+  const density = densityBins(BINS_SPIKE);
+  const total = density.reduce((sum, value) => sum + value, 0);
+  assert.ok(Math.abs(total - 1) < 1e-9, `sums to ${total}`);
+  const total381 = BINS_SPIKE.reduce((sum, value) => sum + value, 0);
+  assert.ok(Math.abs(density[11] - 128 / total381) < 1e-9);
+  assert.deepEqual(densityBins([0, 0]), [0, 0], "an empty histogram cannot divide by zero");
+});
+
+test("prepareBins applies smoothing → cumulative → density → scale in that order", () => {
+  const plain = prepareBins(BINS_SPIKE);
+  assert.equal(plain.values.length, 20);
+  assert.equal(plain.max, 128);
+  assert.equal(plain.label, "linear scale");
+
+  const smoothed = prepareBins(BINS_SPIKE, { smoothing: 3 });
+  assert.ok(smoothed.values[11] < 128, "smoothing lowers the peak");
+
+  const cumulative = prepareBins(BINS_SPIKE, { cumulative: true });
+  assert.equal(cumulative.values.at(-1), BINS_SPIKE.reduce((sum, value) => sum + value, 0));
+
+  const density = prepareBins(BINS_SPIKE, { density: true });
+  assert.ok(Math.abs(density.values.reduce((sum, value) => sum + value, 0) - 1) < 1e-9);
+
+  const log = prepareBins(BINS_SPIKE, { scale: "log" });
+  assert.ok(Math.abs(log.values[11] - Math.log10(129)) < 1e-9, "log scale is log10(count + 1)");
+  assert.equal(log.max, Math.log10(129));
+
+  const all = prepareBins(BINS_SPIKE, { scale: "log", smoothing: 5, cumulative: true, density: true });
+  assert.equal(all.label, "log scale · smoothed 5 · cumulative · density");
+  assert.ok(all.values.every((value) => value >= 0), "log of a share is never negative");
+
+  assert.deepEqual(prepareBins([]), { values: [], max: 1, total: 0, label: "no data" });
+});
+
+test("describeOptions and axisLabels describe the current view", () => {
+  assert.equal(describeOptions(), "linear scale");
+  assert.equal(describeOptions({ scale: "log" }), "log scale");
+  assert.equal(describeOptions({ scale: "linear", smoothing: 9, cumulative: true }), "linear scale · smoothed 9 · cumulative");
+  assert.equal(axisLabels().y, "pixels");
+  assert.equal(axisLabels({ cumulative: true }).y, "pixels ≤ intensity");
+  assert.equal(axisLabels({ density: true }).y, "share of pixels");
+  assert.equal(axisLabels().x, "intensity (0–255)");
+  assert.deepEqual(SCALES, ["linear", "log"]);
+  assert.deepEqual(SMOOTHING_WINDOWS, [0, 3, 5, 9]);
+  assert.ok(THEMES.light.background !== THEMES.dark.background);
+});
+
+test("drawHistogram paints the chart, its title and both axes for every mode", () => {
+  const canvas = { width: 520, height: 170, __texts: [] };
+  const ctx = {
+    canvas, fillStyle: "", strokeStyle: "", lineWidth: 1, font: "", textAlign: "", textBaseline: "",
+    clearRect() { canvas.__texts = []; },
+    fillRect() {}, strokeRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {},
+    save() {}, restore() {}, translate() {}, rotate() {},
+    measureText: (text) => ({ width: text.length * 6 }),
+    fillText: (text) => canvas.__texts.push(String(text)),
+  };
+  const painted = (options) => {
+    drawHistogram(ctx, { bins: BINS_SPIKE, width: 520, height: 170, title: "Histogram — x.png", ...options });
+    return canvas.__texts.join(" | ");
+  };
+  assert.match(painted({}), /Histogram — x\.png/);
+  assert.match(painted({}), /intensity \(0–255\)/);
+  assert.match(painted({}), /pixels \|/);
+  assert.match(painted({ scale: "log" }), /10\^/);
+  assert.match(painted({ cumulative: true }), /pixels ≤ intensity/);
+  assert.match(painted({ density: true }), /share of pixels/);
+  assert.match(painted({ density: true }), /%/);
+  assert.match(painted({ theme: "light" }), /Histogram — x\.png/, "the light theme still titles the chart");
+  drawHistogram(ctx, { bins: [], width: 520, height: 170 });
+  assert.ok(canvas.__texts.includes("no histogram yet"));
+  assert.equal(histogramFileName("sample.jpg"), "histogram-sample.png");
+});
+
+test("distance conversion uses the calibration the user types in", () => {
+  assert.deepEqual(convertPixels(250), { unit: "px", value: 250, basis: "image pixels" });
+  assert.equal(convertPixels(250, { unit: "cm", pxPerUnit: 100 }).value, 2.5);
+  assert.equal(convertPixels(250, { unit: "mm", pxPerUnit: 50 }).value, 5);
+  assert.equal(convertPixels(250, { unit: "in", pxPerUnit: 96 }).value, 250 / 96);
+  assert.equal(convertPixels(250, { unit: "cm" }), null, "no calibration means no conversion");
+  assert.equal(convertPixels(250, { unit: "cm", pxPerUnit: 0 }), null, "0 px/unit is meaningless");
+  assert.equal(convertPixels("nope", { unit: "cm", pxPerUnit: 10 }), null);
+  assert.deepEqual(Object.keys(UNITS), ["px", "mm", "cm", "in"]);
+  assert.equal(unitRateLabel("cm"), "px/cm");
+  assert.equal(unitRateLabel("px"), "");
+  assert.equal(formatMeasurement(250), "250.00");
+  assert.equal(formatMeasurement(2.5), "2.50");
+  assert.equal(formatMeasurement(0.0042), "0.0042");
+  assert.equal(formatMeasurement(undefined), "—");
+});
+
+test("describeDistance labels the screen value and the original resolution", () => {
+  const plain = describeDistance({ pixels: 500 });
+  assert.equal(plain.primary, "500.00 px");
+  assert.equal(plain.downscaled, false);
+  assert.match(plain.lines.join(" "), /on screen/);
+  assert.match(plain.lines.join(" "), /was not downscaled on upload/);
+
+  const downscaled = describeDistance({
+    pixels: 500, unit: "cm", pxPerUnit: 100, scale: 0.5,
+    info: { original_width: 4000, original_height: 3000 },
+  });
+  assert.equal(downscaled.primary, "5.00 cm");
+  assert.equal(downscaled.originalPixels, 1000, "original pixels = pixels / scale");
+  assert.equal(downscaled.original.text, "10.00 cm");
+  assert.match(downscaled.lines[0], /5\.00 cm on screen \(100 px\/cm\)/);
+  assert.match(downscaled.lines[1], /10\.00 cm at the original 4000×3000 px \(upload downscaled ×0\.5\)/);
+
+  const originalPx = describeDistance({ pixels: 500, scale: 0.25 });
+  assert.equal(originalPx.primary, "500.00 px");
+  assert.equal(originalPx.originalPixels, 2000);
+  assert.match(originalPx.lines[1], /2,000\.00 px at the original resolution/);
+
+  const uncalibrated = describeDistance({ pixels: 500, unit: "mm" });
+  assert.equal(uncalibrated.ok, false);
+  assert.equal(uncalibrated.reason, "missing-calibration");
+  assert.match(uncalibrated.lines[0], /set pixels per unit to convert to millimetres/);
 });

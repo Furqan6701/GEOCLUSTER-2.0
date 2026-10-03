@@ -79,6 +79,24 @@ viewport is a real product of the pipeline, not a placeholder:
 * No new requests: the classified image comes from the session Blob cache and
   everything else is canvas work in the browser.
 
+### Histogram options and distance units (STEP 5)
+
+* `js/histogram.js` owns every display option: **log scale**, **smoothing**
+  (moving average over 3/5/9 bins), **cumulative**, **density** (share of
+  pixels) and a **light/dark canvas**. They are applied in that fixed order to
+  the same 256 integer bins the API returned, so switching one costs no
+  request — the module has no `fetch`, no `await` and no API import at all.
+* *Export PNG* repaints the chart as it is shown now, on a 2× canvas
+  (1040×340), with a title line naming the image and the active options, so the
+  PNG is self-describing.
+* Distance: the viewer measures image pixels; the Analysis ▸ Distance controls
+  pick a unit (**px / mm / cm / inches**) and, for real units, the calibration
+  the user types in (*pixels per unit*, e.g. 200 px/cm). Both numbers are
+  labelled: the value *on screen* and — when the upload was downscaled — the
+  value *at the original resolution*, which is `pixels / scale` using the
+  `scale` from the upload response. Without a calibration number the UI asks
+  for it instead of inventing one.
+
 ### Deliberately not implemented
 
 Recent files appears as a **disabled entry with a reason** instead of a fake

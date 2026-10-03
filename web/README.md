@@ -67,8 +67,12 @@ rather than a dashboard:
 * **Clusters** — K-Means (K 2–20, max iterations) with ranges, centroids and
   pixel counts, then a classify editor (per-cluster min/max, land-cover name,
   colour) that returns the recoloured image and legend percentages.
-* **Analysis** — 256-bin histogram (linear/log), min/max/mean/std, and the
-  distance tool for the active viewport.
+* **Analysis** — 256-bin histogram with log scale, smoothing (3/5/9), cumulative
+  and density views, light/dark canvas and PNG export; all options are
+  recomputed in the browser from the 256 bins (no extra requests). Min/max/mean/std
+  and the distance tool for the active viewport, with px/mm/cm/inch units from a
+  user-entered pixels-per-unit value — and, for downscaled uploads, the distance
+  at the original resolution as well, both labelled.
 * **Files** — GCH2 Huffman compress to `.gch` (desktop-compatible), decompress
   back into the session, and PNG export of the current image.
 * **Assistant** — chat with the API's AI assistant; router commands such as

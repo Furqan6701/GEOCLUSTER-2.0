@@ -175,6 +175,9 @@ function fakeContext2D(canvas) {
     clearRect: noop,
     fillRect: noop,
     strokeRect: noop,
+    clearRect: () => {
+      canvas.__texts = [];
+    },
     putImageData: noop,
     beginPath: noop,
     closePath: noop,
@@ -631,6 +634,128 @@ if (!bootFailed) {
   check(/256/.test(statsText ?? ""), "histogram reports 256 bins", (statsText ?? "").slice(0, 80));
   check(document.querySelectorAll("#toolbox-sections .histogram-canvas").length >= 1, "histogram canvas created");
 
+  // ---------------------------- 5b. STEP 5: histogram options + distance
+  {
+    const gh = window.geocluster;
+    const analysis = gh.panels.get("analysis");
+    const histCanvas = document.querySelector("#toolbox-sections .histogram-canvas");
+    const texts = () => (histCanvas.__texts ?? []).join(" | ");
+    const requestsBefore = requests.length;
+
+    check(analysis.actions.lastBins()?.length === 256, "the panel kept the 256 bins in memory",
+      String(analysis.actions.lastBins()?.length));
+    check(/linear scale/.test(texts()), "the chart states the scale it is drawn with", texts().slice(0, 120));
+
+    const controls = (id) => document.getElementById(id);
+    const setControl = (node, value, event = "change") => {
+      if (node.type === "checkbox") node.checked = Boolean(value);
+      else node.value = String(value);
+      node.dispatchEvent(new window.Event(event, { bubbles: true }));
+    };
+
+    // log scale
+    setControl(controls("hist-scale"), "log");
+    check(/log scale/.test(texts()), "log scale is applied in the browser", texts().slice(0, 140));
+
+    // smoothing
+    const smoothSelect = controls("hist-smoothing");
+    check(smoothSelect != null, "there is a smoothing control");
+    setControl(smoothSelect, "5");
+    check(/smoothed 5/.test(texts()), "smoothing is applied in the browser", texts().slice(0, 160));
+    setControl(smoothSelect, "0");
+
+    // cumulative + density + light theme
+    setControl(controls("hist-cumulative"), true);
+    check(/cumulative/.test(texts()), "cumulative mode is applied", texts().slice(0, 160));
+    check(/pixels ≤ intensity/.test(texts()), "the y axis relabels for cumulative", texts().slice(0, 200));
+    setControl(controls("hist-cumulative"), false);
+    setControl(controls("hist-density"), true);
+    check(/density/.test(texts()), "density mode is applied", texts().slice(0, 160));
+    check(/share of pixels/.test(texts()), "the y axis relabels for density", texts().slice(0, 200));
+    setControl(controls("hist-density"), false);
+    setControl(controls("hist-theme"), true);
+    check(/light canvas/.test(document.getElementById("toolbox-sections").textContent),
+      "the light theme is reported next to the chart");
+    setControl(controls("hist-scale"), "linear");
+    check(/linear scale/.test(texts()) && !/cumulative|density/.test(texts()),
+      "with the extras off the chart is a plain linear histogram", texts().slice(0, 160));
+
+    check(requests.length === requestsBefore,
+      "every histogram option was recomputed in the browser (no extra requests)",
+      `${requestsBefore} → ${requests.length}`);
+
+    // PNG export: same options, larger canvas
+    const exportBefore = exportedCanvases.length;
+    const downloadsBefore = downloads.length;
+    const hist = await analysis.actions.exportPng();
+    check(hist?.ok === true, "the histogram exported", JSON.stringify(hist && { width: hist.width, height: hist.height }));
+    check(exportedCanvases.length === exportBefore + 1, "one canvas was rasterised for the export");
+    const exported = exportedCanvases[exportedCanvases.length - 1];
+    check(exported.width === 1040 && exported.height === 340,
+      "the exported PNG is the on-screen chart at 2×", `${exported.width}×${exported.height}`);
+    check(downloads.length > downloadsBefore, "the histogram PNG was downloaded");
+    check(/^histogram-.*\.png$/.test(hist.filename), "the histogram filename is descriptive", hist.filename);
+    check(toasts.some((text) => /Histogram exported/.test(text)), "the export is confirmed");
+    check(/light theme/.test(hist.filename) === false && downloads.at(-1).filename === hist.filename,
+      "the promoted download belongs to the histogram export", downloads.at(-1).filename);
+    void gh;
+
+    // ---- distance units, including the original resolution of a downscaled upload
+    const original = state().original;
+    original.info = { ...original.info, scale: 0.5, downscaled: true,
+      original_width: (original.info.width ?? 0) * 2, original_height: (original.info.height ?? 0) * 2 };
+    const measured = 500;
+    gh.bus.emit("viewer:distance", {
+      role: "original", points: [{ x: 0, y: 0 }, { x: measured, y: 0 }], distance: measured,
+      text: `Distance ${measured} px`,
+    });
+    const unitSelect = [...document.querySelectorAll("#toolbox-sections select")]
+      .find((node) => [...node.options].some((option) => option.textContent === "centimetres"));
+    check(unitSelect != null, "the distance section offers mm/cm/inches");
+    const rateInput = [...document.querySelectorAll("#toolbox-sections input[type=number]")]
+      .find((node) => /one unit/.test(node.title ?? ""));
+    check(rateInput != null, "there is a pixels-per-unit input");
+    setControl(unitSelect, "cm");
+    setControl(rateInput, "100");
+    gh.bus.emit("viewer:distance", {
+      role: "original", points: [{ x: 0, y: 0 }, { x: measured, y: 0 }], distance: measured,
+      text: `Distance ${measured} px`,
+    });
+    const sectionText = document.getElementById("toolbox-sections").textContent;
+    check(/5\.00 cm on screen/.test(sectionText),
+      "the measurement converts with the user's px/cm", sectionText.slice(-320));
+    check(/10\.00 cm at the original/.test(sectionText),
+      "a downscaled upload also shows the distance at original resolution", sectionText.slice(-320));
+    check(/upload downscaled ×0\.5/.test(sectionText),
+      "the two values say which is which (screen vs original, and the factor)",
+      sectionText.slice(-320));
+    await until(() => toasts.some((text) => /at the original/.test(text)),
+      "the measurement toast appears", { timeout: 8000 });
+    check(toasts.some((text) => /on screen/.test(text)) && toasts.some((text) => /at the original/.test(text)),
+      "the toast carries both numbers too", toasts.slice(-3).join(" || "));
+
+    // pixels stay the default and need no calibration
+    setControl(unitSelect, "px");
+    gh.bus.emit("viewer:distance", {
+      role: "original", points: [{ x: 0, y: 0 }, { x: measured, y: 0 }], distance: measured,
+      text: `Distance ${measured} px`,
+    });
+    check(/500\.00 px on screen/.test(document.getElementById("toolbox-sections").textContent),
+      "pixels need no calibration value");
+
+    // image units with no calibration number say so instead of inventing one
+    setControl(unitSelect, "mm");
+    setControl(rateInput, "");
+    gh.bus.emit("viewer:distance", {
+      role: "original", points: [{ x: 0, y: 0 }, { x: measured, y: 0 }], distance: measured,
+      text: `Distance ${measured} px`,
+    });
+    check(/set pixels per unit/.test(document.getElementById("toolbox-sections").textContent),
+      "without pixels-per-unit the UI asks for it rather than guessing");
+    setControl(unitSelect, "px");
+    original.info = { ...original.info, scale: 1, downscaled: false };
+  }
+
   // --------------------------------------------------- 6. compress/decompress
   expandSection("Files");
   clickButton("Compress current image → .gch");
@@ -804,8 +929,9 @@ if (!bootFailed) {
   await until(() => /distance: [\d.]+ px/.test(ov.readout.textContent), "distance readout");
   check(/distance: 50 px/.test(ov.readout.textContent),
     "two clicks measure the Euclidean pixel distance", ov.readout.textContent);
-  check(toasts.some((text) => /Distance 50 px/.test(text)), "the measurement is announced",
-    toasts.slice(-1).join(" | "));
+  check(toasts.some((text) => /50\.00 px on screen \(image pixels\)/.test(text)) &&
+    toasts.some((text) => /not downscaled on upload/.test(text)),
+    "the measurement is announced in pixels, with its basis", toasts.slice(-1).join(" | "));
   ov.toggleDistance(false);
 
   // ------------------------------------------------ 8. workstation shell
