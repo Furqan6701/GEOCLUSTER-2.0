@@ -4,6 +4,114 @@ Operational notes for the GeoCluster web console: how it talks to the API,
 what it does when things go wrong, and the known issues we deliberately left
 alone. Everything here was verified against the API in this repository.
 
+## UI structure (workstation redesign)
+
+The frontend is a desktop-style workspace, not a dashboard:
+
+| Region | Contents |
+| --- | --- |
+| Title bar | GeoCluster 2.0, menu bar (File · View · Processing · Analysis · Help), status chips (API, session, AI, satellite, max MP) |
+| Toolbar | Open · Satellite · Export · Compress · Undo/Redo · Pan · Pixel · Measure · Sync · dock toggles (single non-wrapping row; labels collapse to icons below 1440 px) |
+| Toolbox dock | collapsible sections: Source, Filters, Clusters, Analysis, Files (every control from the previous panels, unchanged in behaviour) |
+| Image workspace | up to three viewports — **Original**, **Result** and **Map** (hidden until a classification exists) — each with a header (name + dimensions + active tool) and a footer (Fit/1:1/±/Distance, zoom %, pixel readout); the Map footer also toggles its legend |
+| Assistant dock | scrollable conversation, quick-command buttons, compact input; collapsible |
+| Status bar | dimensions · channel layout · zoom · cursor X/Y · pixel value · active viewport · session · API · New session |
+
+Viewports are canvases, never cards: fit-to-view preserves the aspect ratio,
+there is no `object-fit` anywhere, zoom is cursor-anchored, pixels stay crisp
+(nearest-neighbour) at ≥1:1, and small 260×260 satellite tiles are upscaled to
+fill the pane rather than being shown as thumbnails.
+
+### Synchronised navigation
+
+View → *Synchronise Original ↔ Result* (toolbar **Sync**, shortcut `Y`) makes
+camera changes (zoom and pan) mirror from one viewport to the other. It is a
+frontend feature only — both viewports hold their own decoded bitmap, so no
+API support is needed. With sync off each viewport navigates independently.
+Camera changes are announced on the bus as `viewer:camera`, which is also what
+the status bar uses.
+
+### Tool states
+
+`Pan`, `Pixel` and `Measure` are explicit tools with `aria-pressed` state, a
+cursor that reflects them, and a badge in the viewport header showing which is
+active. Turning the pixel readout off stops the footer/status-bar readout but
+never affects zoom or pan. The viewport's own `Distance` button and the toolbar
+`Measure` button stay in step through the `viewer:distance-mode` event.
+
+### Undo / redo (implemented client-side)
+
+The API has no operation history (every operation returns a new image id), so
+history lives in the browser: `js/history.js` keeps the last **15 displayed
+states**. Each state stores a label, the server image id, the image info and —
+once the viewer has fetched it — the **Blob** itself, plus a snapshot of both
+viewport slots so "Clear result" is undoable too.
+
+* Toolbar **Undo/Redo**, File → Undo/Redo, `Ctrl+Z` and `Ctrl+Y` (`Ctrl+Shift+Z`
+  also redoes). Disabled states explain themselves in the tooltip.
+* Restoring paints the stored Blob: **no server request** is made.
+* Sessions keep only a few images (LRU). If a state's id has been evicted, the
+  operation that needs it gets a 404, `SessionManager.withImage()` silently
+  re-uploads the stored Blob (`revive()` in `app.js`), re-points every history
+  entry that referenced the old id and retries the call once — the user sees
+  nothing. Old Blobs are released after 24 images to bound memory.
+* Starting a new session clears the history (server ids are gone).
+
+### Map view (implemented)
+
+The classify step returns a recoloured image plus a legend
+(`cluster, name, colour, min, max, count, percentage, label`), so the Map
+viewport is a real product of the pipeline, not a placeholder:
+
+* `js/map.js` draws the classified image **and** its legend onto one canvas:
+  swatch + class name + percentage per row, panel beside the image when it
+  fits, underneath when it does not (260×260 satellite tiles with 20 classes,
+  letterbox images). Long names are ellipsised, colours are normalised.
+* That canvas is what the Map viewport shows, so **Map export** writes a single
+  PNG that already contains the legend — the same canvas, `toBlob("image/png")`,
+  named `map-<source>.png`.
+* Analysis → *Map view* / *Map legend* / *Map export*, the toolbar **Map**
+  toggle and View → *Show map viewport* all drive it. The legend toggle
+  recomposes the canvas with or without the panel, and the export follows it.
+* Classify opens the Map view automatically; with three panes the workspace
+  puts the map on a full-width row under the two image panes below 1500 px, and
+  undoing past the classification hides it again.
+* No new requests: the classified image comes from the session Blob cache and
+  everything else is canvas work in the browser.
+
+### Histogram options and distance units (STEP 5)
+
+* `js/histogram.js` owns every display option: **log scale**, **smoothing**
+  (moving average over 3/5/9 bins), **cumulative**, **density** (share of
+  pixels) and a **light/dark canvas**. They are applied in that fixed order to
+  the same 256 integer bins the API returned, so switching one costs no
+  request — the module has no `fetch`, no `await` and no API import at all.
+* *Export PNG* repaints the chart as it is shown now, on a 2× canvas
+  (1040×340), with a title line naming the image and the active options, so the
+  PNG is self-describing.
+* Distance: the viewer measures image pixels; the Analysis ▸ Distance controls
+  pick a unit (**px / mm / cm / inches**) and, for real units, the calibration
+  the user types in (*pixels per unit*, e.g. 200 px/cm). Both numbers are
+  labelled: the value *on screen* and — when the upload was downscaled — the
+  value *at the original resolution*, which is `pixels / scale` using the
+  `scale` from the upload response. Without a calibration number the UI asks
+  for it instead of inventing one.
+
+### Menu honesty (STEP 6)
+
+Every entry in File / View / Processing / Analysis / Help does something real.
+The never-implemented *Recent files* entry was removed and replaced by
+*Session images…*, which reveals the Source section (the list it was standing in
+for). Nothing in the menus says "not implemented", "planned" or "coming soon".
+
+Entries that are unavailable **right now** are disabled and carry the reason in
+their tooltip — e.g. Export without an image ("load, fetch or decompress an
+image first"), Clear result with no result ("there is no result yet — run a
+filter or K-Means first"), and the map entries before a classification ("run
+Classify in the Clusters section first — the map is its output"). The toolbar
+buttons explain themselves the same way, and a boot test asserts that no
+disabled entry anywhere is missing its reason.
+
 ## Serving and CORS
 
 * Serve `web/` on **http://localhost:5173**:
@@ -135,10 +243,10 @@ message. Raw JSON is never displayed.
 
 | Command | What it does |
 | --- | --- |
-| `node --test "web/tests/*.test.mjs"` | 26 logic tests: config resolution, error mapping, API client contract (URLs, bodies, multipart, session recovery), chat command mapping/execution. No browser needed. |
-| `python web/tests/smoke_test.py` | Serves `web/` on 5173 (reuses a running server for the same root), checks assets + content types, that all 47 relative module imports resolve, that no key material exists under `web/`, that no `innerHTML` is used, and that the API's CORS allows the frontend origin. |
+| `node --test "web/tests/*.test.mjs"` | 28 logic tests: config resolution, error mapping, API client contract (URLs, bodies, multipart, session recovery), chat command mapping/execution. No browser needed. |
+| `python web/tests/smoke_test.py` | Serves `web/` on 5173 (reuses a running server for the same root), checks assets + content types, that every relative module import resolves, that no key material exists under `web/`, that no `innerHTML` is used, the workstation layout contract (image workspace owns the flexible track, no `object-fit: cover`, technical corner radii), and that the API's CORS allows the frontend origin. |
 | `python web/tests/integration_check.py` | Live contract check against a running API: the exact call sequence the browser makes (session → upload → 6 filters → kmeans k=5 → classify → histogram → stats → GCH2 round trip → satellite error paths → chat commands → 404/415). Requires `uvicorn main:app --port 8000`. |
-| `node web/tests/boot_test.mjs --jsdom <dir>` | Boot test: loads `index.html` in jsdom, imports `js/app.js` and drives the UI through DOM events against the live API — 49 assertions covering chips, tabs, upload, the six filters, the rendered K-Means range table, classify, histogram/stats, GCH2 compress → decompress, chat router commands and session-expiry recovery. jsdom is optional (not a dependency of the app); without it the test skips. |
+| `node web/tests/boot_test.mjs --jsdom <dir>` | Boot test: loads `index.html` in jsdom, imports `js/app.js` and drives the UI through DOM events against the live API — 96 assertions covering the shell (menu bar, toolbar, status bar, dock collapse), viewport behaviour (pan, wheel zoom, pixel readout, distance measurement, sync mirroring), upload, the six filters, the rendered K-Means range table, classify, histogram/stats, GCH2 compress → decompress, PNG export, chat router commands, session-expiry recovery, and a clean browser console. jsdom is optional (not a dependency of the app); without it the test skips. |
 
 The boot test runs in both serving modes: the default (page on localhost →
 direct API calls) and hosted (`--page-host 5173-demo.e2b.app` → everything

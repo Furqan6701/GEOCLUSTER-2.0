@@ -1,7 +1,65 @@
-# GeoCluster 2.0 — web console
+# GeoCluster 2.0 — web workstation
 
 Static HTML/CSS/JavaScript frontend for the GeoCluster API (`api/`). No build
 step, no framework, no keys: the browser talks straight to the API.
+
+The UI is laid out like desktop remote-sensing software (QGIS / ENVI style)
+rather than a dashboard:
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ GeoCluster 2.0 │ File View Processing Analysis Help │  status    │
+├──────────────────────────────────────────────────────────────────┤
+│ Open │ Satellite │ Export │ Compress │ ⇄ Undo/Redo │ tools │ docks│
+├──────────────┬────────────────────────────────────┬──────────────┤
+│ TOOLBOX      │        IMAGE WORKSPACE             │ ASSISTANT    │
+│  Source      │  ┌──────────────┬──────────────┐   │  conversation│
+│  Filters     │  │  ORIGINAL    │    RESULT    │   │  …           │
+│  Clusters    │  │  (viewport)  │  (viewport)  │   │  quick cmds  │
+│  Analysis    │  └──────────────┴──────────────┘   │  [ask…] [send]│
+│  Files       │  · Map (classified + legend)       │              │
+├──────────────┴────────────────────────────────────┴──────────────┤
+│ 2449 × 1632 px │ RGB │ Zoom 100% │ X Y │ RGB: … │ session │ API ● │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+* **Image workspace first** — the two viewports own the flexible grid track;
+  the toolbox and assistant are fixed-width docks that can be collapsed (their
+  width goes back to the imagery). At narrow widths the viewports stack.
+* **Viewports, not cards** — dark image-processing panes, framed image,
+  fit-to-view with the aspect ratio preserved, cursor-anchored wheel zoom,
+  drag panning, nearest-neighbour pixels at ≥1:1, pixel readout, distance
+  measurement, image name + dimensions in the header, zoom % in the footer.
+* **Sync** — one toggle mirrors zoom and pan between Original and Result
+  (they stay independent when it is off). The active viewport is highlighted
+  and named in the status bar.
+* **Toolbox** — collapsible sections: Source, Filters, Clusters, Analysis,
+  Files (nothing was removed from the old panels).
+* **Toolbar / menus** — Open, Satellite, Export, Compress, Undo/Redo, Pan,
+  Pixel, Measure, Sync, dock toggles; menus for File, View, Processing,
+  Analysis, Help. One non-wrapping row: labels drop to icons when the window
+  is too narrow (≤1440 px or when a measured overflow is detected).
+* **Undo/redo** — the last 15 states are kept in the browser as Blobs, so
+  undoing paints instantly without a server call; if the server has evicted
+  that image (LRU), the stored Blob is re-uploaded and the step retried
+  silently. Toolbar buttons, File menu and `Ctrl+Z`/`Ctrl+Y` all drive it.
+* **Zoom** — lives in exactly one place, the per-viewport footers (the toolbar
+  duplicate was removed); the View menu keeps the same commands.
+* **Map view** — after Classify, a third viewport shows the classified image
+  with its legend **composited on one canvas** (swatch + class name + %), so
+  Analysis → *Map export* writes a single PNG that already includes the legend.
+  The legend can be toggled; with three panes the map takes a full-width row
+  under the two image viewports on laptops.
+* **Manual checks** — `docs/frontend-manual-checklist.md` lists what to confirm
+  by hand in Chrome at 1366 px and 1920 px (rendering, downloads, gestures).
+* **Shortcuts** — `Ctrl+O` open, `Ctrl+S` export PNG, `Ctrl+Z`/`Ctrl+Y`
+  undo/redo, `+`/`−` zoom, `0` fit, `1` actual size, `M` measure, `P` pixel
+  readout, `Y` sync viewers.
+* **No stub entries** — every menu entry does something real. Entries that are
+  unavailable *right now* (Export before an image, Clear result, the map
+  entries before a classification) are disabled and say why in their tooltip;
+  the old "Recent files" placeholder was removed in favour of
+  File → *Session images…*, which opens the Source list it stood for.
 
 ## What it does
 
@@ -13,15 +71,19 @@ step, no framework, no keys: the browser talks straight to the API.
 * **Clusters** — K-Means (K 2–20, max iterations) with ranges, centroids and
   pixel counts, then a classify editor (per-cluster min/max, land-cover name,
   colour) that returns the recoloured image and legend percentages.
-* **Analysis** — 256-bin histogram (linear/log) and min/max/mean/std.
-* **Files** — GCH2 Huffman compress to `.gch` (desktop-compatible) and
-  decompress back into the session.
+* **Analysis** — 256-bin histogram with log scale, smoothing (3/5/9), cumulative
+  and density views, light/dark canvas and PNG export; all options are
+  recomputed in the browser from the 256 bins (no extra requests). Min/max/mean/std
+  and the distance tool for the active viewport, with px/mm/cm/inch units from a
+  user-entered pixels-per-unit value — and, for downscaled uploads, the distance
+  at the original resolution as well, both labelled.
+* **Files** — GCH2 Huffman compress to `.gch` (desktop-compatible), decompress
+  back into the session, and PNG export of the current image.
 * **Assistant** — chat with the API's AI assistant; router commands such as
   `Show me F-8 imagery`, `Run k-means`, `Histogram` and `Compress this image`
   work even when the model is unavailable. Replies are shown as plain text.
-* **Viewers** — fit-to-view (small satellite tiles are upscaled), cursor-
-  anchored zoom with crisp nearest-neighbour rendering at ≥1:1, pan, pixel
-  readout, and a two-click distance tool.
+* **Session files** — the Source section lists every image the session holds
+  (newest first) and can bring any of them back as the working image.
 
 ## Run it (Windows PowerShell)
 
@@ -39,9 +101,10 @@ cd web
 python serve.py                  # http://localhost:5173
 ```
 
-Open <http://localhost:5173> and check the chips in the top bar: the API
-address, the session id, and whether the AI/satellite credentials are
-configured on the server.
+Open <http://localhost:5173>: the right side of the title bar shows the API
+address, the session and whether the AI/satellite credentials are configured
+on the server; the status bar at the bottom shows the image dimensions, the
+channel layout, zoom, cursor position, pixel value and the active viewport.
 
 ## Run it (macOS / Linux)
 

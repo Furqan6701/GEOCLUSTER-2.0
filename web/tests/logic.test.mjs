@@ -16,8 +16,33 @@ import {
   normalizeBase,
   resolveApiBase,
 } from "../js/config.js";
-import { ApiError, detailToText, humanizeError } from "../js/errors.js";
+import { ApiError, detailToText, humanizeError, sanitizeMessage, validationToText } from "../js/errors.js";
+import { OPERATIONS_WITH_PARAMS, describeOperation } from "../js/panels/operations.js";
 import { ApiClient } from "../js/api.js";
+import { HISTORY_LIMIT, ImageHistory, snapshotOf } from "../js/history.js";
+import {
+  SCALES,
+  SMOOTHING_WINDOWS,
+  THEMES,
+  axisLabels,
+  cumulativeBins,
+  densityBins,
+  describeOptions,
+  drawHistogram,
+  histogramFileName,
+  prepareBins,
+  smoothBins,
+} from "../js/histogram.js";
+import { UNITS, convertPixels, describeDistance, formatMeasurement, unitRateLabel } from "../js/measure.js";
+import {
+  composeMap,
+  drawLegend,
+  fitText,
+  formatPercentage,
+  legendMetrics,
+  legendRows,
+  mapFileName,
+} from "../js/map.js";
 import { defaultParamsFor, describeCommand, executeCommands } from "../js/commands.js";
 
 // --------------------------------------------------------------- test doubles
@@ -113,7 +138,7 @@ test("detailToText handles every detail shape", () => {
       { loc: ["body", "value"], msg: "Input should be less than or equal to 255" },
       { loc: ["body", "window"], msg: "window must be an odd number" },
     ]),
-    "value: Input should be less than or equal to 255; window: window must be an odd number",
+    "value must be 255 or less; window size must be an odd number",
   );
   assert.equal(detailToText(["one", "two"]), "one; two");
   assert.equal(detailToText({ detail: "nested" }), "nested");
@@ -145,9 +170,9 @@ test("humanizeError maps statuses to friendly text", () => {
 test("humanizeError turns a 422 detail list into one sentence and never shows JSON", () => {
   const error = new ApiError(422, [{ loc: ["body", "k"], msg: "Input should be less than or equal to 20" }]);
   const text = humanizeError(error);
-  assert.match(text, /Please check these values/);
-  assert.match(text, /k: Input should be less than or equal to 20/);
+  assert.equal(text, "cluster count (K) must be 20 or less");
   assert.doesNotMatch(text, /[{}[\]"]/);
+  assert.doesNotMatch(text, /json/i);
 });
 
 // -------------------------------------------------------------- api client
@@ -259,7 +284,7 @@ test("request throws ApiError with the API detail (string and list)", async () =
     (error) => {
       assert.ok(error instanceof ApiError);
       assert.equal(error.status, 422);
-      assert.match(humanizeError(error), /k: too big/);
+      assert.match(humanizeError(error), /cluster count \(K\) too big/);
       return true;
     },
   );
@@ -372,4 +397,482 @@ test("chat posts the message", async () => {
   assert.equal(calls[0].url, `${DEFAULT_API_BASE}/ai/chat`);
   assert.deepEqual(parseBody(calls[0].init), { message: "what is NDVI?" });
   assert.equal(response.reply, "hi");
+});
+
+// ------------------------------------------- STEP 1: operation params + 422s
+
+test("describeOperation names what was applied", () => {
+  assert.equal(describeOperation("grayscale"), "Grayscale");
+  assert.equal(describeOperation("brightness", { value: 40 }), "Brightness +40");
+  assert.equal(describeOperation("brightness", { value: -30 }), "Brightness -30");
+  assert.equal(describeOperation("threshold", { value: 128 }), "Threshold 128");
+  assert.equal(describeOperation("meanfilter", { window: 3 }), "Mean filter w=3");
+  assert.equal(describeOperation("brightness"), "Brightness");
+});
+
+test("the operations that require a body are the ones the API requires", () => {
+  assert.deepEqual([...OPERATIONS_WITH_PARAMS], ["brightness", "threshold", "meanfilter"]);
+});
+
+test("validationToText names the field for list details", () => {
+  assert.equal(
+    validationToText([{ loc: ["body", "value"], msg: "Input should be less than or equal to 255" }]),
+    "value must be 255 or less",
+  );
+  assert.equal(
+    validationToText([{ loc: ["body", "window"], msg: "window must be an odd number" }], { operation: "meanfilter" }),
+    "window size must be an odd number",
+  );
+  assert.equal(
+    validationToText([{ loc: ["body", "k"], msg: "Field required" }], { operation: "kmeans" }),
+    "cluster count (K) is required",
+  );
+  assert.equal(
+    validationToText([
+      { loc: ["body", "value"], msg: "Input should be less than or equal to 255" },
+      { loc: ["body", "window"], msg: "window must be an odd number" },
+    ]),
+    "value must be 255 or less; window size must be an odd number",
+  );
+});
+
+test("the API's missing-body message becomes a sentence naming the field", () => {
+  const text = validationToText("Operation 'brightness' requires a JSON body matching BrightnessRequest.",
+    { operation: "brightness" });
+  assert.equal(text, "Brightness needs a whole number from \u2212255 to 255, but none was sent.");
+  assert.ok(!/json/i.test(text), "never says JSON");
+});
+
+test("parameterless operations are described as such", () => {
+  assert.equal(validationToText("Operation 'grayscale' takes no parameters.", { operation: "grayscale" }),
+    "Grayscale does not take any parameters.");
+});
+
+test("no 422 message ever leaks raw JSON", () => {
+  const samples = [
+    [{ loc: ["body", "value"], msg: "Input should be a valid integer" }],
+    "Operation 'threshold' requires a JSON body matching ThresholdRequest.",
+    { detail: "boom" },
+    null,
+    [{ loc: ["body", "value"], msg: "value: {\"detail\": \"x\"}" }],
+  ];
+  for (const sample of samples) {
+    const text = validationToText(sample, { operation: "threshold" });
+    assert.ok(!/\{/.test(text), `no braces in: ${text}`);
+    assert.ok(!/json/i.test(text), `no JSON mention in: ${text}`);
+  }
+});
+
+test("sanitizeMessage strips developer jargon", () => {
+  assert.ok(!/json/i.test(sanitizeMessage("requires a JSON body matching MeanFilterRequest.")));
+  assert.equal(sanitizeMessage('{"detail": "x"}'), "detail: x");
+  assert.doesNotMatch(sanitizeMessage('{"detail": "x"}'), /[{}"]/);
+});
+
+test("humanizeError passes the operation through to the 422 mapper", () => {
+  const error = new ApiError(422, [{ loc: ["body", "value"], msg: "Field required" }]);
+  assert.equal(humanizeError(error, { operation: "brightness" }), "value is required");
+});
+
+// ------------------------------------------------------- STEP 3: image history
+
+function fakeState(overrides = {}) {
+  return { original: { id: "orig1", info: { image_id: "orig1" } }, result: null, ...overrides };
+}
+
+function fakeEntry(id, label = `step ${id}`) {
+  return {
+    label,
+    role: "result",
+    imageId: id,
+    info: { image_id: id, width: 4, height: 4 },
+    blob: { id },
+    kmeans: null,
+    snapshot: { original: { id: "orig1", info: null }, result: { id, info: null } },
+  };
+}
+
+test("ImageHistory keeps at most 15 states and drops the oldest", () => {
+  assert.equal(HISTORY_LIMIT, 15, "the documented limit is 15");
+  const history = new ImageHistory();
+  for (let i = 1; i <= 20; i += 1) history.record(fakeEntry(`img${i}`));
+  assert.equal(history.size, 15);
+  assert.equal(history.entries[0].imageId, "img6", "the five oldest states were dropped");
+  assert.equal(history.current.imageId, "img20");
+  assert.equal(history.summary, "15/15");
+});
+
+test("ImageHistory undo/redo walk the states and can be limited", () => {
+  const history = new ImageHistory();
+  assert.equal(history.canUndo, false);
+  assert.equal(history.canRedo, false);
+  history.record(fakeEntry("a"));
+  history.record(fakeEntry("b"));
+  history.record(fakeEntry("c"));
+  assert.equal(history.canUndo, true);
+  assert.equal(history.canRedo, false);
+  assert.equal(history.undo().imageId, "b");
+  assert.equal(history.undo().imageId, "a");
+  assert.equal(history.undo(), null, "undo stops at the oldest state");
+  assert.equal(history.canUndo, false);
+  assert.equal(history.redo().imageId, "b");
+  assert.equal(history.redo().imageId, "c");
+  assert.equal(history.redo(), null, "redo stops at the newest state");
+});
+
+test("recording after an undo discards the redo tail", () => {
+  const history = new ImageHistory();
+  history.record(fakeEntry("a"));
+  history.record(fakeEntry("b"));
+  history.undo();
+  history.record(fakeEntry("c"));
+  assert.deepEqual(history.entries.map((entry) => entry.imageId), ["a", "c"]);
+  assert.equal(history.canRedo, false, "the stale redo branch is gone");
+});
+
+test("ImageHistory re-points every entry when an evicted image is re-uploaded", () => {
+  const history = new ImageHistory();
+  history.record(fakeEntry("old"));
+  history.record(fakeEntry("new"));
+  history.record({
+    ...fakeEntry("newest"),
+    snapshot: { original: { id: "old", info: null }, result: { id: "newest", info: null } },
+  });
+  history.rememberBlob("old", { id: "old-blob" });
+  const replaced = [];
+  history.onReplaced = (oldId, info) => replaced.push([oldId, info.image_id]);
+  history.adopt("old", { image_id: "replacement" });
+  assert.equal(history.entries[0].imageId, "replacement");
+  assert.equal(history.entries[2].snapshot.original.id, "replacement");
+  assert.equal(history.entries[1].imageId, "new", "unrelated entries are untouched");
+  assert.deepEqual(replaced, [["old", "replacement"]]);
+  assert.deepEqual(history.blobFor("replacement"), { id: "old-blob" }, "the Blob moved with the id");
+  assert.equal(history.blobFor("old"), null);
+});
+
+test("Blobs are capped separately so history metadata survives", () => {
+  const history = new ImageHistory({ blobLimit: 3 });
+  for (const id of ["a", "b", "c", "d"]) {
+    history.record(fakeEntry(id));
+    history.rememberBlob(id, { id });
+  }
+  assert.equal(history.size, 4, "states are all still there");
+  assert.equal(history.blobCount, 3);
+  assert.equal(history.blobFor("a"), null, "the oldest Blob was released");
+  assert.deepEqual(history.blobFor("d"), { id: "d" });
+});
+
+test("snapshotOf captures both viewport slots without the info payload shape", () => {
+  const snapshot = snapshotOf(fakeState({ result: { id: "r1", info: { image_id: "r1" } } }));
+  assert.deepEqual(snapshot, {
+    original: { id: "orig1", info: { image_id: "orig1" } },
+    result: { id: "r1", info: { image_id: "r1" } },
+  });
+  assert.deepEqual(snapshotOf({ original: null, result: null }), { original: null, result: null });
+});
+
+test("reset clears every state and Blob", () => {
+  const history = new ImageHistory();
+  history.record(fakeEntry("a"));
+  history.rememberBlob("a", { id: "a" });
+  history.reset();
+  assert.equal(history.size, 0);
+  assert.equal(history.canUndo, false);
+  assert.equal(history.blobCount, 0);
+});
+
+// ------------------------------------------------- STEP 4: map composition
+
+/** Canvas/document stub: enough for composeMap to lay out and draw. */
+function fakeDocument() {
+  const created = [];
+  const canvasFor = () => {
+    const canvas = { width: 0, height: 0, __texts: [], __fonts: [] };
+    canvas.getContext = () => ({
+      canvas,
+      fillStyle: "",
+      strokeStyle: "",
+      lineWidth: 1,
+      textBaseline: "",
+      font: "",
+      save() {}, restore() {},
+      fillRect() {}, strokeRect() {}, clearRect() {},
+      beginPath() {}, moveTo() {}, lineTo() {}, stroke() {},
+      drawImage(image) { canvas.__drawn = { width: image?.width, height: image?.height }; },
+      measureText: (text) => ({ width: String(text).length * 7 }),
+      fillText: (text, x, y) => {
+        if (typeof text === "string") {
+          canvas.__fonts.push({ text, font: undefined });
+          canvas.__texts.push(text);
+        }
+        void x; void y;
+      },
+      __texts: [],
+    });
+    return canvas;
+  };
+  return {
+    created,
+    createElement(tag) {
+      if (tag !== "canvas") throw new Error(`unexpected element ${tag}`);
+      const canvas = canvasFor();
+      created.push(canvas);
+      return canvas;
+    },
+  };
+}
+
+const SAMPLE_LEGEND = [
+  { cluster: 1, name: "Water", color: [64, 128, 255], min: 0, max: 85, count: 1200, percentage: 42.31 },
+  { cluster: 2, name: "Vegetation", color: [60, 180, 90], min: 86, max: 170, count: 1100, percentage: 38.02 },
+  { cluster: 3, name: "Built-up", color: [220, 180, 60], min: 171, max: 255, count: 560, percentage: 19.67 },
+];
+
+test("legendRows normalises the classify legend and survives junk", () => {
+  const rows = legendRows(SAMPLE_LEGEND);
+  assert.equal(rows.length, 3);
+  assert.deepEqual(rows[0], {
+    cluster: 1, name: "Water", color: [64, 128, 255], percentage: 42.31, count: 1200, min: 0, max: 85,
+  });
+  const junk = legendRows([{ color: [300, -20, "x"], percentage: "nope", name: "" }]);
+  assert.deepEqual(junk[0].color, [255, 0, 128], "colours are clamped and rounded");
+  assert.equal(junk[0].percentage, 0, "a non-numeric percentage becomes 0");
+  assert.equal(junk[0].name, "Cluster 1", "a missing name falls back to the cluster number");
+  assert.deepEqual(legendRows(undefined), []);
+});
+
+test("formatPercentage keeps slivers readable and never prints '0%' for real data", () => {
+  assert.equal(formatPercentage(42.31), "42.3%");
+  assert.equal(formatPercentage(7.5), "7.50%");
+  assert.equal(formatPercentage(0.04), "<0.1%");
+  assert.equal(formatPercentage(0), "0%");
+  assert.equal(formatPercentage(undefined), "—");
+});
+
+test("fitText ellipsises to the available width", () => {
+  const ctx = { measureText: (text) => ({ width: text.length * 10 }) };
+  assert.equal(fitText(ctx, "Water", 100), "Water");
+  assert.equal(fitText(ctx, "Shadows, Dark Trees / Forest", 100), "Shadows,…");
+  assert.equal(fitText(ctx, "", 100), "");
+});
+
+test("legendMetrics puts the panel right when there is room, below otherwise", () => {
+  const big = legendMetrics(2449, 1632, 5);
+  assert.equal(big.placeRight, true, "a 2449×1632 map takes the side panel");
+  assert.ok(big.panelWidth >= 200 && big.panelWidth <= 420);
+  const tile = legendMetrics(260, 260, 5);
+  assert.equal(tile.placeRight, true, "a short legend fits beside a 260 px tile");
+  const tileTall = legendMetrics(260, 260, 20);
+  assert.equal(tileTall.placeRight, false,
+    "a 20-class legend cannot fit beside a 260 px tile — it goes underneath");
+  const wide = legendMetrics(1200, 180, 5);
+  assert.equal(wide.placeRight, true, "a 1200×180 strip still fits the side panel");
+  const letterbox = legendMetrics(1200, 80, 5);
+  assert.equal(letterbox.placeRight, false, "a letterbox image puts the legend underneath");
+});
+
+test("drawLegend paints a swatch, the class name and the percentage per row", () => {
+  const documentStub = fakeDocument();
+  const canvas = documentStub.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  const height = drawLegend(ctx, {
+    x: 0, y: 0, width: 300, rows: legendRows(SAMPLE_LEGEND), title: "Legend — sample.jpg", unit: 14,
+  });
+  assert.equal(height, 29 + 3 * 27 + 20, "the panel is title + rows + padding");
+  assert.ok(canvas.__texts.includes("Water") && canvas.__texts.includes("Vegetation"));
+  assert.ok(canvas.__texts.includes("42.3%") && canvas.__texts.includes("19.7%"));
+  assert.ok(canvas.__texts.includes("Legend — sample.jpg"));
+});
+
+test("composeMap composites the image and the legend into one canvas", () => {
+  const documentStub = fakeDocument();
+  const image = { width: 800, height: 600 };
+  const result = composeMap({ image, legend: SAMPLE_LEGEND, title: "Legend — sample.jpg", documentRef: documentStub });
+  assert.equal(result.legendShown, true);
+  assert.ok(result.width > 800, `the canvas grew for the legend (${result.width})`);
+  assert.equal(result.height, 600);
+  assert.ok(result.legendBox.x >= 800, "the legend starts at/after where the image ends");
+  assert.equal(result.width, 800 + result.legendBox.x - 800 + result.legendBox.width,
+    "canvas width = image + gutter + legend panel");
+  assert.equal(result.canvas.__drawn.width, 800);
+  assert.equal(result.canvas.__drawn.height, 600);
+  assert.ok(result.canvas.__texts.includes("Water"));
+});
+
+test("composeMap can leave the legend out (toggle off) without changing the image", () => {
+  const documentStub = fakeDocument();
+  const result = composeMap({
+    image: { width: 800, height: 600 }, legend: SAMPLE_LEGEND, showLegend: false, documentRef: documentStub,
+  });
+  assert.equal(result.legendShown, false);
+  assert.equal(result.width, 800, "no legend means the canvas matches the image");
+  assert.equal(result.height, 600);
+  assert.equal(result.legendBox, null);
+  assert.equal(result.canvas.__texts.length, 0, "nothing is painted besides the image");
+});
+
+test("composeMap puts a tall legend under a small tile", () => {
+  const documentStub = fakeDocument();
+  const many = Array.from({ length: 20 }, (_value, index) => ({
+    cluster: index + 1,
+    name: `Class ${index + 1}`,
+    color: [index * 10, 128, 200],
+    percentage: 100 / 20,
+  }));
+  const result = composeMap({ image: { width: 260, height: 260 }, legend: many, documentRef: documentStub });
+  assert.equal(result.width, 260, "the tile keeps its full width");
+  assert.ok(result.height > 260, `the canvas grew downwards (${result.height})`);
+  assert.equal(result.legendBox.y, 260, "the legend starts below the image");
+  assert.equal(result.legendBox.width, 260, "the under-panel spans the canvas");
+});
+
+test("mapFileName derives a readable, safe filename", () => {
+  assert.equal(mapFileName("sample.jpg"), "map-sample.png");
+  assert.equal(mapFileName(""), "map-map.png");
+  assert.equal(mapFileName("a b/c.tif"), "map-a-b-c.png");
+});
+
+// ------------------------------------- STEP 5: histogram options + distance
+
+const BINS_SPIKE = [0, 0, 0, 0, 1, 2, 4, 8, 16, 32, 64, 128, 64, 32, 16, 8, 4, 2, 1, 0];
+
+test("smoothBins averages neighbouring bins and keeps the 256-bin length", () => {
+  const bins = Array.from({ length: 256 }, () => 0);
+  bins[128] = 100;
+  const smoothed = smoothBins(bins, 5);
+  assert.equal(smoothed.length, 256, "the bin count never changes");
+  assert.equal(smoothed[128], 20, "the spike is spread over five bins (100/5)");
+  assert.equal(smoothed[127], 20);
+  assert.equal(smoothed[125], 0);
+  assert.deepEqual(smoothBins(BINS_SPIKE, 0), BINS_SPIKE, "0 means no smoothing");
+  assert.deepEqual(smoothBins(BINS_SPIKE, 1), BINS_SPIKE, "a 1-bin window is a no-op");
+});
+
+test("cumulativeBins ends at the total and never decreases", () => {
+  const cumulative = cumulativeBins(BINS_SPIKE);
+  assert.equal(cumulative.at(-1), BINS_SPIKE.reduce((sum, value) => sum + value, 0));
+  assert.equal(cumulative.at(-1), 382);
+  for (let i = 1; i < cumulative.length; i += 1) {
+    assert.ok(cumulative[i] >= cumulative[i - 1], `monotonic at ${i}`);
+  }
+});
+
+test("densityBins is a share of pixels, summing to 1", () => {
+  const density = densityBins(BINS_SPIKE);
+  const total = density.reduce((sum, value) => sum + value, 0);
+  assert.ok(Math.abs(total - 1) < 1e-9, `sums to ${total}`);
+  const total381 = BINS_SPIKE.reduce((sum, value) => sum + value, 0);
+  assert.ok(Math.abs(density[11] - 128 / total381) < 1e-9);
+  assert.deepEqual(densityBins([0, 0]), [0, 0], "an empty histogram cannot divide by zero");
+});
+
+test("prepareBins applies smoothing → cumulative → density → scale in that order", () => {
+  const plain = prepareBins(BINS_SPIKE);
+  assert.equal(plain.values.length, 20);
+  assert.equal(plain.max, 128);
+  assert.equal(plain.label, "linear scale");
+
+  const smoothed = prepareBins(BINS_SPIKE, { smoothing: 3 });
+  assert.ok(smoothed.values[11] < 128, "smoothing lowers the peak");
+
+  const cumulative = prepareBins(BINS_SPIKE, { cumulative: true });
+  assert.equal(cumulative.values.at(-1), BINS_SPIKE.reduce((sum, value) => sum + value, 0));
+
+  const density = prepareBins(BINS_SPIKE, { density: true });
+  assert.ok(Math.abs(density.values.reduce((sum, value) => sum + value, 0) - 1) < 1e-9);
+
+  const log = prepareBins(BINS_SPIKE, { scale: "log" });
+  assert.ok(Math.abs(log.values[11] - Math.log10(129)) < 1e-9, "log scale is log10(count + 1)");
+  assert.equal(log.max, Math.log10(129));
+
+  const all = prepareBins(BINS_SPIKE, { scale: "log", smoothing: 5, cumulative: true, density: true });
+  assert.equal(all.label, "log scale · smoothed 5 · cumulative · density");
+  assert.ok(all.values.every((value) => value >= 0), "log of a share is never negative");
+
+  assert.deepEqual(prepareBins([]), { values: [], max: 1, total: 0, label: "no data" });
+});
+
+test("describeOptions and axisLabels describe the current view", () => {
+  assert.equal(describeOptions(), "linear scale");
+  assert.equal(describeOptions({ scale: "log" }), "log scale");
+  assert.equal(describeOptions({ scale: "linear", smoothing: 9, cumulative: true }), "linear scale · smoothed 9 · cumulative");
+  assert.equal(axisLabels().y, "pixels");
+  assert.equal(axisLabels({ cumulative: true }).y, "pixels ≤ intensity");
+  assert.equal(axisLabels({ density: true }).y, "share of pixels");
+  assert.equal(axisLabels().x, "intensity (0–255)");
+  assert.deepEqual(SCALES, ["linear", "log"]);
+  assert.deepEqual(SMOOTHING_WINDOWS, [0, 3, 5, 9]);
+  assert.ok(THEMES.light.background !== THEMES.dark.background);
+});
+
+test("drawHistogram paints the chart, its title and both axes for every mode", () => {
+  const canvas = { width: 520, height: 170, __texts: [] };
+  const ctx = {
+    canvas, fillStyle: "", strokeStyle: "", lineWidth: 1, font: "", textAlign: "", textBaseline: "",
+    clearRect() { canvas.__texts = []; },
+    fillRect() {}, strokeRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {},
+    save() {}, restore() {}, translate() {}, rotate() {},
+    measureText: (text) => ({ width: text.length * 6 }),
+    fillText: (text) => canvas.__texts.push(String(text)),
+  };
+  const painted = (options) => {
+    drawHistogram(ctx, { bins: BINS_SPIKE, width: 520, height: 170, title: "Histogram — x.png", ...options });
+    return canvas.__texts.join(" | ");
+  };
+  assert.match(painted({}), /Histogram — x\.png/);
+  assert.match(painted({}), /intensity \(0–255\)/);
+  assert.match(painted({}), /pixels \|/);
+  assert.match(painted({ scale: "log" }), /10\^/);
+  assert.match(painted({ cumulative: true }), /pixels ≤ intensity/);
+  assert.match(painted({ density: true }), /share of pixels/);
+  assert.match(painted({ density: true }), /%/);
+  assert.match(painted({ theme: "light" }), /Histogram — x\.png/, "the light theme still titles the chart");
+  drawHistogram(ctx, { bins: [], width: 520, height: 170 });
+  assert.ok(canvas.__texts.includes("no histogram yet"));
+  assert.equal(histogramFileName("sample.jpg"), "histogram-sample.png");
+});
+
+test("distance conversion uses the calibration the user types in", () => {
+  assert.deepEqual(convertPixels(250), { unit: "px", value: 250, basis: "image pixels" });
+  assert.equal(convertPixels(250, { unit: "cm", pxPerUnit: 100 }).value, 2.5);
+  assert.equal(convertPixels(250, { unit: "mm", pxPerUnit: 50 }).value, 5);
+  assert.equal(convertPixels(250, { unit: "in", pxPerUnit: 96 }).value, 250 / 96);
+  assert.equal(convertPixels(250, { unit: "cm" }), null, "no calibration means no conversion");
+  assert.equal(convertPixels(250, { unit: "cm", pxPerUnit: 0 }), null, "0 px/unit is meaningless");
+  assert.equal(convertPixels("nope", { unit: "cm", pxPerUnit: 10 }), null);
+  assert.deepEqual(Object.keys(UNITS), ["px", "mm", "cm", "in"]);
+  assert.equal(unitRateLabel("cm"), "px/cm");
+  assert.equal(unitRateLabel("px"), "");
+  assert.equal(formatMeasurement(250), "250.00");
+  assert.equal(formatMeasurement(2.5), "2.50");
+  assert.equal(formatMeasurement(0.0042), "0.0042");
+  assert.equal(formatMeasurement(undefined), "—");
+});
+
+test("describeDistance labels the screen value and the original resolution", () => {
+  const plain = describeDistance({ pixels: 500 });
+  assert.equal(plain.primary, "500.00 px");
+  assert.equal(plain.downscaled, false);
+  assert.match(plain.lines.join(" "), /on screen/);
+  assert.match(plain.lines.join(" "), /was not downscaled on upload/);
+
+  const downscaled = describeDistance({
+    pixels: 500, unit: "cm", pxPerUnit: 100, scale: 0.5,
+    info: { original_width: 4000, original_height: 3000 },
+  });
+  assert.equal(downscaled.primary, "5.00 cm");
+  assert.equal(downscaled.originalPixels, 1000, "original pixels = pixels / scale");
+  assert.equal(downscaled.original.text, "10.00 cm");
+  assert.match(downscaled.lines[0], /5\.00 cm on screen \(100 px\/cm\)/);
+  assert.match(downscaled.lines[1], /10\.00 cm at the original 4000×3000 px \(upload downscaled ×0\.5\)/);
+
+  const originalPx = describeDistance({ pixels: 500, scale: 0.25 });
+  assert.equal(originalPx.primary, "500.00 px");
+  assert.equal(originalPx.originalPixels, 2000);
+  assert.match(originalPx.lines[1], /2,000\.00 px at the original resolution/);
+
+  const uncalibrated = describeDistance({ pixels: 500, unit: "mm" });
+  assert.equal(uncalibrated.ok, false);
+  assert.equal(uncalibrated.reason, "missing-calibration");
+  assert.match(uncalibrated.lines[0], /set pixels per unit to convert to millimetres/);
 });

@@ -176,6 +176,156 @@ def check_no_innerhtml() -> None:
     check(not hits, "no innerHTML/insertAdjacentHTML/document.write usage", ", ".join(hits))
 
 
+def _js_text(relative: str) -> str:
+    return (WEB / relative).read_text(encoding="utf-8")
+
+
+def check_workstation_layout() -> None:
+    """The layout contract of the redesign: image workspace first."""
+    index = (WEB / "index.html").read_text(encoding="utf-8")
+    css = (WEB / "css" / "styles.css").read_text(encoding="utf-8")
+
+    check("css/styles.css" in index, "index.html loads the workstation stylesheet")
+    check(not (WEB / "css" / "workstation.css").exists(),
+          "the old dashboard stylesheet is gone (one consolidated stylesheet)")
+    for element_id in ["menubar", "toolbar", "toolbox", "viewer-area", "assistant-dock", "statusbar"]:
+        check(f'id="{element_id}"' in index, f"shell element #{element_id} exists in index.html")
+    for stale in ["tabpanels", 'id="tabs"']:
+        check(stale not in index, f"old dashboard markup ({stale}) is gone")
+
+    workspace = re.search(r"\.workspace\s*\{([^}]*)\}", css)
+    check(workspace is not None, "the workstation layout rule exists")
+    if workspace:
+        body = workspace.group(1)
+        check("grid-template-columns" in body and "minmax(0, 1fr)" in body,
+              "the workspace grid gives the image column the flexible track")
+        check("var(--toolbox-w)" in body and "var(--assistant-w)" in body,
+              "the docks are fixed-width so the imagery keeps priority")
+
+    image_ws = re.search(r"\.image-workspace\s*\{([^}]*)\}", css)
+    check(image_ws is not None and "grid-template-columns" in (image_ws.group(1) if image_ws else ""),
+          "the image workspace is a grid of viewports")
+
+    canvas_wrap = re.search(r"\.viewer-canvas-wrap\s*\{([^}]*)\}", css)
+    check(canvas_wrap is not None and "var(--bg-canvas)" in canvas_wrap.group(1),
+          "the viewport uses the dark image-processing background")
+
+    # no cropping anywhere: object-fit must never be cover
+    check("object-fit: cover" not in css and "object-fit:cover" not in css,
+          "no object-fit: cover (images are never cropped)")
+
+    # dashboard look: no giant rounded corners
+    # 999px pills (chips/badges) are fine; panel containers must stay square-ish
+    radii = [int(value) for value in re.findall(r"border-radius:\s*(\d+)px", css)]
+    containers = [value for value in radii if value < 900]
+    check(all(value <= 12 for value in containers),
+          "panel corner radii stay technical (no giant dashboard cards)",
+          f"max container radius {max(containers) if containers else 0}px")
+
+    # density: the toolbox must not be styled as a stack of big cards
+    check("--fs-md: 12px" in css and "--status-h: 26px" in css,
+          "compact typography and status bar are configured")
+
+    # STEP 2.1: the shell fills the dynamic viewport height, status bar last
+    body_rule = re.search(r"\nbody \{([^}]*)\}", css)
+    check(body_rule is not None, "the body rule exists")
+    if body_rule:
+        body = body_rule.group(1)
+        check("100dvh" in body, "the shell uses the dynamic viewport height (dvh)")
+        check("100vh" in body, "100vh remains as the fallback for older browsers")
+        check("position: fixed" in body and "inset: 0" in body,
+              "the shell is pinned to the viewport so nothing can push it up")
+        check("overflow: hidden" in body, "the page itself never scrolls")
+    rows = re.search(r"grid-template-rows:\s*auto auto minmax\(0, 1fr\) auto", css)
+    check(rows is not None, "header/banner/workspace/status bar are grid rows (status bar last)")
+
+    # STEP 2.4: the toolbar never wraps or overlaps
+    toolbar_rule = re.search(r"\.toolbar \{([^}]*)\}", css)
+    check(toolbar_rule is not None and "flex-wrap: nowrap" in toolbar_rule.group(1),
+          "the toolbar is a single non-wrapping row")
+    check(".toolbar.tb-compact .tb-label { display: none; }" in css,
+          "the toolbar can drop to icons when space runs out")
+    check("@media (max-width: 1440px)" in css, "narrow desktops get the compact toolbar CSS")
+
+    # STEP 2.2: truncated text keeps a tooltip
+    check("text-overflow: ellipsis" in css, "long strings are ellipsised")
+    check(".viewer-head .meta" in css and ".sb-item" in css,
+          "both the viewport header and the status bar participate in truncation")
+
+    # STEP 4: the Map viewport is a third real viewport, not a card
+    check('id="viewer-map"' in index, "index.html has a Map viewport slot")
+    check('id="viewer-map" hidden' in index or 'hidden id="viewer-map"' in index
+          or re.search(r'id="viewer-map"[^>]*hidden', index) is not None,
+          "the Map viewport starts hidden (nothing to map before a classification)")
+    check('id="tb-map"' in index, "the toolbar has a Map toggle")
+    viewer_js = _js_text("js/viewer.js")
+    check("footerExtras" in viewer_js, "viewers accept extra footer controls (legend toggle)")
+    map_js = _js_text("js/map.js")
+    for token in ["composeMap", "drawLegend", "legendRows", "mapCanvasToBlob", "formatPercentage"]:
+        check(f"export function {token}" in map_js or f"export async function {token}" in map_js,
+              f"map.js exports {token}")
+    check("createElement(\"canvas\")" in map_js,
+          "the legend is composited on a canvas (so the PNG export includes it)")
+    check("map-open" in css, "the workspace can lay out three viewports")
+    check("@media (max-width: 1500px)" in css and "map-open" in css,
+          "three viewports never squeeze the image panes on a laptop")
+
+    # STEP 6: nothing is left advertising an unimplemented feature
+    app_js = _js_text("js/app.js")
+    check("Recent files" not in app_js and "Recent files" not in index,
+          "the never-implemented Recent files entry is removed")
+    check("not implemented" not in app_js.lower(),
+          "no menu entry claims a feature is 'not implemented'")
+    check("disabled-stub" not in css and "disabled-stub" not in index,
+          "the disabled-stub placeholder styling is gone with the last stub")
+    check(re.search(r'label: "Session images…"', app_js) is not None,
+          "the File menu points at the real session image list instead")
+    check(re.search(r'label: "Map export \(PNG\)…"', app_js) is not None,
+          "Map export is a real menu action")
+    check(re.search(r'reason: "run Classify in the Clusters section first', app_js) is not None,
+          "the map entries that are disabled say exactly what to do first")
+    check(re.search(r'reason: "there is no result yet', app_js) is not None,
+          "Clear result explains when it is unavailable")
+
+    # STEP 5: histogram options are browser-side, distance has real units
+    hist_js = _js_text("js/histogram.js")
+    for token in ["smoothBins", "cumulativeBins", "densityBins", "prepareBins",
+                  "drawHistogram", "THEMES", "histogramFileName"]:
+        check(f"export function {token}" in hist_js or f"export const {token}" in hist_js,
+              f"histogram.js exports {token}")
+    check("fetch(" not in hist_js and "ApiClient" not in hist_js and "await " not in hist_js,
+          "the histogram module is pure maths — no request, no await (options recompute in the browser)")
+    analysis_js = _js_text("js/panels/analysis.js")
+    for control in ['id: "hist-scale"', 'id: "hist-smoothing"', 'id: "hist-cumulative"',
+                    'id: "hist-density"', 'id: "hist-theme"']:
+        check(control in analysis_js, f"the histogram exposes {control.split(chr(34))[1]}")
+    check("exportPng" in analysis_js and "histogramFileName" in analysis_js,
+          "the histogram can be exported as a PNG")
+    measure_js = _js_text("js/measure.js")
+    for unit in ["mm", "cm", "in"]:
+        check(f"{unit}: {{" in measure_js, f"distance supports {unit}")
+    check("export function describeDistance" in measure_js,
+          "measure.js labels which distance is which")
+    check("originalPixels" in measure_js and "/ factor" in measure_js,
+          "the original-resolution distance divides by the upload scale")
+    check("pxPerUnit" in analysis_js and "unitRateLabel" in analysis_js,
+          "the distance panel asks for pixels-per-unit")
+
+    # STEP 2.3: zoom controls exist in exactly one place
+    index_zoom_ids = [i for i in ["tb-zoom-in", "tb-zoom-out", "tb-fit", "tb-1to1", "tb-zoom-25"] if f'id="{i}"' in index]
+    check(not index_zoom_ids, "the toolbar has no zoom buttons (no duplicate controls)",
+          ", ".join(index_zoom_ids))
+    viewer_js = _js_text("js/viewer.js")
+    check('"viewer-foot"' in viewer_js
+          and 'this.zoomInButton' in viewer_js and 'this.zoomOutButton' in viewer_js
+          and 'this.fitButton' in viewer_js,
+          "the per-viewport footer is where the zoom buttons live")
+
+    # responsiveness: the image workspace survives narrow windows
+    check("@media (max-width: 1080px)" in css and "minmax(160px, 1fr)" in css,
+          "the image workspace stays usable on narrow desktops")
+
+
 def check_cors() -> None:
     if not port_open("localhost", 8000):
         skip("API CORS for the frontend origin", "API not running on :8000")
@@ -252,6 +402,8 @@ def main() -> int:
     print()
     check_no_secrets()
     check_no_innerhtml()
+    print()
+    check_workstation_layout()
     print()
     check_cors()
     print()

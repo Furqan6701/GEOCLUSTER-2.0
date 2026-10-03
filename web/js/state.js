@@ -46,6 +46,10 @@ export function createAppState() {
     images: new Map(),
     /** Last K-Means response (ranges, assignments, ids). */
     kmeans: null,
+    /** Classification used by the Map view: {legend, imageId, name, canvas}. */
+    map: null,
+    /** Distance settings: {unit: "px"|"mm"|"cm"|"in", pxPerUnit: number|null}. */
+    measure: { unit: "px", pxPerUnit: null },
     /** True while a request the UI initiated is in flight. */
     busy: false,
   };

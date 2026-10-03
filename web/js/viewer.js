@@ -1,5 +1,5 @@
 /**
- * Canvas image viewer.
+ * Canvas image viewer — a real image-processing viewport, not a dashboard card.
  *
  * Behaviour that matters for the GeoCluster workflow:
  *   - fit-to-view on load, including small images (satellite tiles are only
@@ -7,32 +7,48 @@
  *   - smoothing is disabled as soon as the zoom reaches 1:1 or beyond, so
  *     zoomed-in pixels are crisp nearest-neighbour squares;
  *   - wheel zoom anchored at the cursor, drag to pan, 1:1 and fit buttons;
- *   - pixel readout (x, y, value) under the cursor;
+ *   - pixel readout (x, y, rgb, gray) under the cursor;
  *   - optional distance tool: two clicks measure a Euclidean pixel distance
- *     (client-side; the API has no distance endpoint).
+ *     (client-side; the API has no distance endpoint);
+ *   - optional mirroring: when two viewers are synchronised, camera changes
+ *     are applied to the partner viewer.
+ *
+ * The viewport (the dark pane) is distinct from the image (the framed
+ * rectangle drawn inside it). The zoom label, the cursor readout and the tool
+ * badges in the header make viewport / image / zoom / tool state obvious.
  */
 
-import { button, el, fmtNumber } from "./ui.js";
+import { button, el, fmtNumber, icon } from "./ui.js";
+import { humanizeError } from "./errors.js";
 
 const MIN_SCALE = 0.02;
 const MAX_SCALE = 32;
 
 export class Viewer {
-  constructor(root, { title = "Viewer", role = "viewer", bus = null } = {}) {
+  constructor(root, { title = "Viewer", role = "viewer", bus = null, placeholder = "", footerExtras = [] } = {}) {
     this.root = root;
     this.title = title;
+    this.placeholder = placeholder || `No image loaded — ${title} viewport`;
     this.role = role;
     this.bus = bus;
     this.image = null;
+    this.name = "";
     this.description = "";
     this.scale = 1;
     this.offsetX = 0;
     this.offsetY = 0;
     this.distanceMode = false;
     this.points = [];
+    this.panEnabled = true;
+    this.pixelReadout = true;
+    this.footerExtras = footerExtras ?? [];
+    this.mirror = null;          // partner viewer when synchronised
+    this.syncEnabled = false;
+    this.active = false;
     this._drag = null;
     this._pixelData = null;
     this._pixelCanvas = null;
+    this._applyingMirror = false;
     this._build();
 
     this._onResize = () => this.render();
@@ -49,7 +65,9 @@ export class Viewer {
     this.canvas = el("canvas", { class: "viewer-canvas", "aria-label": `${this.role} image` });
     this.canvasWrap = el("div", { class: "viewer-canvas-wrap" }, this.canvas);
 
-    this.metaLabel = el("span", { class: "meta", text: "no image" });
+    this.nameLabel = el("span", { class: "viewer-name", text: "no image" });
+    this.metaLabel = el("span", { class: "meta", text: "—" });
+    this.modeBadge = el("span", { class: "badge viewer-mode", text: "Pixel" });
     this.zoomLabel = el("span", { class: "zoom-label", text: "—" });
     this.readout = el("span", { class: "readout", text: "x: —, y: —, value: —" });
 
@@ -61,10 +79,13 @@ export class Viewer {
       size: "small",
       title: "Measure a pixel distance (Esc to clear)",
     });
+    this.distanceButton.prepend(icon("measure", { size: 11 }));
 
-    const viewer = el("div", { class: "viewer surface" }, [
+    const viewer = el("div", { class: "viewer" }, [
       el("div", { class: "viewer-head" }, [
         el("h2", { text: this.title }),
+        this.nameLabel,
+        this.modeBadge,
         this.metaLabel,
       ]),
       this.canvasWrap,
@@ -74,10 +95,12 @@ export class Viewer {
         this.oneToOneButton,
         this.zoomInButton,
         this.distanceButton,
+        ...this.footerExtras,
         this.zoomLabel,
         this.readout,
       ]),
     ]);
+    this.node = viewer;
     this.root.append(viewer);
 
     this.ctx = this.canvas.getContext("2d");
@@ -87,14 +110,72 @@ export class Viewer {
     this.canvas.addEventListener("pointerup", (event) => this._onPointerUp(event));
     this.canvas.addEventListener("pointerleave", () => this._clearReadout());
     this.canvas.addEventListener("dblclick", () => this.fit());
+    this.root.addEventListener("pointerdown", () => this.setActive(true));
 
+    this._updateLabels();
     this.render();
+  }
+
+  // ------------------------------------------------------------- activation
+  setActive(value) {
+    const next = Boolean(value);
+    if (next === this.active) return;
+    this.active = next;
+    this.node.classList.toggle("active", next);
+    if (next) this.bus?.emit("viewer:active", { role: this.role, viewer: this });
+  }
+
+  // ------------------------------------------------------------------- tools
+  setPanEnabled(enabled) {
+    this.panEnabled = Boolean(enabled);
+    this.canvasWrap.classList.toggle("tool-pan-off", !this.panEnabled);
+    if (!this.panEnabled) {
+      this._drag = null;
+      this.canvas.classList.remove("panning");
+    } else {
+      this.canvasWrap.classList.remove("tool-pan-off");
+    }
+    this._updateModeBadge();
+  }
+
+  setPixelReadout(enabled) {
+    this.pixelReadout = Boolean(enabled);
+    this.canvasWrap.classList.toggle("tool-pixel-off", !this.pixelReadout);
+    if (!this.pixelReadout) this._clearReadout();
+    this._updateModeBadge();
+  }
+
+  /** Mirror camera changes to the partner viewer (used by the Sync control). */
+  setMirror(partner, enabled = true) {
+    this.mirror = partner;
+    this.syncEnabled = Boolean(enabled) && Boolean(partner);
+  }
+
+  _updateModeBadge() {
+    const mode = this.distanceMode ? "Measure" : this.pixelReadout ? "Pixel" : this.panEnabled ? "Pan" : "View";
+    this.modeBadge.textContent = mode;
+    this.modeBadge.className = `badge viewer-mode ${this.distanceMode ? "warn" : ""}`.trim();
   }
 
   // ---------------------------------------------------------------- image
   async setBlob(blob, description = "") {
     const bitmap = await createImageBitmap(blob);
     this.setBitmap(bitmap, description);
+  }
+
+  /** Load a blob and report load failures through the UI (never throw at boot). */
+  async loadBlob(blob, { name = "", description = "" } = {}) {
+    try {
+      const bitmap = await createImageBitmap(blob);
+      this.setBitmap(bitmap, description);
+      this.setName(name);
+      return true;
+    } catch (error) {
+      this.clear();
+      this.bus?.emit("viewer:error", { role: this.role, error });
+      this.readout.textContent = `could not display the image: ${humanizeError(error)}`;
+      return false;
+    }
   }
 
   setBitmap(bitmap, description = "") {
@@ -107,16 +188,48 @@ export class Viewer {
     this.render();
   }
 
+  setName(name) {
+    this.name = name ? String(name) : "";
+    this._updateLabels();
+  }
+
   clear() {
     this.image = null;
+    this.name = "";
     this.description = "";
     this.points = [];
     this._pixelData = null;
+    this._pixelCanvas = null;
     this.render();
   }
 
   get hasImage() {
     return this.image != null;
+  }
+
+  /** Camera state (zoom + pan) — the unit that synchronised viewers share. */
+  camera() {
+    return { scale: this.scale, offsetX: this.offsetX, offsetY: this.offsetY };
+  }
+
+  applyCamera(camera, { render = true } = {}) {
+    if (!camera) return;
+    this._applyingMirror = true;
+    this.scale = clamp(camera.scale, MIN_SCALE, MAX_SCALE);
+    this.offsetX = camera.offsetX;
+    this.offsetY = camera.offsetY;
+    if (render) this.render();
+    this._applyingMirror = false;
+    this._announceCamera();
+  }
+
+  _announceCamera() {
+    this.bus?.emit("viewer:camera", { role: this.role, ...this.camera() });
+  }
+
+  _mirrorCamera() {
+    if (!this.syncEnabled || !this.mirror || this._applyingMirror) return;
+    this.mirror.applyCamera(this.camera());
   }
 
   // --------------------------------------------------------------- camera
@@ -134,6 +247,8 @@ export class Viewer {
     this.scale = clamp(scale, MIN_SCALE, MAX_SCALE);
     this._center();
     this.render();
+    this._mirrorCamera();
+    this._announceCamera();
   }
 
   zoomTo(scale, anchorClient = null) {
@@ -147,6 +262,8 @@ export class Viewer {
       this._zoomAround(next, anchorClient.x - rect.left, anchorClient.y - rect.top);
     }
     this.render();
+    this._mirrorCamera();
+    this._announceCamera();
   }
 
   zoomBy(factor, anchorClient = null) {
@@ -183,18 +300,20 @@ export class Viewer {
   _onWheel(event) {
     if (!this.image) return;
     event.preventDefault();
+    this.setActive(true);
     const factor = Math.exp(-event.deltaY * 0.0015);
     this.zoomBy(factor, { x: event.clientX, y: event.clientY });
   }
 
   _onPointerDown(event) {
+    this.setActive(true);
     if (!this.image) return;
     if (this.distanceMode) {
       const point = this.imageCoords(event.clientX, event.clientY);
       this._addDistancePoint(point);
       return;
     }
-    if (event.button !== 0) return;
+    if (event.button !== 0 || !this.panEnabled) return;
     this.canvas.setPointerCapture(event.pointerId);
     this._drag = { x: event.clientX, y: event.clientY, offsetX: this.offsetX, offsetY: this.offsetY };
     this.canvas.classList.add("panning");
@@ -205,6 +324,8 @@ export class Viewer {
       this.offsetX = this._drag.offsetX + (event.clientX - this._drag.x);
       this.offsetY = this._drag.offsetY + (event.clientY - this._drag.y);
       this.render();
+      this._mirrorCamera();
+      this._announceCamera();
       return;
     }
     if (!this.image) return;
@@ -231,6 +352,8 @@ export class Viewer {
     this.canvas.classList.toggle("distance-mode", next);
     this.distanceButton.classList.toggle("primary", next);
     this.distanceButton.textContent = next ? "Distance ●" : "Distance";
+    this.distanceButton.prepend(icon("measure", { size: 11 }));
+    this._updateModeBadge();
     this.bus?.emit("viewer:distance-mode", { role: this.role, enabled: next });
     this.render();
     return next;
@@ -265,6 +388,7 @@ export class Viewer {
     const y = Math.floor(point.y);
     if (x < 0 || y < 0 || x >= this.image.width || y >= this.image.height) {
       this._clearReadout();
+      this.bus?.emit("viewer:cursor", { role: this.role, inside: false });
       return;
     }
     const data = this._pixels();
@@ -274,11 +398,15 @@ export class Viewer {
     const g = data.data[offset + 1];
     const b = data.data[offset + 2];
     const gray = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+    const value = { role: this.role, inside: true, x, y, r, g, b, gray };
+    this.bus?.emit("viewer:cursor", value);
+    if (!this.pixelReadout) return;
     this.readout.textContent = `x: ${x}, y: ${y} · rgb(${r}, ${g}, ${b}) · gray ${gray}`;
   }
 
   _clearReadout() {
     this.readout.textContent = "x: —, y: —, value: —";
+    this.bus?.emit("viewer:cursor", { role: this.role, inside: false });
   }
 
   _pixels() {
@@ -334,10 +462,30 @@ export class Viewer {
     ctx.fillStyle = "#05070b";
     ctx.fillRect(0, 0, width, height);
     if (!this.image) {
-      ctx.fillStyle = "rgba(139, 152, 171, 0.6)";
-      ctx.font = "13px 'Segoe UI', system-ui, sans-serif";
+      // subtle grid so an empty viewport still reads as an image pane
+      ctx.strokeStyle = "rgba(34, 41, 57, 0.55)";
+      ctx.lineWidth = 1;
+      for (let x = 0.5; x < width; x += 32) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, height);
+        ctx.stroke();
+      }
+      for (let y = 0.5; y < height; y += 32) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
+        ctx.stroke();
+      }
+      ctx.fillStyle = "rgba(139, 152, 171, 0.65)";
+      ctx.font = "12px 'Segoe UI', system-ui, sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText("No image loaded", width / 2, height / 2);
+      const lines = String(this.placeholder).split("\n");
+      const lineHeight = 18;
+      const startY = height / 2 - ((lines.length - 1) * lineHeight) / 2;
+      lines.forEach((line, index) => {
+        ctx.fillText(line, width / 2, startY + index * lineHeight);
+      });
     }
   }
 
@@ -381,13 +529,23 @@ export class Viewer {
 
   _updateLabels() {
     if (this.image) {
-      const size = `${this.image.width}×${this.image.height}`;
-      this.metaLabel.textContent = this.description ? `${size} · ${this.description}` : size;
+      const meta = `${this.image.width} × ${this.image.height} px${this.description ? ` · ${this.description}` : ""}`;
+      const name = this.name || this.description || "image";
+      this.metaLabel.textContent = meta;
+      this.metaLabel.title = meta;              // full text when truncated
+      this.nameLabel.textContent = name;
+      this.nameLabel.title = name;
       this.zoomLabel.textContent = `${Math.round(this.scale * 100)}%`;
+      this.zoomLabel.title = `Zoom ${Math.round(this.scale * 100)}% (image pixels × ${this.scale.toFixed(3)})`;
     } else {
-      this.metaLabel.textContent = "no image";
+      this.metaLabel.textContent = "—";
+      this.metaLabel.title = "";
+      this.nameLabel.textContent = "no image";
+      this.nameLabel.title = "";
       this.zoomLabel.textContent = "—";
+      this.zoomLabel.title = "";
     }
+    this._updateModeBadge();
   }
 }
 

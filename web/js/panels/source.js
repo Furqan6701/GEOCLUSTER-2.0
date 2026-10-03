@@ -1,5 +1,5 @@
 /**
- * Source panel: upload an image, or fetch a Sentinel-2 tile from the API.
+ * Source section: upload an image, fetch a Sentinel-2 tile, list session files.
  *
  * Satellite notes:
  *   - start/end are optional and are only sent when the user picked dates;
@@ -8,12 +8,13 @@
  *     the working image, exactly like the desktop's "load satellite image".
  */
 
-import { button, describeImage, el, fmtMegapixels, kv, labelled, setChildren, toast } from "../ui.js";
 import { humanizeError } from "../errors.js";
 import { SessionExpiredError } from "../session.js";
+import { button, createSection, describeImage, el, fmtBytes, icon, kv, labelled, setChildren, table, toast, toolGroup } from "../ui.js";
 
 export function createSourcePanel(ctx) {
-  const { session, bus } = ctx;
+  // File > "Session images…" reveals this section and re-renders this list.
+  const { session, bus, state } = ctx;
 
   const fileInput = el("input", {
     type: "file",
@@ -24,7 +25,9 @@ export function createSourcePanel(ctx) {
   });
   const dropzone = el("div", { class: "dropzone", text: "Drop an image here or click to choose (JPEG, PNG, BMP, TIFF)" });
   const uploadButton = button("Upload image…", () => fileInput.click(), { variant: "primary", size: "small" });
-  const infoBox = el("div", { class: "card" }, el("p", { class: "muted", text: "No image loaded yet." }));
+  uploadButton.prepend(icon("upload", { size: 12 }));
+  const infoBox = el("div", {}, el("p", { class: "empty-note", text: "No image loaded yet." }));
+  const filesBox = el("div", {}, el("p", { class: "empty-note", text: "No images in this session." }));
 
   // ------------------------------------------------------------------ upload
   async function uploadFile(file) {
@@ -33,6 +36,7 @@ export function createSourcePanel(ctx) {
       setBusy(true);
       const info = await session.uploadImage(file, file.name);
       toast(`Uploaded ${file.name} — ${describeImage(info)}`, "ok");
+      renderFiles();
     } catch (error) {
       reportError(error, "Upload failed");
     } finally {
@@ -70,13 +74,46 @@ export function createSourcePanel(ctx) {
     uploadFile(file);
   });
 
+  // -------------------------------------------------------- session file list
+  function renderFiles() {
+    const images = [...state.images.values()].filter((info) => info?.image_id);
+    if (!images.length) {
+      setChildren(filesBox, el("p", { class: "empty-note", text: "No images in this session." }));
+      return;
+    }
+    const rows = images.slice(-12).reverse().map((info) => [
+      info.image_id === state.original?.id
+        ? el("span", { class: "badge ok", text: "working" })
+        : info.image_id === state.result?.id
+          ? el("span", { class: "badge", text: "result" })
+          : el("span", { class: "badge", text: String(info.source ?? "image").slice(0, 7) }),
+      el("span", { title: info.image_id }, [
+        el("div", { text: String(info.name ?? info.image_id).slice(0, 26) }),
+        el("div", { class: "muted", text: `${info.width}×${info.height}` }),
+      ]),
+      button("Show", () => useAsOriginal(info), { size: "small", variant: "ghost", title: "Display this image as the working image" }),
+    ]);
+    setChildren(filesBox, table(["", "Image", ""], rows));
+  }
+
+  async function useAsOriginal(info) {
+    try {
+      await session.useAsOriginal(info);
+      bus.emit("status", { message: `Working image → ${info.name ?? info.image_id}` });
+      toast(`Showing ${info.name ?? info.image_id} as the working image.`, "ok");
+    } catch (error) {
+      reportError(error, "Could not load that image");
+    }
+  }
+
   // --------------------------------------------------------------- satellite
   const locationInput = el("input", { type: "text", list: "location-options", placeholder: "F-8, NUST, Centaurus…" });
   const locationList = el("datalist", { id: "location-options" });
   const startInput = el("input", { type: "date", title: "Optional start date" });
   const endInput = el("input", { type: "date", title: "Optional end date" });
   const fetchButton = button("Fetch Sentinel-2 tile", () => fetchSatellite(), { variant: "primary", size: "small" });
-  const locationHint = el("p", { class: "muted", text: "Dates are optional; leave them empty to use the server's rolling window." });
+  fetchButton.prepend(icon("satellite", { size: 12 }));
+  const locationHint = el("p", { class: "note", text: "Dates are optional; leave them empty to use the server's rolling window." });
 
   async function loadLocations() {
     try {
@@ -94,6 +131,7 @@ export function createSourcePanel(ctx) {
     const location = locationInput.value.trim();
     if (!location) {
       toast("Type a sector or alias first (for example F-8 or NUST).", "warn");
+      locationInput.focus();
       return;
     }
     const start = startInput.value || null;
@@ -106,6 +144,7 @@ export function createSourcePanel(ctx) {
       setFetchBusy(true);
       const info = await session.fetchSatellite({ location, start, end });
       toast(`Loaded satellite imagery for ${location} — ${describeImage(info)}`, "ok");
+      renderFiles();
     } catch (error) {
       reportError(error, "Satellite fetch failed");
     } finally {
@@ -116,6 +155,7 @@ export function createSourcePanel(ctx) {
   function setFetchBusy(busy) {
     fetchButton.disabled = busy;
     fetchButton.textContent = busy ? "Fetching…" : "Fetch Sentinel-2 tile";
+    fetchButton.prepend(icon("satellite", { size: 12 }));
   }
 
   function reportError(error, prefix) {
@@ -128,30 +168,32 @@ export function createSourcePanel(ctx) {
 
   // --------------------------------------------------------------- rendering
   bus.on("image:loaded", ({ role, info }) => {
-    if (role !== "original") return;
-    const rows = [
-      ["id", info.image_id],
-      ["name", info.name],
-      ["source", info.source],
-      ["size", `${info.width}×${info.height}`],
-      ["megapixels", fmtMegapixels(info.megapixels)],
-      ["channels", info.channels],
-      ["bytes", info.bytes],
-    ];
-    if (info.downscaled) {
-      rows.push(["downscaled", `yes — ${info.original_width}×${info.original_height} (${fmtMegapixels(info.original_megapixels)}) at ${Number(info.scale).toFixed(3)}×`]);
+    if (role === "original") {
+      const rows = [
+        ["id", info.image_id],
+        ["name", info.name],
+        ["source", info.source],
+        ["size", `${info.width}×${info.height}`],
+        ["megapixels", info.megapixels == null ? "—" : Number(info.megapixels).toFixed(2)],
+        ["channels", info.channels],
+        ["bytes", info.bytes == null ? "—" : fmtBytes(info.bytes)],
+      ];
+      if (info.downscaled) {
+        rows.push(["downscaled", `yes — ${info.original_width}×${info.original_height} at ${Number(info.scale).toFixed(3)}×`]);
+      }
+      setChildren(infoBox, [
+        kv(rows),
+        info.downscaled
+          ? el("p", { class: "note warn", text: "The server downscaled this image to stay under MAX_IMAGE_MEGAPIXELS." })
+          : null,
+      ]);
     }
-    setChildren(infoBox, [
-      el("h3", { text: "Working image" }),
-      kv(rows),
-      info.downscaled
-        ? el("p", { class: "hint", text: "The server downscaled this image to stay under MAX_IMAGE_MEGAPIXELS." })
-        : null,
-    ]);
+    renderFiles();
   });
 
   bus.on("session:reset", () => {
-    setChildren(infoBox, el("p", { class: "muted", text: "No image loaded yet." }));
+    setChildren(infoBox, el("p", { class: "empty-note", text: "No image loaded yet." }));
+    setChildren(filesBox, el("p", { class: "empty-note", text: "No images in this session." }));
     locationInput.value = "";
     startInput.value = "";
     endInput.value = "";
@@ -161,28 +203,46 @@ export function createSourcePanel(ctx) {
     loadLocations();
   });
 
-  // the chat can fetch imagery too — keep this panel's input in sync
+  // the chat can fetch imagery too — keep this section's input in sync
   bus.on("satellite:fetched", ({ location }) => {
     locationInput.value = location;
+    renderFiles();
   });
 
-  return el("div", { class: "panel", id: "panel-source" }, [
-    el("div", { class: "card" }, [
-      el("h3", { text: "Image source" }),
-      dropzone,
-      el("div", { class: "row", style: { marginTop: "8px" } }, [uploadButton, fileInput]),
-    ]),
-    infoBox,
-    el("div", { class: "card" }, [
-      el("h3", { text: "Sentinel-2 (Copernicus)" }),
-      labelled("Location", locationInput, "Sector code or alias (see /locations)"),
-      el("div", { class: "row" }, [
-        labelled("Start (optional)", startInput),
-        labelled("End (optional)", endInput),
+  // toolbar / menu entry points
+  bus.on("open:file-request", () => fileInput.click());
+  bus.on("satellite:request", () => {
+    locationInput.focus();
+    locationInput.select?.();
+  });
+
+  const section = createSection({
+    id: "source",
+    title: "Source",
+    iconName: "open",
+    body: [
+      toolGroup("Image", [
+        dropzone,
+        el("div", { class: "row center", style: { marginTop: "6px" } }, [uploadButton, fileInput]),
       ]),
-      locationHint,
-      fetchButton,
-      locationList,
-    ]),
-  ]);
+      editorGroup("Working image", infoBox),
+      toolGroup("Session files", [filesBox]),
+      toolGroup("Satellite (Sentinel-2)", [
+        labelled("Location", locationInput, "Sector code or alias (see /locations)"),
+        el("div", { class: "row" }, [
+          labelled("Start", startInput, "optional"),
+          labelled("End", endInput, "optional"),
+        ]),
+        locationHint,
+        fetchButton,
+        locationList,
+      ]),
+    ],
+  });
+
+  return { id: "source", label: "Source", section, actions: { uploadFile, fetchSatellite, renderFiles } };
+}
+
+function editorGroup(title, body) {
+  return toolGroup(title, [body]);
 }
