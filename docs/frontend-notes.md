@@ -4,6 +4,54 @@ Operational notes for the GeoCluster web console: how it talks to the API,
 what it does when things go wrong, and the known issues we deliberately left
 alone. Everything here was verified against the API in this repository.
 
+## UI structure (workstation redesign)
+
+The frontend is a desktop-style workspace, not a dashboard:
+
+| Region | Contents |
+| --- | --- |
+| Title bar | GeoCluster 2.0, menu bar (File · View · Processing · Analysis · Help), status chips (API, session, AI, satellite, max MP) |
+| Toolbar | Open · Satellite · Export · Compress · Undo/Redo (disabled) · zoom −/+/Fit/1:1/25 %/50 %/100 % · Pan · Pixel · Measure · Sync · dock toggles |
+| Toolbox dock | collapsible sections: Source, Filters, Clusters, Analysis, Files (every control from the previous panels, unchanged in behaviour) |
+| Image workspace | two viewports, **Original** and **Result**, each with a header (name + dimensions + active tool) and a footer (Fit/1:1/±/Distance, zoom %, pixel readout) |
+| Assistant dock | scrollable conversation, quick-command buttons, compact input; collapsible |
+| Status bar | dimensions · channel layout · zoom · cursor X/Y · pixel value · active viewport · session · API · New session |
+
+Viewports are canvases, never cards: fit-to-view preserves the aspect ratio,
+there is no `object-fit` anywhere, zoom is cursor-anchored, pixels stay crisp
+(nearest-neighbour) at ≥1:1, and small 260×260 satellite tiles are upscaled to
+fill the pane rather than being shown as thumbnails.
+
+### Synchronised navigation
+
+View → *Synchronise Original ↔ Result* (toolbar **Sync**, shortcut `Y`) makes
+camera changes (zoom and pan) mirror from one viewport to the other. It is a
+frontend feature only — both viewports hold their own decoded bitmap, so no
+API support is needed. With sync off each viewport navigates independently.
+Camera changes are announced on the bus as `viewer:camera`, which is also what
+the status bar uses.
+
+### Tool states
+
+`Pan`, `Pixel` and `Measure` are explicit tools with `aria-pressed` state, a
+cursor that reflects them, and a badge in the viewport header showing which is
+active. Turning the pixel readout off stops the footer/status-bar readout but
+never affects zoom or pan. The viewport's own `Distance` button and the toolbar
+`Measure` button stay in step through the `viewer:distance-mode` event.
+
+### Deliberately not implemented
+
+Undo, Redo, Recent files, Map view, Map legend and Map export are listed in
+the menus as **disabled entries with a reason** instead of fake buttons:
+
+* Undo/Redo — the API has no operation history; each operation returns a new
+  image id and the client keeps only the newest original/result. Adding them
+  would mean client-side history of image ids (structurally easy: the panels
+  already emit `image:loaded`).
+* Map view / legend / export — there is no map or georeferencing backend. The
+  per-cluster legend that *does* exist lives in the Clusters section.
+* Recent files — session images are listed in the Source section instead.
+
 ## Serving and CORS
 
 * Serve `web/` on **http://localhost:5173**:
@@ -135,10 +183,10 @@ message. Raw JSON is never displayed.
 
 | Command | What it does |
 | --- | --- |
-| `node --test "web/tests/*.test.mjs"` | 26 logic tests: config resolution, error mapping, API client contract (URLs, bodies, multipart, session recovery), chat command mapping/execution. No browser needed. |
-| `python web/tests/smoke_test.py` | Serves `web/` on 5173 (reuses a running server for the same root), checks assets + content types, that all 47 relative module imports resolve, that no key material exists under `web/`, that no `innerHTML` is used, and that the API's CORS allows the frontend origin. |
+| `node --test "web/tests/*.test.mjs"` | 28 logic tests: config resolution, error mapping, API client contract (URLs, bodies, multipart, session recovery), chat command mapping/execution. No browser needed. |
+| `python web/tests/smoke_test.py` | Serves `web/` on 5173 (reuses a running server for the same root), checks assets + content types, that every relative module import resolves, that no key material exists under `web/`, that no `innerHTML` is used, the workstation layout contract (image workspace owns the flexible track, no `object-fit: cover`, technical corner radii), and that the API's CORS allows the frontend origin. |
 | `python web/tests/integration_check.py` | Live contract check against a running API: the exact call sequence the browser makes (session → upload → 6 filters → kmeans k=5 → classify → histogram → stats → GCH2 round trip → satellite error paths → chat commands → 404/415). Requires `uvicorn main:app --port 8000`. |
-| `node web/tests/boot_test.mjs --jsdom <dir>` | Boot test: loads `index.html` in jsdom, imports `js/app.js` and drives the UI through DOM events against the live API — 49 assertions covering chips, tabs, upload, the six filters, the rendered K-Means range table, classify, histogram/stats, GCH2 compress → decompress, chat router commands and session-expiry recovery. jsdom is optional (not a dependency of the app); without it the test skips. |
+| `node web/tests/boot_test.mjs --jsdom <dir>` | Boot test: loads `index.html` in jsdom, imports `js/app.js` and drives the UI through DOM events against the live API — 93 assertions covering the shell (menu bar, toolbar, status bar, dock collapse), viewport behaviour (pan, wheel zoom, pixel readout, distance measurement, sync mirroring), upload, the six filters, the rendered K-Means range table, classify, histogram/stats, GCH2 compress → decompress, PNG export, chat router commands, session-expiry recovery, and a clean browser console. jsdom is optional (not a dependency of the app); without it the test skips. |
 
 The boot test runs in both serving modes: the default (page on localhost →
 direct API calls) and hosted (`--page-host 5173-demo.e2b.app` → everything

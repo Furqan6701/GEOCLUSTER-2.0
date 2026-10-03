@@ -179,9 +179,11 @@ def check_no_innerhtml() -> None:
 def check_workstation_layout() -> None:
     """The layout contract of the redesign: image workspace first."""
     index = (WEB / "index.html").read_text(encoding="utf-8")
-    css = (WEB / "css" / "workstation.css").read_text(encoding="utf-8")
+    css = (WEB / "css" / "styles.css").read_text(encoding="utf-8")
 
-    check("css/workstation.css" in index, "index.html loads the workstation stylesheet")
+    check("css/styles.css" in index, "index.html loads the workstation stylesheet")
+    check(not (WEB / "css" / "workstation.css").exists(),
+          "the old dashboard stylesheet is gone (one consolidated stylesheet)")
     for element_id in ["menubar", "toolbar", "toolbox", "viewer-area", "assistant-dock", "statusbar"]:
         check(f'id="{element_id}"' in index, f"shell element #{element_id} exists in index.html")
     for stale in ["tabpanels", 'id="tabs"']:

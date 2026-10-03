@@ -273,10 +273,6 @@ export function toolGroup(title, children, { actions = [] } = {}) {
   ]);
 }
 
-export function separator() {
-  return el("div", { class: "sep", role: "separator" });
-}
-
 // ------------------------------------------------------------------ menus
 
 /**
