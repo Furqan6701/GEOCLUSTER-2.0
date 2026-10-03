@@ -20,6 +20,7 @@ const MAX_SCALE = 32;
 export class Viewer {
   constructor(root, { title = "Viewer", role = "viewer", bus = null } = {}) {
     this.root = root;
+    this.title = title;
     this.role = role;
     this.bus = bus;
     this.image = null;
@@ -63,7 +64,7 @@ export class Viewer {
 
     const viewer = el("div", { class: "viewer surface" }, [
       el("div", { class: "viewer-head" }, [
-        el("h2", { text: title }),
+        el("h2", { text: this.title }),
         this.metaLabel,
       ]),
       this.canvasWrap,

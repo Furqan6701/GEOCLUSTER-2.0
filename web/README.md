@@ -75,7 +75,18 @@ python web/tests/smoke_test.py
 
 # live contract check (API must be running on :8000)
 python web/tests/integration_check.py
+
+# boot test: runs the real UI in jsdom against the live API (needs jsdom)
+npm install --prefix /tmp/geocluster-jsdom jsdom
+node web/tests/boot_test.mjs --jsdom /tmp/geocluster-jsdom/node_modules
 ```
+
+The boot test is optional but the strongest signal short of a real browser: it
+loads `index.html`, boots `js/app.js`, uploads the fixture image through the
+file input and then clicks through the filters, K-Means (checking the rendered
+range table), classify, histogram/stats, GCH2 compress → decompress, the chat
+router commands and the session-expired recovery path. It skips itself (exit 0)
+when jsdom or the API is missing.
 
 `node --test` also works from inside `web/`: `node --test "tests/*.test.mjs"`.
 

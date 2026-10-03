@@ -120,6 +120,12 @@ message. Raw JSON is never displayed.
 | `node --test "web/tests/*.test.mjs"` | 26 logic tests: config resolution, error mapping, API client contract (URLs, bodies, multipart, session recovery), chat command mapping/execution. No browser needed. |
 | `python web/tests/smoke_test.py` | Serves `web/` on 5173 (reuses a running server for the same root), checks assets + content types, that all 47 relative module imports resolve, that no key material exists under `web/`, that no `innerHTML` is used, and that the API's CORS allows the frontend origin. |
 | `python web/tests/integration_check.py` | Live contract check against a running API: the exact call sequence the browser makes (session → upload → 6 filters → kmeans k=5 → classify → histogram → stats → GCH2 round trip → satellite error paths → chat commands → 404/415). Requires `uvicorn main:app --port 8000`. |
+| `node web/tests/boot_test.mjs --jsdom <dir>` | Boot test: loads `index.html` in jsdom, imports `js/app.js` and drives the UI through DOM events against the live API — 49 assertions covering chips, tabs, upload, the six filters, the rendered K-Means range table, classify, histogram/stats, GCH2 compress → decompress, chat router commands and session-expiry recovery. jsdom is optional (not a dependency of the app); without it the test skips. |
+
+The boot test earned its place immediately: it caught a `ReferenceError` in
+`Viewer._build()` (the constructor's `title` parameter was referenced outside
+its scope) that made the page render nothing at all in a real browser while
+every static check still passed. Fixed by storing the title on the instance.
 
 `integration_check.py` asserts the K-Means ranges for `sample.jpg` with `k=5`
 are `0–80, 81–117, 118–155, 156–194, 195–255`, matching the desktop result.

@@ -20,6 +20,10 @@ Thumbs.db
 # Logs
 *.log
 
+# Node (only used by the optional jsdom boot test — the web frontend has no
+# build step and no runtime dependencies)
+node_modules/
+
 # Regenerable runtime artifacts under the project's data dir.
 # These are produced by the app/tests on every run (K-Means output files,
 # processed images, satellite download cache) — do not commit them.
