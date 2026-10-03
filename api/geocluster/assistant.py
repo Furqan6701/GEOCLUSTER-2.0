@@ -31,8 +31,8 @@ load_dotenv()
 
 logger = logging.getLogger("geocluster.assistant")
 
-FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1"
-FIREWORKS_MODEL = "accounts/fireworks/models/qwen3p7-plus"
+FIREWORKS_BASE_URL = "https://api.groq.com/openai/v1"
+FIREWORKS_MODEL = "openai/gpt-oss-20b"
 
 SYSTEM_PROMPT = """You are GEOCLUSTER AI, an expert in GIS, Remote Sensing, Photogrammetry, and Earth Observation.
 
@@ -194,8 +194,8 @@ class AIAssistant:
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.3,
-                max_tokens=150,
-                extra_body={"reasoning_effort": "none"},
+                max_tokens=600,
+                extra_body={"reasoning_effort": "low"},
             )
             answer = response.choices[0].message.content
         except Exception as exc:  # noqa: BLE001 - provider errors are opaque here
