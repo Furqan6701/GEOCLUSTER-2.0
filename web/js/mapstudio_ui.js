@@ -198,7 +198,10 @@ export class MapStudio {
       this._field("Subtitle (optional)", this._text("", (value) => this._update((settings) => { settings.subtitle = value; }), { key: "subtitle" })),
       this._field("Subtitle size (px)", size("subtitleSize", MAP_DEFAULTS.subtitleSize,
         (settings, value) => { settings.subtitleSize = value; })),
-      this._field("Credit line", this._text("", (value) => this._update((settings) => { settings.credit = value; }), { key: "credit" })),
+      this._field("Credit line", this._text("", (value) => this._update((settings) => {
+        settings.credit = value;
+        settings.creditTouched = true;       // the user decided: keep it
+      }), { key: "credit" })),
       this._field("Credit size (px)", size("creditSize", MAP_DEFAULTS.creditSize,
         (settings, value) => { settings.creditSize = value; })),
     ];
@@ -262,7 +265,10 @@ export class MapStudio {
 
   _arrowControls() {
     return [
-      this._checkbox("Show north arrow", true, (value) => this._update((settings) => { settings.northArrow.visible = value; }), "arrowVisible"),
+      this._checkbox("Show north arrow", true, (value) => this._update((settings) => {
+        settings.northArrow.visible = value;
+        settings.northArrowTouched = true;   // the user decided: keep it
+      }), "arrowVisible"),
       this._field("Style", this._select(NORTH_STYLES, "classic", (value) => this._update((settings) => { settings.northArrow.style = value; }), "arrowStyle")),
       this._field("Size (px)", this._number(MAP_DEFAULTS.northArrow.size, (value) => this._update((settings) => {
         settings.northArrow.size = Math.max(12, Math.min(160, Math.round(Number(value) || MAP_DEFAULTS.northArrow.size)));

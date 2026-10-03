@@ -102,6 +102,10 @@ export const MAP_DEFAULTS = Object.freeze({
     imageWidthUnit: "m",
   }),
   northArrow: Object.freeze({ visible: true, style: "classic", position: "tr", size: 36 }),
+  // set when the user picks the arrow/credit themselves, so opening another
+  // image can re-apply the source default it did not choose
+  northArrowTouched: false,
+  creditTouched: false,
   credit: "",
   cornerCoordinates: false,
   border: true,
@@ -123,6 +127,21 @@ export function fontSpec(size, { font = DEFAULT_MAP_FONT, weight = "", style = "
   // and canvas silently keeps the previous font
   const prefix = [style, weight, `${px}px`].filter(Boolean).join(" ");
   return `${prefix} "${mapFont(font)}", system-ui, sans-serif`;
+}
+
+/**
+ * The two settings that follow the IMAGE SOURCE: a satellite crop carries the
+ * Copernicus credit and a north arrow, an uploaded photo carries neither. A
+ * derived image (operation/classify result) inherits its ground metadata, so
+ * it is treated as satellite imagery too.
+ */
+export function sourceDefaults(source, info = null) {
+  const satellite = source === "satellite" || hasGroundScale(info);
+  return {
+    satellite,
+    northArrowVisible: satellite,
+    credit: satellite ? SATELLITE_CREDIT : "",
+  };
 }
 
 /** "sample.jpg" → "sample" (the default map title). */
@@ -230,10 +249,11 @@ export function cornerLabels(bbox, { precision = 4 } = {}) {
 
 /** Default settings for one image, with session-persisted values on top. */
 export function normalizeSettings(saved, { name, source, info } = {}) {
+  const defaults = sourceDefaults(source, info);
   const base = {
     ...MAP_DEFAULTS,
     title: titleFromName(name),
-    credit: source === "satellite" ? SATELLITE_CREDIT : "",
+    credit: defaults.credit,
     cornerCoordinates: hasGroundScale(info) ? Boolean(saved?.cornerCoordinates) : false,
   };
   const merged = { ...base, ...(saved ?? {}) };
@@ -246,6 +266,18 @@ export function normalizeSettings(saved, { name, source, info } = {}) {
     if (metres != null && metres >= 1000) merged.scaleBar.unit = "km";
   }
   merged.northArrow = { ...base.northArrow, ...(saved?.northArrow ?? {}) };
+  // The source default applies whenever the user has not chosen for
+  // themselves. A caller that hands in `visible`/`credit` without ever having
+  // recorded a choice is treated as that choice (the composer's own persisted
+  // settings always carry the flags, so it follows the source).
+  const arrowTouched = saved?.northArrowTouched === true
+    || (saved?.northArrowTouched === undefined && typeof saved?.northArrow?.visible === "boolean");
+  merged.northArrowTouched = arrowTouched;
+  if (!arrowTouched) merged.northArrow.visible = defaults.northArrowVisible;
+  const creditTouched = saved?.creditTouched === true
+    || (saved?.creditTouched === undefined && typeof saved?.credit === "string");
+  merged.creditTouched = creditTouched;
+  if (!creditTouched) merged.credit = defaults.credit;
   if (!Array.isArray(merged.legend.rows)) merged.legend.rows = [];
   // one font for the whole canvas, and sizes inside the control limits
   merged.font = mapFont(merged.font);

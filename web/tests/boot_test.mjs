@@ -915,6 +915,34 @@ if (!bootFailed) {
     const afterClicks = exportedCanvases.length >= beforeExport + 1;
     check(afterClicks, "clicking PNG 1x/2x/3x rasterises a canvas each", String(exportedCanvases.length));
 
+    // ---- items 6 & 7: the arrow and the credit follow the IMAGE SOURCE
+    {
+      const arrowOf = () => studio.getSettings().northArrow;
+      check(studio.getSettings().credit === "", "an uploaded image starts with an empty credit",
+        studio.getSettings().credit);
+      check(arrowOf().visible === false, "an uploaded image starts with the north arrow OFF",
+        JSON.stringify(arrowOf()));
+      studio.open({
+        image: studio.image,
+        info: { ...state().result.info, width: 800, height: 600, meters_per_pixel: 10 },
+        rows, name: "sample.jpg", source: "satellite",
+      });
+      check(arrowOf().visible === true, "satellite imagery starts with the north arrow ON",
+        JSON.stringify(arrowOf()));
+      check(studio.getSettings().credit === "Contains modified Copernicus Sentinel data",
+        "…and carries the Copernicus credit", studio.getSettings().credit);
+      check(field("arrowSize") != null && field("arrowStyle") != null && field("arrowPosition") != null,
+        "the arrow keeps style, size and position controls");
+      check(field("arrowRotation") == null &&
+        !Object.prototype.hasOwnProperty.call(arrowOf(), "rotation"),
+        "…and has no rotation control or setting");
+      // back to the image under test (an upload-derived classify result)
+      studio.open({ image: studio.image, info: state().result.info, rows, name: "sample.jpg", source: "upload" });
+      check(arrowOf().visible === false && studio.getSettings().credit === "",
+        "opening an upload again brings its own defaults back",
+        `${JSON.stringify(arrowOf())} / ${studio.getSettings().credit}`);
+    }
+
     // ---- title, subtitle, credit are editable
     field("title").value = "Karachi study area";
     field("title").dispatchEvent(new window.Event("input", { bubbles: true }));
@@ -1210,14 +1238,17 @@ if (!bootFailed) {
       }
     }
 
-    // ---- north arrow
-    check(studio.getSettings().northArrow.visible === true, "the north arrow is on by default");
     check([...field("arrowStyle").querySelectorAll("option")].map((o) => o.value).join(",") === "classic,compass,triangle",
       "the north arrow offers styles",
       [...field("arrowStyle").querySelectorAll("option")].map((o) => o.value).join(","));
     check(field("arrowSize") != null && field("arrowPosition") != null,
       "the north arrow has size and position controls");
-    check(field("arrowRotation") == null, "the north arrow has NO rotation control");
+    // the upload default is OFF: turn it on like a user would
+    check(studio.getSettings().northArrow.visible === false, "the upload default is still OFF");
+    field("arrowVisible").checked = true;
+    field("arrowVisible").dispatchEvent(new window.Event("change", { bubbles: true }));
+    check(studio.getSettings().northArrow.visible === true, "the arrow can be switched on for an upload");
+    check((studio.getCanvas().__strokes ?? 0) > 0, "the arrow is painted once it is on", "");
     const strokesBefore = studio.getCanvas().__strokes ?? 0;
     field("arrowSize").value = "54";
     field("arrowSize").dispatchEvent(new window.Event("change", { bubbles: true }));

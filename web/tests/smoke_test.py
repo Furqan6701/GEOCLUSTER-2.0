@@ -292,6 +292,12 @@ def check_workstation_layout() -> None:
           "frameMetrics reserves a band for an outside legend")
     check('DEFAULT_LEGEND_PLACEMENT = "outside-right"' in studio_js,
           "the default legend placement is outside right")
+    check("northArrowTouched" in studio_js and "creditTouched" in studio_js and "sourceDefaults" in studio_js,
+          "the arrow and the credit re-apply their source defaults until the user chooses")
+    check("northArrowTouched" in ui_js and "creditTouched" in ui_js,
+          "the composer marks the two choices as the user's own")
+    check("arrowRotation" not in studio_js and "drawNorthArrow(ctx, { x, y, size = 36, style" in studio_js,
+          "drawNorthArrow takes style and size only")
     check("legendPlacement" in ui_js and "legendCorner" not in ui_js,
           "the composer offers the placement dropdown, not the old corner one")
     check("drawImage" in studio_js and "not to scale" in studio_js,

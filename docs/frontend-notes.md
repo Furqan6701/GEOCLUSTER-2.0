@@ -64,6 +64,26 @@ the server's `image_id`: "Result — sample.jpg#negative (1600×1066)", not
 "new image EkEkL0bUvBYg". A boot assertion collects every `/images/<id>` id the
 session used and fails if any of them appears in a toast.
 
+### North arrow and credit follow the image source (items 6 & 7)
+
+`sourceDefaults(source, info)` decides: an image is "satellite imagery" when the
+composer was opened with `source === "satellite"` **or** the image carries
+ground metadata (`bbox` / `meters_per_pixel`) — so a classify/operation result
+of a satellite crop keeps them, while a plain upload does not.
+
+| source | north arrow | credit line |
+| --- | --- | --- |
+| satellite (or derived from one) | ON | "Contains modified Copernicus Sentinel data" |
+| upload | OFF | empty |
+
+A choice the user makes in the composer always wins and sticks for the session:
+the checkbox handler sets `northArrowTouched`, the credit field sets
+`creditTouched`, and `normalizeSettings` only re-applies the source default
+while the matching flag is false. (A caller that passes `visible`/`credit`
+without ever recording a choice counts as that choice.) The arrow keeps Style,
+Size (px) and Position, and is drawn north-up — the Rotation control and
+`northArrow.rotation` setting are gone.
+
 ### Legend placement (item 5)
 
 * `legend.placement` replaces the old `legend.corner`. `LEGEND_PLACEMENTS`:

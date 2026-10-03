@@ -933,7 +933,9 @@ test("composeStudioMap draws image, legend, scale bar and north arrow on ONE can
   const documentStub = fakeDocument();
   const image = { width: 800, height: 600 };
   const result = composeStudioMap({
-    image, settings: STUDIO_SETTINGS({ title: "sample", subtitle: "k=3" }), documentRef: documentStub,
+    image,
+    settings: STUDIO_SETTINGS({ title: "sample", subtitle: "k=3", northArrow: { visible: true } }),
+    documentRef: documentStub,
   });
   const basePad = frameMetrics(800, 600, { scale: 1 }).pad;
   assert.ok(result.canvas.width > 800 + basePad * 2,
@@ -972,6 +974,69 @@ test("composeStudioMap at 2x/3x is the same drawing, scaled exactly", () => {
   const base = one.canvas.__texts.filter((text) => text.endsWith("%"));
   const big = two.canvas.__texts.filter((text) => text.endsWith("%"));
   assert.deepEqual(big, base, "the same percentages are drawn at 2x");
+});
+
+test("the north arrow and the credit line follow the image source", () => {
+  // uploads: no ground metadata, no arrow, no credit
+  const upload = normalizeSettings(null, { name: "photo.jpg", source: "upload" });
+  assert.equal(upload.northArrow.visible, false, "an upload starts with the arrow OFF");
+  assert.equal(upload.credit, "", "an upload starts with an empty credit");
+  assert.equal(upload.creditTouched, false);
+
+  // satellite crops: arrow ON, Copernicus credit
+  const satellite = normalizeSettings(null, {
+    name: "tile.jpg", source: "satellite", info: { width: 512, height: 512, meters_per_pixel: 10 },
+  });
+  assert.equal(satellite.northArrow.visible, true, "satellite imagery starts with the arrow ON");
+  assert.equal(satellite.credit, "Contains modified Copernicus Sentinel data");
+
+  // derived images: no "satellite" source string, but ground metadata survives
+  const derived = normalizeSettings(null, {
+    name: "tile#classify.jpg", source: "operation:classify",
+    info: { width: 512, height: 512, bbox: [66.8, 24.7, 67.2, 25.1] },
+  });
+  assert.equal(derived.northArrow.visible, true, "a satellite-derived result keeps the arrow");
+  assert.equal(derived.credit, "Contains modified Copernicus Sentinel data");
+
+  // a user choice always wins, even on the other source
+  const chosen = normalizeSettings(
+    { northArrow: { visible: false, touched: true }, northArrowTouched: true },
+    { name: "tile.jpg", source: "satellite", info: { meters_per_pixel: 10 } },
+  );
+  assert.equal(chosen.northArrow.visible, false, "an explicit arrow choice survives a new image");
+  const creditChosen = normalizeSettings(
+    { credit: "© my agency", creditTouched: true },
+    { name: "tile.jpg", source: "satellite", info: { meters_per_pixel: 10 } },
+  );
+  assert.equal(creditChosen.credit, "© my agency", "an edited credit survives a new image");
+  const clearedOnUpload = normalizeSettings(
+    { credit: "Contains modified Copernicus Sentinel data", creditTouched: false },
+    { name: "photo.jpg", source: "upload" },
+  );
+  assert.equal(clearedOnUpload.credit, "", "an untouched credit follows the new source");
+});
+
+test("the arrow keeps style/size/position and is north-up", () => {
+  const settings = MAP_DEFAULTS.northArrow;
+  assert.equal(settings.style, "classic");
+  assert.equal(settings.position, "tr");
+  assert.equal(settings.size, 36);
+  assert.equal(settings.rotation, undefined, "no rotation setting is left");
+  const documentStub = fakeDocument();
+  const canvas = documentStub.createElement("canvas");
+  assert.deepEqual(
+    // the arrow no longer rotates, whatever a caller passes
+    drawNorthArrow(canvas.getContext("2d"), { x: 5, y: 5, size: 40, style: "compass", rotation: 90 }),
+    { x: 5, y: 5, size: 40 },
+  );
+  const drawn = canvas.getContext("2d");
+  const boxSize = drawStudioMap(drawn, {
+    image: null,
+    settings: normalizeSettings({ northArrow: { visible: true, size: 64 }, northArrowTouched: true },
+      { name: "x.jpg", source: "satellite", info: { meters_per_pixel: 10 } }),
+    imageWidth: 800, imageHeight: 600, scale: 1,
+  });
+  assert.equal(boxSize.northArrow.size, 64, "the Size control reaches the canvas");
 });
 
 test("the legend honours its visibility, percentages, placement and font size", () => {
@@ -1052,7 +1117,9 @@ test("corner coordinates are drawn only for images with a bbox", () => {
 test("the title, subtitle and credit are drawn, and the border can be turned off", () => {
   const withExtras = composeStudioMap({
     image: { width: 800, height: 600 },
-    settings: STUDIO_SETTINGS({ title: "Karachi", subtitle: "study area", credit: "Sentinel-2 L2A", border: true }),
+    settings: STUDIO_SETTINGS({
+      title: "Karachi", subtitle: "study area", credit: "Sentinel-2 L2A", creditTouched: true, border: true,
+    }),
     documentRef: fakeDocument(),
   });
   assert.ok(withExtras.canvas.__texts.includes("Karachi"));
