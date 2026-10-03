@@ -9,6 +9,7 @@
 import { ApiClient } from "./api.js";
 import { resolveApiBase } from "./config.js";
 import { ApiError, humanizeError } from "./errors.js";
+import { createChatPanel } from "./panels/chat.js";
 import { createPanels } from "./panels/index.js";
 import { SessionExpiredError, SessionManager } from "./session.js";
 import { createAppState, createBus } from "./state.js";
@@ -115,6 +116,9 @@ for (const panel of panels) {
   panelsHost.append(panel.node);
 }
 selectTab(panels[0].id);
+
+// -------------------------------------------------------------------- chat
+document.getElementById("chat-column").append(createChatPanel(ctx));
 
 // ------------------------------------------------------------------- chips
 const chipHost = document.getElementById("status-chips");

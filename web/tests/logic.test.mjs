@@ -11,6 +11,7 @@ import assert from "node:assert/strict";
 import { DEFAULT_API_BASE, isValidHttpUrl, normalizeBase, resolveApiBase } from "../js/config.js";
 import { ApiError, detailToText, humanizeError } from "../js/errors.js";
 import { ApiClient } from "../js/api.js";
+import { defaultParamsFor, describeCommand, executeCommands } from "../js/commands.js";
 
 // --------------------------------------------------------------- test doubles
 
@@ -248,6 +249,91 @@ test("request maps a transport failure to ApiError(0)", async () => {
       return true;
     },
   );
+});
+
+// ------------------------------------------------------------ chat commands
+
+test("defaultParamsFor returns the documented defaults", () => {
+  assert.deepEqual(defaultParamsFor("kmeans"), { k: 5, max_iter: 30 });
+  assert.deepEqual(defaultParamsFor("meanfilter"), { window: 3 });
+  assert.deepEqual(defaultParamsFor("threshold"), { value: 128 });
+  assert.deepEqual(defaultParamsFor("brightness"), { value: 20 });
+  assert.equal(defaultParamsFor("negative"), null);
+  assert.equal(defaultParamsFor("grayscale"), null);
+  assert.equal(defaultParamsFor("nonsense"), null);
+});
+
+test("defaultParamsFor hands out copies, not shared state", () => {
+  const first = defaultParamsFor("kmeans");
+  first.k = 99;
+  assert.deepEqual(defaultParamsFor("kmeans"), { k: 5, max_iter: 30 });
+});
+
+test("describeCommand covers every router action", () => {
+  assert.match(describeCommand({ action: "run_operation", operation: "kmeans" }), /run kmeans \(defaults: \{"k":5,"max_iter":30\}\)/);
+  assert.equal(describeCommand({ action: "run_operation", operation: "negative" }), "run negative");
+  assert.equal(describeCommand({ action: "open_histogram" }), "open the histogram");
+  assert.equal(describeCommand({ action: "open_compress" }), "compress the current image to .gch");
+  assert.equal(describeCommand({ action: "open_distance" }), "open the distance tool");
+  assert.equal(describeCommand({ action: "fetch_satellite", location: "F-8" }), "fetch satellite imagery for F-8");
+  assert.match(describeCommand({ action: "mystery" }), /unknown action/);
+  assert.match(describeCommand({}), /unknown action/);
+});
+
+test("executeCommands dispatches every action exactly once", async () => {
+  const calls = [];
+  const handlers = {
+    runOperation: async (operation, params) => calls.push(["run", operation, params]),
+    openHistogram: async () => calls.push(["histogram"]),
+    openCompress: async () => calls.push(["compress"]),
+    openDistance: async () => calls.push(["distance"]),
+    fetchSatellite: async (location) => calls.push(["satellite", location]),
+  };
+  const notes = await executeCommands(
+    [
+      { action: "fetch_satellite", location: "F-8" },
+      { action: "run_operation", operation: "kmeans" },
+      { action: "run_operation", operation: "negative" },
+      { action: "open_histogram" },
+      { action: "open_compress" },
+      { action: "open_distance" },
+    ],
+    handlers,
+  );
+
+  assert.deepEqual(calls, [
+    ["satellite", "F-8"],
+    ["run", "kmeans", { k: 5, max_iter: 30 }],
+    ["run", "negative", null],
+    ["histogram"],
+    ["compress"],
+    ["distance"],
+  ]);
+  assert.equal(notes.length, 6);
+  assert.match(notes[0], /Satellite fetch requested for F-8/);
+  assert.match(notes[1], /Ran kmeans with \{"k":5,"max_iter":30\}/);
+  assert.match(notes[2], /Ran negative/);
+});
+
+test("executeCommands never throws: failures and unknown actions become notes", async () => {
+  const notes = await executeCommands(
+    [{ action: "fetch_satellite", location: "atlantis" }, { action: "teleport" }],
+    {
+      fetchSatellite: async () => {
+        throw new Error("Unknown location: atlantis");
+      },
+      describeError: (error) => error.message,
+    },
+  );
+  assert.match(notes[0], /failed: Unknown location: atlantis/);
+  assert.match(notes[1], /Nothing handles "teleport" yet/);
+});
+
+test("executeCommands tolerates missing/empty command lists and handlers", async () => {
+  assert.deepEqual(await executeCommands([], {}), []);
+  assert.deepEqual(await executeCommands(undefined, {}), []);
+  const notes = await executeCommands([{ action: "open_histogram" }], {});
+  assert.deepEqual(notes, ["Histogram ready."]);
 });
 
 test("chat posts the message", async () => {

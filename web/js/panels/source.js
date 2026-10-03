@@ -161,6 +161,11 @@ export function createSourcePanel(ctx) {
     loadLocations();
   });
 
+  // the chat can fetch imagery too — keep this panel's input in sync
+  bus.on("satellite:fetched", ({ location }) => {
+    locationInput.value = location;
+  });
+
   return el("div", { class: "panel", id: "panel-source" }, [
     el("div", { class: "card" }, [
       el("h3", { text: "Image source" }),
