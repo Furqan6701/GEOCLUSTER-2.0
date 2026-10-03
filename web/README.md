@@ -50,6 +50,8 @@ rather than a dashboard:
   Analysis → *Map export* writes a single PNG that already includes the legend.
   The legend can be toggled; with three panes the map takes a full-width row
   under the two image viewports on laptops.
+* **Manual checks** — `docs/frontend-manual-checklist.md` lists what to confirm
+  by hand in Chrome at 1366 px and 1920 px (rendering, downloads, gestures).
 * **Shortcuts** — `Ctrl+O` open, `Ctrl+S` export PNG, `Ctrl+Z`/`Ctrl+Y`
   undo/redo, `+`/`−` zoom, `0` fit, `1` actual size, `M` measure, `P` pixel
   readout, `Y` sync viewers.
