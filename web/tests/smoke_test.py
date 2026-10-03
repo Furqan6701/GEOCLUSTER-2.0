@@ -176,6 +176,55 @@ def check_no_innerhtml() -> None:
     check(not hits, "no innerHTML/insertAdjacentHTML/document.write usage", ", ".join(hits))
 
 
+def check_workstation_layout() -> None:
+    """The layout contract of the redesign: image workspace first."""
+    index = (WEB / "index.html").read_text(encoding="utf-8")
+    css = (WEB / "css" / "workstation.css").read_text(encoding="utf-8")
+
+    check("css/workstation.css" in index, "index.html loads the workstation stylesheet")
+    for element_id in ["menubar", "toolbar", "toolbox", "viewer-area", "assistant-dock", "statusbar"]:
+        check(f'id="{element_id}"' in index, f"shell element #{element_id} exists in index.html")
+    for stale in ["tabpanels", 'id="tabs"']:
+        check(stale not in index, f"old dashboard markup ({stale}) is gone")
+
+    workspace = re.search(r"\.workspace\s*\{([^}]*)\}", css)
+    check(workspace is not None, "the workstation layout rule exists")
+    if workspace:
+        body = workspace.group(1)
+        check("grid-template-columns" in body and "minmax(0, 1fr)" in body,
+              "the workspace grid gives the image column the flexible track")
+        check("var(--toolbox-w)" in body and "var(--assistant-w)" in body,
+              "the docks are fixed-width so the imagery keeps priority")
+
+    image_ws = re.search(r"\.image-workspace\s*\{([^}]*)\}", css)
+    check(image_ws is not None and "grid-template-columns" in (image_ws.group(1) if image_ws else ""),
+          "the image workspace is a grid of viewports")
+
+    canvas_wrap = re.search(r"\.viewer-canvas-wrap\s*\{([^}]*)\}", css)
+    check(canvas_wrap is not None and "var(--bg-canvas)" in canvas_wrap.group(1),
+          "the viewport uses the dark image-processing background")
+
+    # no cropping anywhere: object-fit must never be cover
+    check("object-fit: cover" not in css and "object-fit:cover" not in css,
+          "no object-fit: cover (images are never cropped)")
+
+    # dashboard look: no giant rounded corners
+    # 999px pills (chips/badges) are fine; panel containers must stay square-ish
+    radii = [int(value) for value in re.findall(r"border-radius:\s*(\d+)px", css)]
+    containers = [value for value in radii if value < 900]
+    check(all(value <= 12 for value in containers),
+          "panel corner radii stay technical (no giant dashboard cards)",
+          f"max container radius {max(containers) if containers else 0}px")
+
+    # density: the toolbox must not be styled as a stack of big cards
+    check("--fs-md: 12px" in css and "--status-h: 26px" in css,
+          "compact typography and status bar are configured")
+
+    # responsiveness: the image workspace survives narrow windows
+    check("@media (max-width: 1080px)" in css and "minmax(160px, 1fr)" in css,
+          "the image workspace stays usable on narrow desktops")
+
+
 def check_cors() -> None:
     if not port_open("localhost", 8000):
         skip("API CORS for the frontend origin", "API not running on :8000")
@@ -252,6 +301,8 @@ def main() -> int:
     print()
     check_no_secrets()
     check_no_innerhtml()
+    print()
+    check_workstation_layout()
     print()
     check_cors()
     print()

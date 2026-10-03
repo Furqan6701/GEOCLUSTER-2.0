@@ -1,5 +1,5 @@
 /**
- * Analysis panel: 256-bin histogram and image statistics.
+ * Analysis section: 256-bin histogram, image statistics and the distance tool.
  *
  * The histogram is drawn straight from the API's integer bin counts; the
  * "Log" toggle only changes how the same numbers are displayed.
@@ -8,7 +8,7 @@
 import { humanizeError } from "../errors.js";
 import { SessionExpiredError } from "../session.js";
 import { activeImage } from "../state.js";
-import { button, el, kv, setChildren, toast } from "../ui.js";
+import { button, createSection, el, icon, setChildren, toast, toolGroup } from "../ui.js";
 
 const WIDTH = 520;
 const HEIGHT = 170;
@@ -20,8 +20,8 @@ export function createAnalysisPanel(ctx) {
   const logToggle = el("input", { type: "checkbox", id: "hist-log" });
   const logLabel = el("label", { class: "checkbox", for: "hist-log" }, [logToggle, "Log scale"]);
   const canvas = el("canvas", { width: WIDTH, height: HEIGHT, class: "histogram-canvas" });
-  const statsHost = el("div", { class: "card" }, el("p", { class: "muted", text: "No statistics yet." }));
-  const caption = el("p", { class: "muted", text: "Load an image, then compute the histogram." });
+  const statsHost = el("div", {}, el("p", { class: "empty-note", text: "No statistics yet." }));
+  const caption = el("p", { class: "note", text: "Load an image, then compute the histogram." });
 
   let lastBins = null;
 
@@ -44,22 +44,26 @@ export function createAnalysisPanel(ctx) {
       lastBins = histogram.bins ?? [];
       draw(lastBins);
       setChildren(statsHost, [
-        el("h3", { text: "Statistics (grayscale)" }),
-        kv([
-          ["min", stats.min],
-          ["max", stats.max],
-          ["mean", Number(stats.mean).toFixed(2)],
-          ["std dev", Number(stats.std).toFixed(2)],
+        el("div", { class: "stat-strip" }, [
+          stat("min", stats.min),
+          stat("max", stats.max),
+          stat("mean", Number(stats.mean).toFixed(2)),
+          stat("std", Number(stats.std).toFixed(2)),
         ]),
       ]);
       const total = lastBins.reduce((sum, value) => sum + value, 0);
       caption.textContent = `256 bins · ${total.toLocaleString()} pixels · image ${active.info?.width ?? "?"}×${active.info?.height ?? "?"}`;
+      bus.emit("status", { message: `Histogram ready — mean ${Number(stats.mean).toFixed(2)}, std ${Number(stats.std).toFixed(2)}` });
     } catch (error) {
       report(error, "Analysis failed");
     } finally {
       refreshButton.disabled = false;
       refreshButton.textContent = "Histogram & stats";
     }
+  }
+
+  function stat(label, value) {
+    return el("span", { class: "stat" }, [el("span", { text: label }), el("span", { text: String(value) })]);
   }
 
   function draw(bins) {
@@ -112,8 +116,12 @@ export function createAnalysisPanel(ctx) {
     toast(`${prefix}: ${humanizeError(error, { apiBase: ctx.api.base })}`, "bad", { timeout: 12000 });
   }
 
+  // ------------------------------------------------------------- distance
+  const measureButton = button("Measure on the active viewport", () => bus.emit("distance:request"), { size: "small" });
+  measureButton.prepend(icon("measure", { size: 12 }));
+
   // The chat command "histogram" asks the panel to refresh (and the app
-  // switches to this tab when it sees the same event).
+  // switches to this section when it sees the same event).
   bus.on("histogram:request", () => {
     refresh();
   });
@@ -122,22 +130,30 @@ export function createAnalysisPanel(ctx) {
     if (role === "original") {
       lastBins = null;
       draw(null);
-      setChildren(statsHost, el("p", { class: "muted", text: "No statistics yet." }));
+      setChildren(statsHost, el("p", { class: "empty-note", text: "No statistics yet." }));
       caption.textContent = "Load an image, then compute the histogram.";
     }
   });
 
   draw(null);
 
-  const panel = el("div", { class: "panel", id: "panel-analysis", hidden: true }, [
-    el("div", { class: "card" }, [
-      el("h3", { text: "Histogram" }),
-      canvas,
-      el("div", { class: "row", style: { marginTop: "8px", alignItems: "center" } }, [refreshButton, logLabel]),
-      caption,
-    ]),
-    statsHost,
-  ]);
+  const section = createSection({
+    id: "analysis",
+    title: "Analysis",
+    iconName: "chart",
+    body: [
+      toolGroup("Histogram", [
+        canvas,
+        el("div", { class: "row center", style: { marginTop: "6px" } }, [refreshButton, logLabel]),
+        caption,
+      ]),
+      toolGroup("Statistics", [statsHost]),
+      toolGroup("Distance", [
+        measureButton,
+        el("p", { class: "note", text: "Two clicks on the active viewport measure the Euclidean pixel distance. Esc clears. Client-side only — the API has no distance endpoint." }),
+      ]),
+    ],
+  });
 
-  return { id: "analysis", label: "Analysis", node: panel };
+  return { id: "analysis", label: "Analysis", section, actions: { refresh } };
 }

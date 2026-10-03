@@ -1,5 +1,5 @@
 /**
- * Filters panel: the six pixel operations the API exposes.
+ * Filters section: the six pixel operations the API exposes.
  *
  * Every operation returns a NEW image id; the original is never overwritten
  * (the result becomes the input for the next operation, like the desktop).
@@ -8,7 +8,7 @@
 import { humanizeError } from "../errors.js";
 import { SessionExpiredError } from "../session.js";
 import { activeImage } from "../state.js";
-import { button, el, labelled, numberInput, toast } from "../ui.js";
+import { button, createSection, el, numberInput, toast, toolGroup } from "../ui.js";
 
 export function createOperationsPanel(ctx) {
   const { session, bus, state } = ctx;
@@ -18,7 +18,7 @@ export function createOperationsPanel(ctx) {
   const windowInput = numberInput({ value: 3, min: 3, max: 31, step: 2 });
 
   const buttons = [];
-  const status = el("p", { class: "muted", text: "Load an image to enable the filters." });
+  const status = el("p", { class: "note", text: "Load an image to enable the filters." });
 
   function makeButton(label, operation, paramsFactory = null, extra = "") {
     const node = button(label, () => run(operation, paramsFactory), { size: "small", title: extra });
@@ -26,12 +26,12 @@ export function createOperationsPanel(ctx) {
     return node;
   }
 
-  const grayscale = makeButton("Grayscale", "grayscale");
-  const negative = makeButton("Negative", "negative");
-  const laplacian = makeButton("Laplacian", "laplacian");
-  const brightness = makeButton("Brightness", "brightness", () => ({ value: readNumber(brightnessInput, -255, 255, "brightness") }));
-  const threshold = makeButton("Threshold", "threshold", () => ({ value: readNumber(thresholdInput, 0, 255, "threshold") }));
-  const meanfilter = makeButton("Mean filter", "meanfilter", () => ({ window: readOddWindow() }));
+  const grayscale = makeButton("Grayscale", "grayscale", null, "Convert to grayscale (0.299R + 0.587G + 0.114B)");
+  const negative = makeButton("Negative", "negative", null, "Invert every channel: 255 − value");
+  const laplacian = makeButton("Laplacian", "laplacian", null, "Edge detection with the OpenCV Laplacian kernel");
+  const brightness = makeButton("Brightness", "brightness", () => ({ value: readNumber(brightnessInput, -255, 255, "brightness") }), "Add a constant, clipped to 0…255");
+  const threshold = makeButton("Threshold", "threshold", () => ({ value: readNumber(thresholdInput, 0, 255, "threshold") }), "Pixels above the value become white");
+  const meanfilter = makeButton("Mean filter", "meanfilter", () => ({ window: readOddWindow() }), "OpenCV blur with a square kernel");
 
   function readNumber(input, low, high, name) {
     const value = Number(input.value);
@@ -98,42 +98,53 @@ export function createOperationsPanel(ctx) {
     toast(`${operation} failed: ${humanizeError(error, { apiBase: ctx.api.base })}`, "bad", { timeout: 12000 });
   }
 
-  const clearResult = button(
-    "Clear result",
-    () => {
-      state.result = null;
-      bus.emit("image:cleared", { role: "result" });
-    },
-    { size: "small", variant: "ghost" },
-  );
+  function clearResult() {
+    state.result = null;
+    bus.emit("image:cleared", { role: "result" });
+    bus.emit("status", { message: "Result cleared — operations now apply to the working image" });
+  }
 
-  const panel = el("div", { class: "panel", id: "panel-filters", hidden: true }, [
-    el("div", { class: "card" }, [
-      el("h3", { text: "Point operations" }),
-      el("div", { class: "btn-grid" }, [grayscale, negative, laplacian, clearResult]),
-    ]),
-    el("div", { class: "card" }, [
-      el("h3", { text: "Brightness" }),
-      labelled("Value (−255…255)", brightnessInput, "Adds a constant, clipped to 0…255."),
-      brightness,
-    ]),
-    el("div", { class: "card" }, [
-      el("h3", { text: "Threshold" }),
-      labelled("Value (0…255)", thresholdInput, "Pixels above the value become white."),
-      threshold,
-    ]),
-    el("div", { class: "card" }, [
-      el("h3", { text: "Mean filter" }),
-      labelled("Window (odd, 3…31)", windowInput, "OpenCV blur with a square kernel."),
-      meanfilter,
-    ]),
-    status,
-  ]);
+  const clearButton = button("Clear result", clearResult, { size: "small", variant: "ghost" });
+
+  // parameter rows keep the control next to its Apply button (toolbox density)
+  function paramRow(applyButton, input, label) {
+    return el("div", { class: "row center" }, [
+      el("div", { class: "field", style: { marginBottom: "0" } }, [
+        el("label", { text: label }),
+        input,
+      ]),
+      applyButton,
+    ]);
+  }
+
+  const section = createSection({
+    id: "filters",
+    title: "Filters",
+    iconName: "filters",
+    body: [
+      toolGroup("Point operations", [
+        el("div", { class: "btn-grid" }, [grayscale, negative, laplacian, clearButton]),
+      ]),
+      toolGroup("Brightness", [
+        paramRow(brightness, brightnessInput, "Value (−255…255)"),
+        el("p", { class: "note", text: "Adds a constant, clipped to 0…255." }),
+      ]),
+      toolGroup("Threshold", [
+        paramRow(threshold, thresholdInput, "Value (0…255)"),
+        el("p", { class: "note", text: "Pixels above the value become white." }),
+      ]),
+      toolGroup("Mean filter", [
+        paramRow(meanfilter, windowInput, "Window (odd, 3…31)"),
+        el("p", { class: "note", text: "OpenCV blur with a square kernel." }),
+      ]),
+      status,
+    ],
+  });
 
   bus.on("image:loaded", () => setBusy(state.busy));
   bus.on("image:cleared", () => setBusy(state.busy));
   bus.on("session:reset", () => setBusy(false));
   setBusy(false);
 
-  return { id: "filters", label: "Filters", node: panel };
+  return { id: "filters", label: "Filters", section, actions: { run, clearResult } };
 }

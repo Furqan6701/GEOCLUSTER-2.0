@@ -1,9 +1,11 @@
 /**
- * Application bootstrap: wires the API client, session manager, viewers,
- * sidebar panels and the status chips together.
+ * Application shell for the GeoCluster workstation.
  *
- * Serve this folder on http://localhost:5173 (see web/README.md) so the API's
- * ALLOWED_ORIGINS accepts the browser's requests.
+ * Owns the menu bar, the toolbar, the dock layout, the two image viewports,
+ * the status bar and the shared state; the processing features themselves live
+ * in js/panels/* and are reached through the bus, exactly as before.
+ *
+ * Serve this folder on http://localhost:5173 (see web/README.md).
  */
 
 import { ApiClient } from "./api.js";
@@ -12,9 +14,11 @@ import { ApiError, humanizeError } from "./errors.js";
 import { createChatPanel } from "./panels/chat.js";
 import { createPanels } from "./panels/index.js";
 import { SessionExpiredError, SessionManager } from "./session.js";
-import { createAppState, createBus } from "./state.js";
-import { chip, el, setChildren, toast } from "./ui.js";
+import { activeImage, createAppState, createBus } from "./state.js";
+import { chip, createMenuBar, downloadBlob, el, icon, setChildren, toast, toggleButton } from "./ui.js";
 import { Viewer } from "./viewer.js";
+
+const SERVER_ORDER = { original: 0, result: 1 };
 
 // ------------------------------------------------------------------- context
 const apiBase = resolveApiBase({
@@ -50,7 +54,8 @@ async function showImage(role, info) {
     const blob = await session.imageBlob(info.image_id);
     if (token !== loadTokens[role]) return; // a newer image replaced this one
     const source = info.source === "satellite" ? "satellite" : info.source;
-    await viewer.setBlob(blob, `${source} · ${info.width}×${info.height}`);
+    const description = `${source} · ${info.width}×${info.height}`;
+    await viewer.loadBlob(blob, { name: info.name ?? info.image_id, description });
   } catch (error) {
     if (token !== loadTokens[role]) return;
     report(error, "Could not display the image");
@@ -59,6 +64,7 @@ async function showImage(role, info) {
 
 bus.on("image:loaded", ({ role, info }) => {
   showImage(role, info);
+  bus.emit("status", { message: `${role === "original" ? "Working image" : "Result"} — ${info.name ?? info.image_id} (${info.width}×${info.height})` });
 });
 
 bus.on("image:cleared", ({ role }) => {
@@ -71,65 +77,375 @@ bus.on("session:reset", () => {
   loadTokens.result += 1;
   originalViewer.clear();
   resultViewer.clear();
+  state.kmeans = null;
 });
 
 bus.on("viewer:distance", ({ text }) => {
   toast(text, "", { timeout: 9000 });
+  bus.emit("status", { message: text });
 });
 
 bus.on("viewer:distance-mode", ({ enabled, role }) => {
   if (enabled) toast(`Distance tool on the ${role} viewer — click two points (Esc clears).`, "", { timeout: 6000 });
+  bus.emit("status", { message: enabled ? `Measure tool active on ${role}` : "Measure tool off" });
+});
+
+bus.on("viewer:error", () => {
+  toast("The viewer could not display that image.", "bad");
 });
 
 bus.on("distance:request", () => {
-  resultViewer.hasImage ? resultViewer.toggleDistance(true) : originalViewer.toggleDistance(true);
+  const target = activeViewer();
+  target.toggleDistance(true);
 });
 
-bus.on("histogram:request", () => selectTab("analysis"));
+bus.on("histogram:request", () => {
+  focusSection("analysis");
+});
 
-// -------------------------------------------------------------- tabs/panels
-const tabsHost = document.getElementById("tabs");
-const panelsHost = document.getElementById("tabpanels");
+// ------------------------------------------------------------- active viewer
+let activeRole = "original";
+originalViewer.setActive(true);
+
+bus.on("viewer:active", ({ role }) => {
+  if (role === activeRole) return;
+  activeRole = role;
+  originalViewer.setActive(role === "original");
+  resultViewer.setActive(role === "result");
+  updateStatusBar();
+});
+
+/** The viewer toolbar actions apply to: the focused viewport, else one with an image. */
+function activeViewer() {
+  const tracked = activeRole === "result" ? resultViewer : originalViewer;
+  if (tracked.hasImage) return tracked;
+  const other = tracked === resultViewer ? originalViewer : resultViewer;
+  return other.hasImage ? other : tracked;
+}
+
+// --------------------------------------------------------------- sync control
+const syncToggle = toggleButton("sync", {
+  label: "Sync",
+  pressed: false,
+  onChange: (enabled) => {
+    originalViewer.setMirror(resultViewer, enabled);
+    resultViewer.setMirror(originalViewer, enabled);
+    if (enabled) resultViewer.applyCamera(originalViewer.camera());
+    const text = enabled
+      ? "Viewer sync on — zoom/pan in one viewport mirrors the other."
+      : "Viewer sync off — the viewports navigate independently.";
+    toast(text, enabled ? "ok" : "", { timeout: 5000 });
+    bus.emit("status", { message: text });
+  },
+});
+document.getElementById("tb-sync").replaceWith(syncToggle.node);
+syncToggle.node.id = "tb-sync";
+
+// -------------------------------------------------------------------- panels
 const panels = createPanels(ctx);
-const tabButtons = new Map();
+const panelById = new Map(panels.map((panel) => [panel.id, panel]));
+const toolboxSections = document.getElementById("toolbox-sections");
 
-function selectTab(id) {
-  for (const [tabId, button] of tabButtons) {
-    const selected = tabId === id;
-    button.setAttribute("aria-selected", selected ? "true" : "false");
-    button.tabIndex = selected ? 0 : -1;
+for (const panel of panels) {
+  toolboxSections.append(panel.section.node);
+}
+
+function focusSection(id) {
+  const panel = panelById.get(id);
+  if (!panel) return false;
+  for (const other of panels) {
+    if (other !== panel) other.section.setCollapsed(true);
   }
-  for (const panel of panels) {
-    panel.node.hidden = panel.id !== id;
-  }
-  // the chat column scrolls itself; the sidebar keeps its scroll position
+  panel.section.setCollapsed(false);
+  panel.section.node.scrollIntoView({ block: "nearest" });
+  setDockVisible("toolbox", true);
   return true;
 }
 
-for (const panel of panels) {
-  const button = el("button", {
-    class: "tab",
-    type: "button",
-    role: "tab",
-    text: panel.label,
-    "aria-selected": "false",
-    onclick: () => selectTab(panel.id),
+// ---------------------------------------------------------------------- chat
+const chatPanel = createChatPanel(ctx);
+document.getElementById("chat-column").append(chatPanel.node);
+
+// -------------------------------------------------------------------- docks
+const workspace = document.getElementById("workspace");
+const toolboxDock = document.getElementById("toolbox");
+const assistantDock = document.getElementById("assistant-dock");
+const toolboxReopen = document.getElementById("toolbox-reopen");
+const assistantReopen = document.getElementById("assistant-reopen");
+
+const dockVisibility = { toolbox: true, assistant: true };
+
+function setDockVisible(which, visible) {
+  const next = Boolean(visible);
+  dockVisibility[which] = next;
+  const dock = which === "toolbox" ? toolboxDock : assistantDock;
+  const reopen = which === "toolbox" ? toolboxReopen : assistantReopen;
+  dock.hidden = !next;
+  reopen.hidden = next;
+  workspace.classList.toggle(which === "toolbox" ? "ws-no-toolbox" : "ws-no-assistant", !next);
+  // let the viewers re-fit now that the pane size changed
+  requestAnimationFrame(() => {
+    originalViewer.render();
+    resultViewer.render();
   });
-  tabButtons.set(panel.id, button);
-  tabsHost.append(button);
-  panelsHost.append(panel.node);
+  bus.emit("status", { message: `${which === "toolbox" ? "Toolbox" : "Assistant"} ${next ? "shown" : "hidden"}` });
 }
-selectTab(panels[0].id);
 
-// -------------------------------------------------------------------- chat
-document.getElementById("chat-column").append(createChatPanel(ctx));
+document.getElementById("toolbox-collapse").addEventListener("click", () => setDockVisible("toolbox", false));
+document.getElementById("assistant-collapse").addEventListener("click", () => setDockVisible("assistant", false));
+toolboxReopen.addEventListener("click", () => setDockVisible("toolbox", true));
+assistantReopen.addEventListener("click", () => setDockVisible("assistant", true));
 
-// ------------------------------------------------------------------- chips
+// ------------------------------------------------------------------- toolbar
+const byId = (id) => document.getElementById(id);
+
+// Hide/show the result viewport (presentation only — the image stays loaded).
+let resultVisible = true;
+function setResultVisible(visible) {
+  resultVisible = Boolean(visible);
+  document.getElementById("viewer-result").hidden = !resultVisible;
+  bus.emit("status", { message: resultVisible ? "Result viewport shown" : "Result viewport hidden" });
+  requestAnimationFrame(() => originalViewer.render());
+}
+
+function withActiveViewer(action) {
+  const viewer = activeViewer();
+  if (!viewer.hasImage) {
+    toast("Load an image first — the viewport controls need something to navigate.", "warn");
+    return;
+  }
+  viewer.setActive(true);
+  action(viewer);
+}
+
+function wireToolbarButton(id, iconName, label, onClick) {
+  const node = byId(id);
+  if (!node) return;
+  node.prepend(icon(iconName, { size: 13 }));
+  node.addEventListener("click", onClick);
+  void label;
+}
+
+wireToolbarButton("tb-open", "open", "Open", () => bus.emit("open:file-request"));
+wireToolbarButton("tb-satellite", "satellite", "Satellite", () => {
+  focusSection("source");
+  bus.emit("satellite:request");
+});
+wireToolbarButton("tb-export", "download", "Export", () => bus.emit("export:request"));
+wireToolbarButton("tb-compress", "archive", "Compress", () => bus.emit("huffman:compress-request"));
+wireToolbarButton("tb-zoom-out", "zoomOut", "Zoom −", () => withActiveViewer((viewer) => viewer.zoomBy(1 / 1.25)));
+wireToolbarButton("tb-zoom-in", "zoomIn", "Zoom +", () => withActiveViewer((viewer) => viewer.zoomBy(1.25)));
+wireToolbarButton("tb-fit", "fit", "Fit", () => withActiveViewer((viewer) => viewer.fit()));
+wireToolbarButton("tb-1to1", "grid", "1:1", () => withActiveViewer((viewer) => viewer.zoomTo(1)));
+for (const [id, factor] of [["tb-zoom-25", 0.25], ["tb-zoom-50", 0.5], ["tb-zoom-100", 1]]) {
+  byId(id)?.addEventListener("click", () => withActiveViewer((viewer) => viewer.zoomTo(factor)));
+}
+
+const panToggle = toggleButton("pan", {
+  label: "Pan",
+  pressed: true,
+  onChange: (enabled) => {
+    originalViewer.setPanEnabled(enabled);
+    resultViewer.setPanEnabled(enabled);
+    bus.emit("status", { message: enabled ? "Pan tool on — drag the image to move it" : "Pan tool off" });
+  },
+});
+const pixelToggle = toggleButton("pixel", {
+  label: "Pixel",
+  pressed: true,
+  onChange: (enabled) => {
+    originalViewer.setPixelReadout(enabled);
+    resultViewer.setPixelReadout(enabled);
+    bus.emit("status", { message: enabled ? "Pixel readout on" : "Pixel readout off" });
+  },
+});
+const measureToggle = toggleButton("measure", {
+  label: "Measure",
+  pressed: false,
+  onChange: (enabled) => {
+    const viewer = activeViewer();
+    viewer.toggleDistance(enabled);
+    bus.emit("status", { message: enabled ? `Measure tool active on the ${viewer.role} viewport` : "Measure tool off" });
+  },
+});
+for (const [id, toggle] of [["tb-pan", panToggle], ["tb-pixel", pixelToggle], ["tb-measure", measureToggle]]) {
+  byId(id).replaceWith(toggle.node);
+  toggle.node.id = id;
+}
+
+// the viewer's own Distance button keeps the toolbar tool in step
+bus.on("viewer:distance-mode", ({ role, enabled }) => {
+  if (role !== activeRole) return;
+  if (measureToggle.isPressed() !== enabled) measureToggle.setPressed(enabled);
+});
+
+byId("tb-toggle-toolbox").addEventListener("click", () => setDockVisible("toolbox", !dockVisibility.toolbox));
+byId("tb-toggle-assistant").addEventListener("click", () => setDockVisible("assistant", !dockVisibility.assistant));
+byId("tb-toggle-toolbox").prepend(icon("panelLeft", { size: 13 }));
+byId("tb-toggle-assistant").prepend(icon("panelRight", { size: 13 }));
+byId("tb-undo")?.prepend(icon("undo", { size: 13 }));
+byId("tb-redo")?.prepend(icon("redo", { size: 13 }));
+
+// ------------------------------------------------------------------ shortcuts
+function exportCurrent() {
+  const active = activeImage(state);
+  if (!active) {
+    toast("Load or fetch an image first.", "warn");
+    return;
+  }
+  bus.emit("export:request");
+}
+
+const shortcuts = [
+  { key: "o", ctrl: true, run: () => bus.emit("open:file-request") },
+  { key: "s", ctrl: true, run: () => exportCurrent() },
+  { key: "+", run: () => withActiveViewer((viewer) => viewer.zoomBy(1.25)) },
+  { key: "=", run: () => withActiveViewer((viewer) => viewer.zoomBy(1.25)) },
+  { key: "-", run: () => withActiveViewer((viewer) => viewer.zoomBy(1 / 1.25)) },
+  { key: "0", run: () => withActiveViewer((viewer) => viewer.fit()) },
+  { key: "1", run: () => withActiveViewer((viewer) => viewer.zoomTo(1)) },
+  { key: "m", run: () => withActiveViewer((viewer) => viewer.toggleDistance()) },
+  { key: "p", run: () => pixelToggle.setPressed(!pixelToggle.isPressed()) },
+  { key: "y", run: () => syncToggle.setPressed(!syncToggle.isPressed()) },
+];
+
+window.addEventListener("keydown", (event) => {
+  const target = event.target;
+  const typing = target instanceof HTMLElement
+    && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+  if (typing) return;
+  const ctrl = event.ctrlKey || event.metaKey;
+  for (const shortcut of shortcuts) {
+    if (shortcut.key !== event.key.toLowerCase()) continue;
+    if (Boolean(shortcut.ctrl) !== ctrl) continue;
+    event.preventDefault();
+    shortcut.run();
+    return;
+  }
+});
+
+// -------------------------------------------------------------------- menus
+const runOperation = (operation) => () => {
+  focusSection("filters");
+  panelById.get("filters")?.actions?.run(operation);
+};
+
+const menuBar = createMenuBar([
+  {
+    label: "File",
+    items: () => [
+      { label: "Open image…", icon: "open", shortcut: "Ctrl+O", onClick: () => bus.emit("open:file-request") },
+      { label: "Fetch Sentinel-2 tile…", icon: "satellite", onClick: () => { focusSection("source"); bus.emit("satellite:request"); } },
+      { separator: true },
+      {
+        label: "Export current image (PNG)…",
+        icon: "download",
+        shortcut: "Ctrl+S",
+        disabled: !activeImage(state),
+        reason: "load an image first",
+        onClick: exportCurrent,
+      },
+      { label: "Compress to .gch (GCH2)…", icon: "archive", onClick: () => bus.emit("huffman:compress-request") },
+      { label: "Decompress a .gch…", icon: "file", onClick: () => { focusSection("files"); bus.emit("huffman:decompress-request"); } },
+      { separator: true },
+      { label: "Undo", icon: "undo", disabled: true, reason: "not implemented" },
+      { label: "Redo", icon: "redo", disabled: true, reason: "not implemented" },
+      { separator: true },
+      {
+        label: "New session",
+        icon: "route",
+        onClick: () => byId("new-session").click(),
+      },
+      { label: "Recent files", icon: "file", disabled: true, reason: "not implemented" },
+    ],
+  },
+  {
+    label: "View",
+    items: () => [
+      { label: "Fit to view", icon: "fit", shortcut: "0", onClick: () => withActiveViewer((v) => v.fit()) },
+      { label: "Actual size (100%)", icon: "grid", shortcut: "1", onClick: () => withActiveViewer((v) => v.zoomTo(1)) },
+      { label: "Zoom in", icon: "zoomIn", shortcut: "+", onClick: () => withActiveViewer((v) => v.zoomBy(1.25)) },
+      { label: "Zoom out", icon: "zoomOut", shortcut: "−", onClick: () => withActiveViewer((v) => v.zoomBy(1 / 1.25)) },
+      { label: "Zoom 25%", onClick: () => withActiveViewer((v) => v.zoomTo(0.25)) },
+      { label: "Zoom 50%", onClick: () => withActiveViewer((v) => v.zoomTo(0.5)) },
+      { separator: true },
+      { label: "Pixel readout", icon: "pixel", checked: pixelToggle.isPressed(), onClick: () => pixelToggle.setPressed(!pixelToggle.isPressed()) },
+      { label: "Pan tool", icon: "pan", checked: panToggle.isPressed(), onClick: () => panToggle.setPressed(!panToggle.isPressed()) },
+      { label: "Measure distance", icon: "measure", shortcut: "M", checked: measureToggle.isPressed(), onClick: () => withActiveViewer((v) => v.toggleDistance()) },
+      { label: "Synchronise Original ↔ Result", icon: "sync", shortcut: "Y", checked: syncToggle.isPressed(), onClick: () => syncToggle.setPressed(!syncToggle.isPressed()) },
+      { separator: true },
+      { label: "Show toolbox", icon: "panelLeft", checked: dockVisibility.toolbox, onClick: () => setDockVisible("toolbox", !dockVisibility.toolbox) },
+      { label: "Show assistant", icon: "chat", checked: dockVisibility.assistant, onClick: () => setDockVisible("assistant", !dockVisibility.assistant) },
+      { label: "Show result viewport", icon: "grid", checked: resultVisible, onClick: () => setResultVisible(!resultVisible) },
+    ],
+  },
+  {
+    label: "Processing",
+    items: () => [
+      { label: "Grayscale", icon: "filters", onClick: runOperation("grayscale") },
+      { label: "Negative", icon: "filters", onClick: runOperation("negative") },
+      { label: "Laplacian", icon: "filters", onClick: runOperation("laplacian") },
+      { separator: true },
+      { label: "Brightness…", icon: "filters", onClick: runOperation("brightness") },
+      { label: "Threshold…", icon: "filters", onClick: runOperation("threshold") },
+      { label: "Mean filter…", icon: "filters", onClick: runOperation("meanfilter") },
+      { separator: true },
+      {
+        label: "Clear result",
+        icon: "trash",
+        disabled: !state.result,
+        reason: "no result loaded",
+        onClick: () => panelById.get("filters")?.actions?.clearResult(),
+      },
+    ],
+  },
+  {
+    label: "Analysis",
+    items: () => [
+      { label: "Run K-Means…", icon: "layers", onClick: () => { focusSection("clusters"); panelById.get("clusters")?.actions?.runKMeans(); } },
+      { label: "Classification editor…", icon: "legend", onClick: () => focusSection("clusters") },
+      { separator: true },
+      { label: "Histogram & statistics", icon: "chart", onClick: () => { focusSection("analysis"); panelById.get("analysis")?.actions?.refresh(); } },
+      { separator: true },
+      { label: "Map view", icon: "map", disabled: true, reason: "planned — no map backend yet" },
+      { label: "Map legend", icon: "legend", disabled: true, reason: "planned — lives in the Clusters section for now" },
+      { label: "Map export", icon: "download", disabled: true, reason: "planned — no map backend yet" },
+    ],
+  },
+  {
+    label: "Help",
+    items: () => [
+      { label: "Keyboard shortcuts", icon: "help", onClick: () => showShortcuts() },
+      { separator: true },
+      { label: "About GeoCluster 2.0", icon: "info", onClick: () => showAbout() },
+    ],
+  },
+]);
+byId("menubar").replaceWith(menuBar.node);
+menuBar.node.id = "menubar";
+
+function showShortcuts() {
+  toast(
+    "Shortcuts: Ctrl+O open · Ctrl+S export PNG · +/− zoom · 0 fit · 1 actual size · M measure · P pixel readout · Y sync viewers",
+    "",
+    { timeout: 12000 },
+  );
+}
+
+function showAbout() {
+  toast(
+    `GeoCluster 2.0 web workstation · API ${apiBase} · frontend at ${window.location.origin}. Image processing runs on the API; the viewports, readout and measurement are client-side.`,
+    "",
+    { timeout: 14000 },
+  );
+}
+
+// -------------------------------------------------------------------- chips
 const chipHost = document.getElementById("status-chips");
 
 function renderChips() {
   const nodes = [];
-  nodes.push(chip(`API ${apiBase}`, "", "The API base URL this page was built with"));
+  nodes.push(chip(`API ${apiBase}`, state.health ? "ok" : "bad", "The API base URL this page was built with"));
   if (state.sessionId) {
     nodes.push(chip(`session ${state.sessionId.slice(0, 8)}… · ${state.ttlMinutes ?? "?"} min`, "", `Max ${state.maxImages ?? "?"} images per session`));
   } else {
@@ -137,25 +453,14 @@ function renderChips() {
   }
   const health = state.health;
   if (health) {
-    nodes.push(
-      chip(
-        `AI ${health.ai_configured ? "ready" : "not configured"}`,
-        health.ai_configured ? "ok" : "warn",
-        "FIREWORKS_API_KEY on the server",
-      ),
-    );
-    nodes.push(
-      chip(
-        `Satellite ${health.satellite_configured ? "ready" : "not configured"}`,
-        health.satellite_configured ? "ok" : "warn",
-        "Copernicus credentials on the server",
-      ),
-    );
+    nodes.push(chip(`AI ${health.ai_configured ? "ready" : "not configured"}`, health.ai_configured ? "ok" : "warn", "FIREWORKS_API_KEY on the server"));
+    nodes.push(chip(`Satellite ${health.satellite_configured ? "ready" : "not configured"}`, health.satellite_configured ? "ok" : "warn", "Copernicus credentials on the server"));
     nodes.push(chip(`max ${health.max_image_megapixels} MP`, "", "MAX_IMAGE_MEGAPIXELS"));
   } else {
     nodes.push(chip("API unreachable", "bad", "Could not reach GET /health"));
   }
   setChildren(chipHost, nodes);
+  updateStatusBar();
 }
 
 // ------------------------------------------------------------------ banner
@@ -175,6 +480,7 @@ function setBanner(message, kind = "") {
 function report(error, prefix) {
   if (error instanceof SessionExpiredError) {
     toast(error.message, "warn", { timeout: 15000 });
+    bus.emit("status", { message: "Session expired — new session created, re-upload the image" });
     return;
   }
   if (error instanceof ApiError && error.isNetwork) {
@@ -183,8 +489,86 @@ function report(error, prefix) {
   toast(`${prefix}: ${humanizeError(error, { apiBase })}`, "bad", { timeout: 12000 });
 }
 
+// --------------------------------------------------------------- status bar
+const sb = {
+  message: byId("sb-message"),
+  source: byId("sb-source"),
+  size: byId("sb-size"),
+  mode: byId("sb-mode"),
+  zoom: byId("sb-zoom"),
+  cursor: byId("sb-cursor"),
+  pixel: byId("sb-pixel"),
+  viewer: byId("sb-viewer"),
+  session: byId("sb-session"),
+  api: byId("sb-api"),
+};
+
+let statusMessage = "";
+let statusTimer = null;
+
+function setStatusMessage(text, { sticky = false } = {}) {
+  statusMessage = text ?? "";
+  sb.message.textContent = statusMessage;
+  if (statusTimer) clearTimeout(statusTimer);
+  if (!sticky && statusMessage) {
+    statusTimer = setTimeout(() => {
+      sb.message.textContent = "";
+      statusMessage = "";
+    }, 12000);
+  }
+}
+
+bus.on("status", ({ message } = {}) => setStatusMessage(message));
+
+function channelLabel(info) {
+  if (!info) return "";
+  if (info.channels === 1) return "GRAY";
+  if (info.channels === 2) return "GRAY+A";
+  if (info.channels === 3) return "RGB";
+  if (info.channels === 4) return "RGBA";
+  return `${info.channels} ch`;
+}
+
+function updateStatusBar() {
+  const active = activeViewer();
+  const viewer = active.hasImage ? active : (activeImage(state) ? (active === originalViewer ? resultViewer : originalViewer) : null);
+  const info = viewer?.hasImage
+    ? (viewer === originalViewer ? state.original?.info : state.result?.info) ?? null
+    : null;
+  const shown = viewer?.image ? { width: viewer.image.width, height: viewer.image.height } : null;
+
+  sb.viewer.textContent = viewer?.hasImage ? `Viewport: ${viewer === originalViewer ? "Original" : "Result"}` : "Viewport: —";
+  sb.size.textContent = shown ? `${shown.width} × ${shown.height} px` : "—";
+  sb.mode.textContent = channelLabel(info);
+  sb.zoom.textContent = viewer?.hasImage ? `Zoom ${Math.round(viewer.scale * 100)}%` : "Zoom —";
+  sb.source.textContent = viewer !== originalViewer && state.result?.info
+    ? `Result: ${state.result.info.source ?? "derived"}`
+    : state.original?.info
+      ? `Working: ${state.original.info.source ?? "upload"}`
+      : "";
+  sb.session.textContent = state.sessionId
+    ? `Session ${state.sessionId.slice(0, 8)}… · ${state.ttlMinutes ?? "?"} min · max ${state.maxImages ?? "?"}`
+    : "Session —";
+  sb.api.textContent = state.health ? `API ${apiBase} ●` : `API ${apiBase} ○`;
+  sb.api.className = `sb-item ${state.health ? "ok" : "bad"}`;
+}
+
+bus.on("viewer:camera", ({ role }) => {
+  if (role === activeRole) updateStatusBar();
+});
+bus.on("viewer:cursor", ({ role, inside, x, y, r, g, b, gray }) => {
+  if (role !== activeRole) return;
+  if (!inside) {
+    sb.cursor.textContent = "";
+    sb.pixel.textContent = "";
+    return;
+  }
+  sb.cursor.textContent = `X: ${x}  Y: ${y}`;
+  sb.pixel.textContent = r === undefined ? `Gray: ${gray}` : `RGB: ${r},${g},${b}`;
+});
+
 // ------------------------------------------------------------- session ops
-document.getElementById("new-session").addEventListener("click", async () => {
+byId("new-session").addEventListener("click", async () => {
   try {
     await session.restart();
     toast("New session started — upload your image again.", "ok");
@@ -196,14 +580,16 @@ document.getElementById("new-session").addEventListener("click", async () => {
 
 bus.on("session", () => renderChips());
 bus.on("health", () => renderChips());
-bus.on("busy", () => renderChips());
+bus.on("busy", () => updateStatusBar());
 
 // -------------------------------------------------------------- bootstrap
 async function bootstrap() {
   renderChips();
+  updateStatusBar();
   try {
     await session.refreshHealth();
     setBanner("");
+    updateStatusBar();
   } catch (error) {
     setBanner(humanizeError(error, { apiBase }), "bad");
   }
@@ -213,9 +599,23 @@ async function bootstrap() {
     report(error, "Could not start a session");
   }
   renderChips();
+  setStatusMessage("Ready — open an image or fetch a Sentinel-2 tile.", { sticky: true });
 }
 
 bootstrap();
 
-// expose a tiny debug handle (no secrets involved)
-window.geocluster = { api, session, state, bus, selectTab };
+// debug handle (no secrets involved)
+window.geocluster = {
+  api,
+  session,
+  state,
+  bus,
+  viewers: { original: originalViewer, result: resultViewer },
+  selectTab: focusSection,
+  selectSection: focusSection,
+  setDockVisible,
+  setResultVisible,
+  toggles: { sync: syncToggle, pan: panToggle, pixel: pixelToggle, measure: measureToggle },
+  ui: { toast, downloadBlob, el, chip },
+  version: "2.0",
+};

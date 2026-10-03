@@ -1,5 +1,5 @@
 /**
- * Chat panel: the AI assistant plus the rule-based router commands.
+ * Assistant dock: the AI assistant plus the rule-based router commands.
  *
  * Rendering rules (deliberate):
  *   - replies are inserted with textContent, so LaTeX like \[ ... \] shows up
@@ -7,19 +7,21 @@
  *   - a 502 from the provider becomes a friendly message, not a raw error;
  *   - router commands are executed even when there is no model reply, because
  *     "Show me F-8 imagery" and friends need no language model at all.
+ *
+ * The dock is compact on purpose: the image workspace keeps priority, and the
+ * conversation scrolls inside its own column.
  */
 
 import { ApiError, humanizeError } from "../errors.js";
 import { activeImage } from "../state.js";
 import { describeCommand, executeCommands } from "../commands.js";
-import { button, el, toast } from "../ui.js";
+import { button, el } from "../ui.js";
 
 const HINTS = [
-  "Show me F-8 imagery",
-  "Run k-means",
-  "Make it negative",
-  "Histogram",
-  "Compress this image",
+  { label: "Histogram", text: "Show histogram" },
+  { label: "K-Means", text: "Run k-means" },
+  { label: "Satellite", text: "Show me F-8 imagery" },
+  { label: "Compress", text: "Compress this image" },
 ];
 
 export function createChatPanel(ctx) {
@@ -27,8 +29,8 @@ export function createChatPanel(ctx) {
 
   const log = el("div", { class: "chat-log" });
   const input = el("textarea", {
-    rows: 2,
-    placeholder: 'Ask a question or type a command — e.g. "Show me F-8 imagery"',
+    rows: 1,
+    placeholder: "Ask a question or type a command…",
     "aria-label": "Message",
   });
   const sendButton = button("Send", () => send(), { variant: "primary" });
@@ -141,10 +143,10 @@ export function createChatPanel(ctx) {
 
   const hintRow = el("div", { class: "chat-hints" },
     HINTS.map((hint) =>
-      button(hint, () => {
-        input.value = hint;
+      button(hint.label, () => {
+        input.value = hint.text;
         send();
-      }, { size: "small", variant: "ghost" }),
+      }, { size: "small", variant: "ghost", title: hint.text }),
     ),
   );
 
@@ -155,10 +157,6 @@ export function createChatPanel(ctx) {
       "Replies are shown as plain text (math is not rendered).",
   );
 
-  return el("div", { class: "chat surface" }, [
-    el("div", { class: "surface-head" }, el("h2", { text: "Assistant" })),
-    log,
-    hintRow,
-    form,
-  ]);
+  const node = el("div", { class: "assistant" }, [log, hintRow, form]);
+  return { node, send, append };
 }

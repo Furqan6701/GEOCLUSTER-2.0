@@ -1,5 +1,5 @@
 /**
- * Clusters panel: K-Means and the classify (recolor + legend) step.
+ * Clusters section: K-Means and the classify (recolor + legend) step.
  *
  * K-Means mirrors the desktop: k clusters over the grayscale intensities,
  * with the algorithm returning ranges, centroids and per-cluster counts.
@@ -11,7 +11,7 @@
 import { humanizeError } from "../errors.js";
 import { SessionExpiredError } from "../session.js";
 import { activeImage } from "../state.js";
-import { button, el, labelled, numberInput, setChildren, swatch, table, toast } from "../ui.js";
+import { button, createSection, el, numberInput, setChildren, swatch, table, toast, toolGroup } from "../ui.js";
 
 export function createClustersPanel(ctx) {
   const { session, bus, state } = ctx;
@@ -19,9 +19,10 @@ export function createClustersPanel(ctx) {
   const kInput = numberInput({ value: 5, min: 2, max: 20, step: 1 });
   const iterInput = numberInput({ value: 30, min: 1, max: 200, step: 1 });
   const runButton = button("Run K-Means", runKMeans, { variant: "primary", size: "small" });
-  const summaryHost = el("div", { class: "card" }, el("p", { class: "muted", text: "No clustering yet." }));
-  const editorHost = el("div", { class: "card" }, el("p", { class: "muted", text: "Run K-Means to edit cluster ranges and colours." }));
-  const legendHost = el("div", { class: "card" }, el("p", { class: "muted", text: "The legend appears after classification." }));
+  const runStatus = el("span", { class: "muted", text: "" });
+  const summaryHost = el("div", {}, el("p", { class: "empty-note", text: "No clustering yet." }));
+  const editorHost = el("div", {}, el("p", { class: "empty-note", text: "Run K-Means to edit cluster ranges and colours." }));
+  const legendHost = el("div", {}, el("p", { class: "empty-note", text: "The legend appears after classification." }));
 
   let editorRows = [];
 
@@ -39,8 +40,9 @@ export function createClustersPanel(ctx) {
       state.kmeans = { ...result, sourceImageId: active.id, sourceInfo: active.info };
       renderSummary(result);
       renderEditor(result);
-      setChildren(legendHost, el("p", { class: "muted", text: "Adjust the table below, then press Classify." }));
+      setChildren(legendHost, el("p", { class: "empty-note", text: "Adjust the table below, then press Classify." }));
       toast(`K-Means finished in ${result.iterations} iteration(s)${result.converged ? " (converged)" : ""}.`, "ok");
+      bus.emit("status", { message: `K-Means k=${result.k} · ${result.iterations} iterations${result.converged ? " · converged" : ""}` });
     } catch (error) {
       report(error, "K-Means failed");
     } finally {
@@ -51,18 +53,17 @@ export function createClustersPanel(ctx) {
   function renderSummary(result) {
     const ranges = result.ranges ?? [];
     setChildren(summaryHost, [
-      el("h3", { text: "Last run" }),
-      el("div", { class: "row tight" }, [
+      el("div", { class: "chip-row", style: { marginBottom: "5px" } }, [
         el("span", { class: "badge", text: `k = ${result.k}` }),
         el("span", { class: `badge ${result.converged ? "ok" : "warn"}`, text: result.converged ? "converged" : "max iterations" }),
-        el("span", { class: "badge", text: `${result.iterations} iterations` }),
+        el("span", { class: "badge", text: `${result.iterations} iters` }),
       ]),
-      el("p", { class: "muted", text: `Centroids: ${(result.centroids ?? []).map((value) => Number(value).toFixed(2)).join(", ")}` }),
-      table(
-        ["Cluster", { text: "Min", num: true }, { text: "Max", num: true }, { text: "Pixels", num: true }],
+      el("div", { class: "table-wrap" }, table(
+        [{ text: "#", num: true }, { text: "Min", num: true }, { text: "Max", num: true }, { text: "Pixels", num: true }],
         ranges.map((range) => [range.cluster, range.min, range.max, range.count]),
-      ),
-      el("div", { class: "row", style: { marginTop: "8px" } }, [
+      )),
+      el("p", { class: "note", text: `Centroids: ${(result.centroids ?? []).map((value) => Number(value).toFixed(2)).join(", ")}` }),
+      el("div", { class: "row", style: { marginTop: "6px" } }, [
         button("Show clustered image", () => showImage(result.display_image_id, "kmeans display"), { size: "small" }),
         button("Show label map", () => showImage(result.labels_image_id, "kmeans labels"), { size: "small" }),
       ]),
@@ -98,13 +99,15 @@ export function createClustersPanel(ctx) {
     ]);
 
     setChildren(editorHost, [
-      el("h3", { text: "Classify clusters" }),
-      table(["#", { text: "Min", num: true }, { text: "Max", num: true }, "Land cover", "Colour", { text: "Pixels", num: true }], rows),
-      el("div", { class: "row", style: { marginTop: "8px" } }, [
+      el("div", { class: "table-wrap" }, table(
+        [{ text: "#", num: true }, { text: "Min", num: true }, { text: "Max", num: true }, "Land cover", "Colour", { text: "Pixels", num: true }],
+        rows,
+      )),
+      el("div", { class: "row", style: { marginTop: "6px" } }, [
         button("Classify", classify, { variant: "primary", size: "small" }),
         button("Reset to algorithm values", () => state.kmeans && renderEditor(state.kmeans), { size: "small", variant: "ghost" }),
       ]),
-      el("p", { class: "muted", text: "Ranges are inclusive; pixels outside every range stay black." }),
+      el("p", { class: "note", text: "Ranges are inclusive; pixels outside every range stay black." }),
     ]);
   }
 
@@ -115,7 +118,7 @@ export function createClustersPanel(ctx) {
     };
     input.addEventListener("input", sync);
     sync();
-    return el("span", { class: "row tight", style: { alignItems: "center", gap: "4px" } }, [input, preview]);
+    return el("span", { class: "row tight", style: { alignItems: "center", gap: "3px" } }, [input, preview]);
   }
 
   async function classify() {
@@ -142,6 +145,7 @@ export function createClustersPanel(ctx) {
       session.useAsResultId(result.image_id, { ...(active.info ?? {}), source: "classify" });
       renderLegend(result.legend ?? []);
       toast("Classification applied.", "ok");
+      bus.emit("status", { message: `Classified ${Object.keys(ranges).length} clusters` });
     } catch (error) {
       report(error, "Classification failed");
     } finally {
@@ -151,8 +155,7 @@ export function createClustersPanel(ctx) {
 
   function renderLegend(legend) {
     setChildren(legendHost, [
-      el("h3", { text: "Legend" }),
-      table(
+      el("div", { class: "table-wrap" }, table(
         ["", "Cluster", { text: "Range", num: true }, { text: "Pixels", num: true }, { text: "%", num: true }],
         legend.map((entry) => [
           swatch(entry.color),
@@ -161,14 +164,15 @@ export function createClustersPanel(ctx) {
           entry.count,
           entry.percentage,
         ]),
-      ),
-      el("p", { class: "muted", text: `Total classified pixels: ${legend.reduce((sum, entry) => sum + entry.count, 0).toLocaleString()}` }),
+      )),
+      el("p", { class: "note", text: `Total classified pixels: ${legend.reduce((sum, entry) => sum + entry.count, 0).toLocaleString()}` }),
     ]);
   }
 
   function setBusy(busy) {
     runButton.disabled = busy;
     runButton.textContent = busy ? "Working…" : "Run K-Means";
+    runStatus.textContent = busy ? "clustering…" : "";
   }
 
   function report(error, prefix) {
@@ -182,28 +186,33 @@ export function createClustersPanel(ctx) {
   bus.on("image:loaded", ({ role }) => {
     if (role === "original") {
       state.kmeans = null;
-      setChildren(summaryHost, el("p", { class: "muted", text: "No clustering yet." }));
-      setChildren(editorHost, el("p", { class: "muted", text: "Run K-Means to edit cluster ranges and colours." }));
-      setChildren(legendHost, el("p", { class: "muted", text: "The legend appears after classification." }));
+      setChildren(summaryHost, el("p", { class: "empty-note", text: "No clustering yet." }));
+      setChildren(editorHost, el("p", { class: "empty-note", text: "Run K-Means to edit cluster ranges and colours." }));
+      setChildren(legendHost, el("p", { class: "empty-note", text: "The legend appears after classification." }));
     }
   });
 
-  const panel = el("div", { class: "panel", id: "panel-clusters", hidden: true }, [
-    el("div", { class: "card" }, [
-      el("h3", { text: "K-Means" }),
-      el("div", { class: "row" }, [
-        labelled("Clusters (K)", kInput),
-        labelled("Max iterations", iterInput),
+  const section = createSection({
+    id: "clusters",
+    title: "Clusters",
+    iconName: "layers",
+    body: [
+      toolGroup("K-Means", [
+        el("div", { class: "row center" }, [
+          el("div", { class: "field", style: { marginBottom: "0" } }, [el("label", { text: "Clusters (K)" }), kInput]),
+          el("div", { class: "field", style: { marginBottom: "0" } }, [el("label", { text: "Max iterations" }), iterInput]),
+          runButton,
+          runStatus,
+        ]),
+        el("p", { class: "note", text: "Clusters the grayscale intensities and returns labels, centroids and ranges." }),
       ]),
-      runButton,
-      el("p", { class: "muted", text: "Clusters the grayscale intensities and returns labels, centroids and ranges." }),
-    ]),
-    summaryHost,
-    editorHost,
-    legendHost,
-  ]);
+      toolGroup("Last run", [summaryHost]),
+      toolGroup("Classification editor", [editorHost]),
+      toolGroup("Legend", [legendHost]),
+    ],
+  });
 
-  return { id: "clusters", label: "Clusters", node: panel };
+  return { id: "clusters", label: "Clusters", section, actions: { runKMeans, classify } };
 }
 
 function rgbToHex(color) {
