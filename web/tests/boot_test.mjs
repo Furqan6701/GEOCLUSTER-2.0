@@ -953,6 +953,59 @@ if (!bootFailed) {
   window.document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
   check(document.querySelectorAll("#menubar .menu-popup:not([hidden])").length === 0, "Escape closes the menu");
 
+  // ---------------------------------------- 8b. STEP 6: no stub entries left
+  {
+    const menuLabelsAll = ["File", "View", "Processing", "Analysis", "Help"];
+    const disabledWithoutReason = [];
+    const stubWords = [];
+    const labels = [];
+    for (const menuLabel of menuLabelsAll) {
+      const button = [...document.querySelectorAll("#menubar .menu-button")]
+        .find((node) => node.textContent.trim() === menuLabel);
+      button.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      const items = [...document.querySelectorAll("#menubar .menu-popup:not([hidden]) .menu-item")];
+      for (const item of items) {
+        const text = (item.querySelector(".menu-item-label")?.textContent ?? "").trim();
+        labels.push(`${menuLabel}/${text}`);
+        if (item.disabled && !(item.title || "").trim()) disabledWithoutReason.push(`${menuLabel}/${text}`);
+        if (/not implemented|planned|coming soon|todo/i.test(`${text} ${item.title ?? ""}`)) {
+          stubWords.push(`${menuLabel}/${text}`);
+        }
+      }
+      window.document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    }
+    check(disabledWithoutReason.length === 0,
+      "every disabled menu entry explains why it is unavailable", disabledWithoutReason.join(", "));
+    check(stubWords.length === 0,
+      "no menu entry advertises an unimplemented feature any more", stubWords.join(", "));
+    check(!labels.some((label) => /Recent files/i.test(label)),
+      "the never-implemented 'Recent files' entry is gone", labels.filter((l) => /recent/i.test(l)).join(", "));
+
+    // what replaced it is a real action: reveal the Source section and its list
+    const fileButton = [...document.querySelectorAll("#menubar .menu-button")]
+      .find((node) => node.textContent.trim() === "File");
+    fileButton.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    const sessionItem = [...document.querySelectorAll("#menubar .menu-popup:not([hidden]) .menu-item")]
+      .find((node) => (node.querySelector(".menu-item-label")?.textContent ?? "").startsWith("Session images"));
+    check(sessionItem != null && !sessionItem.disabled,
+      "the File menu offers the session image list instead", sessionItem?.title);
+    sessionItem.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    const sourceBody = [...document.querySelectorAll("#toolbox-sections .section")]
+      .find((node) => /Source/.test(node.querySelector(".section-title")?.textContent ?? ""));
+    check(sourceBody != null && !sourceBody.hidden, "it opens the Source section");
+    check(/session/i.test(document.getElementById("toolbox-sections").textContent),
+      "the Source section lists the session's images");
+
+    // toolbar buttons: disabled ones must say what they need
+    const disabledToolbar = [...document.querySelectorAll("#toolbar button")].filter((node) => node.disabled);
+    check(disabledToolbar.every((node) => (node.title || "").trim().length > 0),
+      "every disabled toolbar button explains itself",
+      disabledToolbar.map((node) => `${node.id}:${node.title}`).join(" | "));
+    check([...document.querySelectorAll("#toolbar button")].every((node) =>
+      !/not implemented|planned|coming soon/i.test(node.title ?? "")),
+      "no toolbar tooltip mentions an unimplemented feature");
+  }
+
   const viewers = window.geocluster.viewers;
   viewers.original.setActive(true);
 
@@ -1149,6 +1202,8 @@ if (!bootFailed) {
 
   const newest = history.current.imageId;
   const previous = history.entries[history.pointer - 1].imageId;
+  await until(() => history.blobFor(newest) != null, "the newest state caches its Blob",
+    { timeout: 10000 });
   check(history.blobFor(newest) != null, "the newest state kept its Blob in the browser");
 
   const undoResult = await gh.undo();

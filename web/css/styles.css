@@ -182,7 +182,6 @@ p { margin: 0; }
 .toolbar.tb-compact .tb-label { display: none; }
 .toolbar.tb-compact .tb-btn { padding: 0 5px; }
 .toolbar.tb-compact .tb-presets { display: none; }
-.disabled-stub { font-style: normal; }
 
 .chips { display: flex; flex-wrap: nowrap; gap: 5px; overflow: hidden; }
 .chip {

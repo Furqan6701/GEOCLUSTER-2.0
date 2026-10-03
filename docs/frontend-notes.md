@@ -97,10 +97,20 @@ viewport is a real product of the pipeline, not a placeholder:
   `scale` from the upload response. Without a calibration number the UI asks
   for it instead of inventing one.
 
-### Deliberately not implemented
+### Menu honesty (STEP 6)
 
-Recent files appears as a **disabled entry with a reason** instead of a fake
-button: session images are listed in the Source section instead.
+Every entry in File / View / Processing / Analysis / Help does something real.
+The never-implemented *Recent files* entry was removed and replaced by
+*Session images…*, which reveals the Source section (the list it was standing in
+for). Nothing in the menus says "not implemented", "planned" or "coming soon".
+
+Entries that are unavailable **right now** are disabled and carry the reason in
+their tooltip — e.g. Export without an image ("load, fetch or decompress an
+image first"), Clear result with no result ("there is no result yet — run a
+filter or K-Means first"), and the map entries before a classification ("run
+Classify in the Clusters section first — the map is its output"). The toolbar
+buttons explain themselves the same way, and a boot test asserts that no
+disabled entry anywhere is missing its reason.
 
 ## Serving and CORS
 

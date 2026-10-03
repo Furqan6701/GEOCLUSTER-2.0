@@ -13,6 +13,7 @@ import { SessionExpiredError } from "../session.js";
 import { button, createSection, describeImage, el, fmtBytes, icon, kv, labelled, setChildren, table, toast, toolGroup } from "../ui.js";
 
 export function createSourcePanel(ctx) {
+  // File > "Session images…" reveals this section and re-renders this list.
   const { session, bus, state } = ctx;
 
   const fileInput = el("input", {

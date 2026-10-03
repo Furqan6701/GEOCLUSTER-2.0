@@ -53,9 +53,11 @@ rather than a dashboard:
 * **Shortcuts** — `Ctrl+O` open, `Ctrl+S` export PNG, `Ctrl+Z`/`Ctrl+Y`
   undo/redo, `+`/`−` zoom, `0` fit, `1` actual size, `M` measure, `P` pixel
   readout, `Y` sync viewers.
-* **Not implemented, and visibly so** — Recent files appears as a disabled menu
-  entry with a reason (session images are listed in the Source section); there
-  are no fake buttons.
+* **No stub entries** — every menu entry does something real. Entries that are
+  unavailable *right now* (Export before an image, Clear result, the map
+  entries before a classification) are disabled and say why in their tooltip;
+  the old "Recent files" placeholder was removed in favour of
+  File → *Session images…*, which opens the Source list it stood for.
 
 ## What it does
 

@@ -270,6 +270,23 @@ def check_workstation_layout() -> None:
     check("@media (max-width: 1500px)" in css and "map-open" in css,
           "three viewports never squeeze the image panes on a laptop")
 
+    # STEP 6: nothing is left advertising an unimplemented feature
+    app_js = _js_text("js/app.js")
+    check("Recent files" not in app_js and "Recent files" not in index,
+          "the never-implemented Recent files entry is removed")
+    check("not implemented" not in app_js.lower(),
+          "no menu entry claims a feature is 'not implemented'")
+    check("disabled-stub" not in css and "disabled-stub" not in index,
+          "the disabled-stub placeholder styling is gone with the last stub")
+    check(re.search(r'label: "Session images…"', app_js) is not None,
+          "the File menu points at the real session image list instead")
+    check(re.search(r'label: "Map export \(PNG\)…"', app_js) is not None,
+          "Map export is a real menu action")
+    check(re.search(r'reason: "run Classify in the Clusters section first', app_js) is not None,
+          "the map entries that are disabled say exactly what to do first")
+    check(re.search(r'reason: "there is no result yet', app_js) is not None,
+          "Clear result explains when it is unavailable")
+
     # STEP 5: histogram options are browser-side, distance has real units
     hist_js = _js_text("js/histogram.js")
     for token in ["smoothBins", "cumulativeBins", "densityBins", "prepareBins",

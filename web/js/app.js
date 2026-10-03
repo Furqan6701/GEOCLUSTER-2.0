@@ -732,7 +732,7 @@ const menuBar = createMenuBar([
         icon: "download",
         shortcut: "Ctrl+S",
         disabled: !activeImage(state),
-        reason: "load an image first",
+        reason: "load, fetch or decompress an image first",
         onClick: exportCurrent,
       },
       { label: "Compress to .gch (GCH2)…", icon: "archive", onClick: () => bus.emit("huffman:compress-request") },
@@ -760,7 +760,15 @@ const menuBar = createMenuBar([
         icon: "route",
         onClick: () => byId("new-session").click(),
       },
-      { label: "Recent files", icon: "file", disabled: true, reason: "not implemented" },
+      {
+        label: "Session images…",
+        icon: "file",
+        note: "the Source section lists every image in this session",
+        onClick: () => {
+          focusSection("source");
+          panelById.get("source")?.actions?.renderFiles?.();
+        },
+      },
     ],
   },
   {
@@ -781,7 +789,15 @@ const menuBar = createMenuBar([
       { label: "Show toolbox", icon: "panelLeft", checked: dockVisibility.toolbox, onClick: () => setDockVisible("toolbox", !dockVisibility.toolbox) },
       { label: "Show assistant", icon: "chat", checked: dockVisibility.assistant, onClick: () => setDockVisible("assistant", !dockVisibility.assistant) },
       { label: "Show result viewport", icon: "grid", checked: resultVisible, onClick: () => setResultVisible(!resultVisible) },
-      { label: "Show map viewport", icon: "map", checked: mapVisible, disabled: !state.map, reason: "run Classify first", onClick: () => setMapVisible(!mapVisible) },
+      {
+        label: "Show map viewport",
+        icon: "map",
+        checked: mapVisible,
+        disabled: !state.map,
+        reason: "run Classify in the Clusters section first — the map is its output",
+        note: "classified image + legend",
+        onClick: () => setMapVisible(!mapVisible),
+      },
     ],
   },
   {
@@ -799,7 +815,7 @@ const menuBar = createMenuBar([
         label: "Clear result",
         icon: "trash",
         disabled: !state.result,
-        reason: "no result loaded",
+        reason: "there is no result yet — run a filter or K-Means first",
         onClick: () => panelById.get("filters")?.actions?.clearResult(),
       },
     ],
