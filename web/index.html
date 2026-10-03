@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>GeoCluster 2.0 — Web Console</title>
+    <link rel="stylesheet" href="css/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">GC</span>
+        <div>
+          <h1>GeoCluster <span>2.0</span></h1>
+          <p class="brand-sub">Web console</p>
+        </div>
+      </div>
+      <div class="chips" id="status-chips"></div>
+      <div class="topbar-actions">
+        <button id="new-session" class="btn ghost" type="button">New session</button>
+      </div>
+    </header>
+
+    <div id="banner" class="banner" hidden></div>
+
+    <main class="layout">
+      <section class="sidebar">
+        <nav class="tabs" id="tabs" role="tablist" aria-label="Tools"></nav>
+        <div class="tabpanels" id="tabpanels"></div>
+      </section>
+
+      <section class="stage" id="stage">
+        <div class="viewer-slot" id="viewer-original"></div>
+        <div class="viewer-slot" id="viewer-result"></div>
+      </section>
+
+      <aside class="chat-column" id="chat-column" aria-label="GeoCluster assistant"></aside>
+    </main>
+
+    <div class="toasts" id="toasts" aria-live="polite"></div>
+
+    <noscript>
+      <p class="noscript">The GeoCluster web console needs JavaScript enabled.</p>
+    </noscript>
+
+    <script type="module" src="js/app.js"></script>
+  </body>
+</html>
