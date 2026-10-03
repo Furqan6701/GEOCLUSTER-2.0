@@ -351,6 +351,24 @@ def check_workstation_layout() -> None:
     check("setPreviewCanvas" in viewer_js and "clearPreview" in viewer_js and "previewBadge" in viewer_js,
           "the Viewer can show and drop an uncommitted preview")
 
+    # Clusters panel (redesign): one editor table, no Last run / legend blocks
+    clusters_js = _js_text("js/panels/clusters.js")
+    check("const iterInput" not in clusters_js and "Max iterations" not in clusters_js,
+          "the Clusters panel has no Max iterations field")
+    check("KMEANS_MAX_ITER = 100" in clusters_js, "K-Means always sends max_iter=100")
+    check(clusters_js.count('toolGroup("') == 2,
+          "the Clusters panel has two groups (K-Means + one editor)",
+          str(clusters_js.count('toolGroup("')))
+    for gone in ["Last run", "Centroids", 'toolGroup("Legend"', "renderSummary", "renderLegend", "legendHost"]:
+        check(gone not in clusters_js, f"the removed Clusters block is gone: {gone}")
+    for kept in ["% of pixels", "Land cover", "cluster-actions", "Reset ranges",
+                 "Show clustered image", "Show label map"]:
+        check(kept in clusters_js, f"the Clusters panel keeps {kept}")
+    check("RESULT_VIEWS" in clusters_js and "aria-pressed" in clusters_js,
+          "the two result buttons are one aria-pressed two-option toggle")
+    for token in [".segmented", ".cluster-actions", ".cluster-bound", ".cluster-name", ".cluster-share"]:
+        check(token in css, f"the Clusters styling exists: {token}")
+
     # STEP 5: histogram options are browser-side, distance has real units
     hist_js = _js_text("js/histogram.js")
     for token in ["smoothBins", "cumulativeBins", "densityBins", "prepareBins",

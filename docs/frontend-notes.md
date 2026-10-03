@@ -212,6 +212,13 @@ message. Raw JSON is never displayed.
   ("The AI assistant is unavailable right now…") and still runs any commands
   that came back with the same message. A missing key (`503`) gets its own
   message pointing at the commands that work without the model.
+* The Clusters panel is one editor table (Color / Land cover / Min / Max /
+  % of pixels) with **Classify** and **Reset ranges**; the Last run table, the
+  centroid line, the separate legend block and every hint line are gone. The
+  two K-Means result buttons are a single two-option toggle
+  ("Clustered image" / "Label map"), and a run shows the clustered image
+  immediately. Max iterations is not user-facing: the panel always sends
+  `max_iter=100` and K is limited to 2..10.
 * Operations triggered from the chat carry no numbers, so documented defaults
   are used and announced in the chat log: `kmeans {k: 5, max_iter: 100}`,
   `meanfilter {window: 3}`, `threshold {value: 128}`, `brightness {value: 20}`.

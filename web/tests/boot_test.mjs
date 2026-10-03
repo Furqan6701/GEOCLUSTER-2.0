@@ -635,16 +635,97 @@ if (!bootFailed) {
   check(Boolean(kmeans), "K-Means response stored");
   check(kmeans?.k === 5, "K-Means used k=5", String(kmeans?.k));
   check(kmeans?.ranges?.length === 5, "five cluster ranges returned", String(kmeans?.ranges?.length));
-  const rangeRows = [...document.querySelectorAll("#toolbox-sections table.grid tr")]
-    .map((row) => [...row.querySelectorAll("td")].map((cell) => cell.textContent.trim()))
-    .filter((cells) => cells.length === 4);
+  const clusterSection = document.querySelector("#section-clusters");
+  const editorTable = clusterSection.querySelector("table.cluster-table");
+  const editorRows = [...(editorTable?.querySelectorAll("tbody tr") ?? [])];
   const verified = [["0", "80"], ["81", "117"], ["118", "155"], ["156", "194"], ["195", "255"]];
-  const shown = rangeRows.map((cells) => [cells[1], cells[2]]);
+  const shown = editorRows.map((row) => {
+    const bounds = [...row.querySelectorAll('input[type="number"]')].map((input) => input.value);
+    return bounds;
+  });
   check(JSON.stringify(shown) === JSON.stringify(verified),
-    "the ranges table shows the verified sample.jpg min/max values", JSON.stringify(shown));
-  check(rangeRows.every((cells, index) => cells[0] === String(index)),
-    "ranges table lists clusters in order", JSON.stringify(rangeRows.map((cells) => cells[0])));
+    "the editor table shows the verified sample.jpg min/max values", JSON.stringify(shown));
   check(Object.keys(kmeans?.assignments ?? {}).length === 5, "assignments received for every cluster");
+
+  // ---------------------------------------- 3a. Clusters panel (STEP 2)
+  {
+    const tableCount = clusterSection.querySelectorAll("table.grid").length;
+    check(tableCount === 1, "the Clusters section has exactly ONE table", String(tableCount));
+    const headers = [...(editorTable?.querySelectorAll("thead th") ?? [])].map((node) => node.textContent.trim());
+    check(JSON.stringify(headers) === JSON.stringify(["Color", "Land cover", "Min", "Max", "% of pixels"]),
+      "the table columns are Color / Land cover / Min / Max / % of pixels", JSON.stringify(headers));
+    check(editorRows.length === 5, "one row per cluster", String(editorRows.length));
+    check(editorRows.every((row) =>
+      row.querySelectorAll('input[type="color"]').length === 1 &&
+      row.querySelectorAll('input[type="text"]').length === 1 &&
+      row.querySelectorAll('input[type="number"]').length === 2),
+      "each row has ONE colour picker, a name field and two bounds");
+    check(editorRows.every((row) => row.dataset.cluster != null),
+      "rows are labelled with their cluster number");
+    const shares = editorRows.map((row) => row.querySelector(".cluster-share")?.textContent ?? "");
+    const shareValues = shares.map((text) => Number.parseFloat(text));
+    check(shares.every((text) => /%/.test(text)) && shareValues.every((value) => Number.isFinite(value)),
+      "every row shows a percentage of pixels", shares.join(", "));
+    check(Math.abs(shareValues.reduce((sum, value) => sum + value, 0) - 100) < 1.5,
+      "the percentages add up to ~100%", String(shareValues.reduce((sum, value) => sum + value, 0)));
+
+    // the removed blocks are gone, and no hint lines are left
+    const text = clusterSection.textContent;
+    check(!/Last run|Centroids|Total classified pixels/i.test(text),
+      "the Last run table, the centroid line and the legend block are gone", text.slice(0, 160));
+    check(clusterSection.querySelectorAll(".note, .hint-line").length === 0,
+      "the Clusters section has no hint lines",
+      [...clusterSection.querySelectorAll(".note, .hint-line")].map((n) => n.textContent).join(" | "));
+
+    // the two former buttons are one two-option toggle
+    const toggle = clusterSection.querySelector(".segmented");
+    const options = [...(toggle?.querySelectorAll("button") ?? [])];
+    check(options.length === 2, "the result view is a two-option toggle", String(options.length));
+    check(options.map((node) => node.textContent.trim()).join("|") === "Clustered image|Label map",
+      "the toggle options are the clustered image and the label map",
+      options.map((node) => node.textContent.trim()).join("|"));
+    check(options.filter((node) => node.getAttribute("aria-pressed") === "true").length === 1,
+      "exactly one option is active",
+      options.map((node) => node.getAttribute("aria-pressed")).join(","));
+    check(toggle.getAttribute("role") === "group" && toggle.getAttribute("aria-label") != null,
+      "the toggle is a labelled group for screen readers");
+
+    // switching the toggle displays the matching derived image
+    const before = state()?.result?.id;
+    options[1].dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    const labelShown = await until(() => state()?.result?.id === kmeans.labels_image_id,
+      "the Label map option shows the label image", { timeout: 15000 });
+    check(Boolean(labelShown), "Label map option → label image", String(state()?.result?.id));
+    check(options[1].getAttribute("aria-pressed") === "true" && options[0].getAttribute("aria-pressed") === "false",
+      "the toggle follows the selection");
+    options[0].dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    await until(() => state()?.result?.id === kmeans.display_image_id,
+      "the Clustered image option shows the display image", { timeout: 15000 });
+    check(state()?.result?.id === kmeans.display_image_id, "Clustered image option → display image",
+      `${before} → ${state()?.result?.id}`);
+
+    // Classify / Reset ranges must not clip
+    const actions = [...clusterSection.querySelectorAll(".cluster-actions .btn")];
+    check(actions.map((node) => node.textContent.trim()).join("|") === "Classify|Reset ranges",
+      "the editor buttons are Classify and Reset ranges",
+      actions.map((node) => node.textContent.trim()).join("|"));
+    check(actions.length === 2 && actions.every((node) => node.closest(".cluster-actions")),
+      "both buttons live in the actions row");
+    const cssText = await readFile(path.join(WEB, "css", "styles.css"), "utf8");
+    check(/\.cluster-actions \.btn \{[^}]*min-width: max-content/.test(cssText),
+      "the action buttons cannot shrink below their labels");
+
+    // Reset ranges puts the algorithm values back
+    const nameField = editorRows[0].querySelector('input[type="text"]');
+    const minField = editorRows[0].querySelector('input[type="number"]');
+    nameField.value = "Renamed";
+    nameField.dispatchEvent(new window.Event("input", { bubbles: true }));
+    minField.value = "7";
+    const resetButton = actions.find((node) => node.textContent.trim() === "Reset ranges");
+    resetButton.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    const restored = clusterSection.querySelector("table.cluster-table tbody tr input[type=number]");
+    check(restored?.value === "0", "Reset ranges restores the K-Means min value", restored?.value);
+  }
   {
     const posts = requests.filter((entry) => /\/kmeans$/.test(entry.url));
     const body = JSON.parse(posts[posts.length - 1]?.body ?? "{}");
@@ -655,12 +736,15 @@ if (!bootFailed) {
   }
 
   expandSection("Clusters");
+  const resultBeforeClassify = state()?.result?.id;
   clickButton("Classify");
   const legend = await until(() => {
-    const text = document.getElementById("toolbox-sections").textContent;
-    return /Classify|assignments|legend/i.test(text) && state()?.result ? text : null;
+    const id = state()?.result?.id;
+    return id && id !== resultBeforeClassify && state()?.map ? id : null;
   }, "classify returns an image");
   check(Boolean(legend), "classify result loaded");
+  check(state()?.legend?.length >= 2, "the classify legend is stored on the state",
+    String(state()?.legend?.length));
 
   // ------------------------------------------- 3b. STEP 4: the Map view
   {
@@ -1053,8 +1137,10 @@ if (!bootFailed) {
     check(Boolean(committed), "release commits a result", String(committed));
     check(postsFor("brightness") === postsBefore + 1,
       "releasing sends exactly one request", String(postsFor("brightness") - postsBefore));
-    check(history.size === historyBefore + 1,
-      "the adjustment adds exactly one undo step", `history +${history.size - historyBefore}`);
+    check(history.entries[history.pointer]?.label === "Brightness +70",
+      "the adjustment adds exactly one undo step with the dragged value",
+      String(history.entries[history.pointer]?.label));
+    const afterFirstRelease = history.entries.length;
     const baseId = resultBefore;
     check(viewer.hasPreview === false, "the committed image replaces the preview");
     check(Number(numberField.value) === 70, "the slider stays where it was left", numberField.value);
@@ -1069,9 +1155,10 @@ if (!bootFailed) {
       return id && id !== committed ? id : null;
     }, "the second release replaces the result");
     check(Boolean(replaced), "re-releasing produces a new result", String(replaced));
-    check(history.size === historyBefore + 1,
+    check(history.entries.length === afterFirstRelease &&
+      history.entries[history.pointer]?.label === "Brightness +12",
       "re-releasing keeps ONE undo step (replaced, not stacked)",
-      `history +${history.size - historyBefore}`);
+      `${history.entries.length} entries, newest ${history.entries[history.pointer]?.label}`);
     const latestPost = requests.filter((entry) =>
       entry.method === "POST" && entry.url.includes("/operations/brightness")).pop();
     check(latestPost.url.includes(`/images/${baseId}/operations/brightness`),
@@ -1089,10 +1176,10 @@ if (!bootFailed) {
     range.dispatchEvent(new window.Event("input", { bubbles: true }));
     range.dispatchEvent(new window.Event("change", { bubbles: true }));
     await sleep(120);
-    check(postsFor("brightness") === postsBeforeIdle && history.size === historyBeforeIdle &&
+    check(postsFor("brightness") === postsBeforeIdle && history.entries.length === historyBeforeIdle &&
       state()?.result?.id === idleResult,
       "releasing at the starting value sends nothing and changes nothing",
-      `posts +${postsFor("brightness") - postsBeforeIdle}, history +${history.size - historyBeforeIdle}`);
+      `posts +${postsFor("brightness") - postsBeforeIdle}, history +${history.entries.length - historyBeforeIdle}`);
 
     // --- Escape during a drag cancels (no request, value restored)
     const postsBeforeEsc = postsFor("threshold");
@@ -1135,11 +1222,15 @@ if (!bootFailed) {
       "touching another slider takes over the adjustment");
     check(brightnessRange.value === "40",
       "the previous slider goes back to its default", brightnessRange.value);
-    const historyBeforeSwap = history.size;
+    const swapSteps = history.entries.length;
     thresholdKeyRange.dispatchEvent(new window.Event("change", { bubbles: true }));
-    await until(() => history.size === historyBeforeSwap + 1, "the new slider commits one step");
-    check(history.size === historyBeforeSwap + 1, "only one step is added by the swap",
-      `history +${history.size - historyBeforeSwap}`);
+    await until(() => /^Threshold 90$/.test(history.entries[history.pointer]?.label ?? ""),
+      "the new slider commits one step");
+    check(history.entries[history.pointer]?.label === "Threshold 90",
+      "the new slider commits its value", String(history.entries[history.pointer]?.label));
+    check(history.entries.length === swapSteps,
+      "only one step is added by the swap (the oldest may fall off the cap)",
+      `history ${history.entries.length} vs ${swapSteps}`);
 
     // --- any other action ends the adjustment and resets the slider
     clickButton("Negative");

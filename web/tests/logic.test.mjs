@@ -40,6 +40,13 @@ import {
 import { ApiClient } from "../js/api.js";
 import { HISTORY_LIMIT, ImageHistory, snapshotOf } from "../js/history.js";
 import {
+  KMEANS_MAX_ITER,
+  KMEANS_MAX_K,
+  KMEANS_MIN_K,
+  RESULT_VIEWS,
+  sharePercentage,
+} from "../js/panels/clusters.js";
+import {
   SCALES,
   SMOOTHING_WINDOWS,
   THEMES,
@@ -1103,4 +1110,26 @@ test("dropEntry removes one step and keeps the pointer on the same entry", () =>
   history.record({ label: "d", role: "result", imageId: "d", info: { image_id: "d" } });
   assert.equal(history.size, 2);
   assert.equal(history.entries[history.pointer].label, "d");
+});
+
+// ─────────────────── Clusters panel: K bounds, shares, view toggle ──────────
+
+test("K-Means is fixed to 100 iterations and K is bounded to 2..10", () => {
+  assert.equal(KMEANS_MAX_ITER, 100);
+  assert.equal(KMEANS_MIN_K, 2);
+  assert.equal(KMEANS_MAX_K, 10);
+});
+
+test("sharePercentage turns cluster counts into percentages", () => {
+  assert.equal(sharePercentage(50, 200), 25);
+  assert.ok(Math.abs(sharePercentage(1, 3) - 33.333) < 0.01);
+  assert.equal(sharePercentage(5, 0), 0, "an empty image has no shares");
+  assert.equal(sharePercentage(undefined, 10), 0);
+  assert.equal(sharePercentage(10, undefined), 0);
+});
+
+test("the K-Means result view is exactly two options", () => {
+  assert.deepEqual(RESULT_VIEWS.map((view) => view.key), ["display", "labels"]);
+  assert.deepEqual(RESULT_VIEWS.map((view) => view.short), ["Clustered image", "Label map"]);
+  assert.deepEqual(RESULT_VIEWS.map((view) => view.label), ["Show clustered image", "Show label map"]);
 });
