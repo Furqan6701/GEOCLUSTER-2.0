@@ -5,7 +5,6 @@
 
 import { createAnalysisPanel } from "./analysis.js";
 import { createClustersPanel } from "./clusters.js";
-import { createFilesPanel } from "./files.js";
 import { createOperationsPanel } from "./operations.js";
 import { createSourcePanel } from "./source.js";
 
@@ -15,6 +14,5 @@ export function createPanels(ctx) {
     createOperationsPanel(ctx),
     createClustersPanel(ctx),
     createAnalysisPanel(ctx),
-    createFilesPanel(ctx),
   ];
 }

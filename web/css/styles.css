@@ -440,7 +440,6 @@ details.advanced[open] > summary { color: var(--text); }
   font-size: var(--fs-xs); color: var(--text-dim);
   text-transform: uppercase; letter-spacing: 0.5px;
 }
-.hint-line { font-size: var(--fs-xs); color: var(--text-faint); }
 .row { display: flex; gap: 6px; align-items: flex-end; }
 .row > * { flex: 1; min-width: 0; }
 .row.tight { gap: 4px; }

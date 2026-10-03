@@ -341,10 +341,12 @@ def check_workstation_layout() -> None:
     clusters_js_source = _js_text("js/panels/clusters.js")
     check("ctx.gate.register(" in clusters_js_source and "runButton.disabled" not in clusters_js_source,
           "Run K-Means follows the same rule")
-    files_js_source = _js_text("js/panels/files.js")
-    check(files_js_source.count("ctx.gate.register(") >= 2,
-          "the Files image actions follow the same rule",
-          str(files_js_source.count("ctx.gate.register(")))
+    image_actions_js = _js_text("js/imageactions.js")
+    check("gate?.setBusy(" in image_actions_js or "gate.setBusy(" in image_actions_js,
+          "the image file actions book their requests with the same gate",
+          str(image_actions_js.count("setBusy")))
+    check("gate.canRun()" in _js_text("js/app.js") and "gate.isBusy()" in _js_text("js/app.js"),
+          "the File menu asks the gate for its enabled state")
     app_js_text = _js_text("js/app.js")
     check("createActionGate({ state, bus })" in app_js_text and "gate," in app_js_text,
           "app.js creates the single gate and shares it with every panel")
@@ -421,6 +423,14 @@ def check_workstation_layout() -> None:
                  "OpenCV blur with a square kernel."]:
         check(hint not in filters_js, f"the old hint line is gone: {hint[:40]}")
     check("hint-line" not in filters_js, "the Filters panel renders no hint lines")
+    # item 12: hint lines are gone everywhere, not just from the Files section
+    check("hint-line" not in _js_text("js/ui.js"),
+          "labelled() can no longer render a hint line")
+    check("hint-line" not in css, "the .hint-line rule is gone from the stylesheet")
+    for module in ("js/panels/source.js", "js/panels/analysis.js", "js/panels/clusters.js"):
+        source_text = _js_text(module)
+        check("hint-line" not in source_text and 'class: "hint' not in source_text,
+              f"{module} renders no hint lines")
     check("paramRow" not in filters_js and '"Apply"' not in filters_js,
           "the parameterised filters have no Apply button any more")
     for token in ["helpPopover", "aria-expanded", "aria-controls", "below"]:
@@ -477,9 +487,19 @@ def check_workstation_layout() -> None:
           "K-Means always shows the clustered image")
     check("downloadLabelMap" in clusters_js and "labels_image_id" in clusters_js,
           "the raw label map is still downloadable (the API stores it)")
-    files_source = _js_text("js/panels/files.js")
-    check("Download raw label map" in files_source and "labelmap:request" in files_source,
-          "the label-map download lives in the Files panel")
+    app_source = _js_text("js/app.js")
+    check("Export raw label map (PNG)" in app_source and "labelmap:request" in app_source,
+          "the label-map download is a File menu entry")
+    for entry in ("Export current image (PNG)", "Compress to .gch (GCH2)",
+                  "Open .gch file (decompress)"):
+        check(entry in app_source, f"the File menu carries {entry}")
+    check("Lossless .gch compression (Huffman coding); files also open in the desktop app."
+          in app_source,
+          "the compress entry carries the exact tooltip the user asked for")
+    check('focusSection("files")' not in app_source,
+          "nothing focuses the removed Files section")
+    check("panels/files.js" not in app_source and (WEB / "js" / "panels" / "files.js").exists() is False,
+          "the Files section is gone (module deleted, not orphaned)")
     check("grid-template-areas" in css and "grid-area: name" in css,
           "the editor rows are laid out on two lines so every column fits the sidebar")
     check('el("div", { class: "table-wrap" }' not in clusters_js,

@@ -12,7 +12,7 @@ The frontend is a desktop-style workspace, not a dashboard:
 | --- | --- |
 | Title bar | GeoCluster 2.0, menu bar (File · View · Processing · Analysis · Help), status chips (API, session, AI, satellite, max MP) |
 | Toolbar | Open · Satellite · Export · Compress · Undo/Redo · Pan · Pixel · Measure · Sync · dock toggles (single non-wrapping row; labels collapse to icons below 1440 px) |
-| Toolbox dock | collapsible sections: Source, Filters, Clusters, Analysis, Files (every control from the previous panels, unchanged in behaviour) |
+| Toolbox dock | collapsible sections: Source, Filters, Clusters, Analysis (every control from the previous panels, unchanged in behaviour; the Files section became File-menu entries — item 12) |
 | Image workspace | up to three viewports — **Original**, **Result** and **Map** (hidden until a classification exists) — each with a header (name + dimensions + active tool) and a footer (Fit/1:1/±/Distance, zoom %, pixel readout); the Map footer also toggles its legend |
 | Assistant dock | scrollable conversation, quick-command buttons, compact input; collapsible |
 | Status bar | dimensions · channel layout · zoom · cursor X/Y · pixel value · active viewport · session · API · New session |
@@ -239,6 +239,46 @@ Size (px) and Position, and is drawn north-up — the Rotation control and
   the map composer's empty note, the Image menu's composer note, the composer's
   "nothing to draw" toast and the `errors.js` operation label.
 
+### Files section removed — File-menu image actions (item 12)
+
+* The **Files** toolbox section is gone (`js/panels/files.js` deleted,
+  `panels/index.js` no longer creates it, no `focusSection("files")` remains).
+  Its four actions are now File-menu entries, in this order:
+  **Export current image (PNG)…** (Ctrl+S), **Export raw label map (PNG)…**,
+  **Compress to .gch (GCH2)…** and **Open .gch file (decompress)…**.
+* The two toolbar icons (**Export**, **Compress**) stay where they were and
+  drive the same code through the bus events `export:request` /
+  `huffman:compress-request` / `huffman:decompress-request` (the chat's
+  `compress this image` command uses the same event).
+* All four live in `js/imageactions.js`, which also owns the hidden
+  `#gch-file-input` picker (the old picker lived inside the section body, so
+  the boot test used to find it under `#toolbox-sections`). Behaviour is
+  unchanged: the same requests, the same toasts, the same `status` messages,
+  and the same gate — the menu computes `disabled`/`reason` from
+  `gate.canRun()` / `gate.isBusy()`, the requests book themselves with
+  `gate.setBusy(true, "image-actions")`.
+* **Every hint line is gone**, app-wide, not just from the Files section:
+  * the two Files paragraphs ("GCH2 files are compatible with the desktop app.",
+    "Compression is lossless and stateless; the file can be opened in the
+    desktop app.") died with the section — the compress entry's tooltip carries
+    the wording instead: *"Lossless .gch compression (Huffman coding); files
+    also open in the desktop app."* (`ui.js` menu items now accept an explicit
+    `title`, used in preference to the note/shortcut tooltip);
+  * `labelled()` in `ui.js` **lost its `hint` parameter**, so no field can
+    render a hint line any more, and the `.hint-line` CSS rule was deleted;
+  * the Source panel's field hints moved into `title` tooltips ("Sector code,
+    alias, or any place name", "Paste from Google Maps — any corner", "The
+    opposite corner; no need to sort them", and the dates' "leave it empty to
+    use the server's rolling window"), and its date paragraph was removed.
+  The boot test now asserts `.note`/`.hint-line` count 0 in the Source and
+  Clusters sections, and the smoke test asserts `hint-line` appears in no panel
+  module, not in `ui.js` and not in the stylesheet.
+* The raw label map is the last remnant of the item-1 image/label toggle: it
+  is still one download of the API's stored `kmeans:labels` image, but it is
+  no longer a sidebar button. The entry is disabled with the reason "run
+  K-Means first — the label map is one of its outputs" until a K-Means run
+  exists, instead of toasting after the click.
+
 ### Clusters editor layout and class names
 
 * Each cluster is a **two-line grid row** (`grid-template-areas` on the table
@@ -267,9 +307,11 @@ Size (px) and Position, and is drawn north-up — the Rotation control and
   `operation:applied`, `history:changed`, `session:reset`) and whenever a
   request starts or ends. In-flight requests are counted per owner, so a
   finished request cannot clear another one's busy state.
-* Filters (Grayscale/Negative/Laplacian/Clear result), Run K-Means and the
-  Files image actions register with the gate; no panel sets `disabled` on them
-  any more.
+* Filters (Grayscale/Negative/Laplacian/Clear result) and Run K-Means register
+  buttons with the gate; the four file actions (`js/imageactions.js`, item 12)
+  book their requests with the same gate and the File menu asks it for its
+  enabled state (`gate.canRun()` / `gate.isBusy()`). No panel sets `disabled`
+  on an operation button any more.
 
 ### Ground scale (item 5)
 
@@ -449,13 +491,13 @@ message. Raw JSON is never displayed.
   that came back with the same message. A missing key (`503`) gets its own
   message pointing at the commands that work without the model.
 * The Clusters panel is one editor table (Color / Land cover / Min / Max /
-  % of pixels) with **Classify** and **Reset ranges**; the Last run table, the
-  centroid line, the separate legend block and every hint line are gone.
-  K-Means always displays the clustered image — there is no image/label toggle
-  — and the raw label map (which the API already stores as `kmeans:labels`) is
-  downloaded from the Files panel's "Download raw label map (PNG)…". Max
-  iterations is not user-facing: the panel always sends `max_iter=100` and K is
-  limited to 2..10.
+  % of pixels) with **Generate map** (item 11; it was "Classify") and
+  **Reset ranges**; the Last run table, the centroid line, the separate legend
+  block and every hint line are gone. K-Means always displays the clustered
+  image — there is no image/label toggle — and the raw label map (which the API
+  already stores as `kmeans:labels`) is downloaded from the File menu's
+  **Export raw label map (PNG)…** entry. Max iterations is not user-facing: the
+  panel always sends `max_iter=100` and K is limited to 2..10.
 * Operations triggered from the chat carry no numbers, so documented defaults
   are used and announced in the chat log: `kmeans {k: 5, max_iter: 100}`,
   `meanfilter {window: 3}`, `threshold {value: 128}`, `brightness {value: 20}`.
@@ -549,7 +591,7 @@ message. Raw JSON is never displayed.
 | `node --test "web/tests/*.test.mjs"` | 72 logic tests: config resolution, error mapping, API client contract (URLs, bodies, multipart, session recovery), chat command mapping/execution, the satellite request shapes, the filter preview maths (reflect-101 box average, threshold/brightness clipping, the 512 px preview cap), the slider snapping/help texts, the grouped point-operation help list and the history `dropEntry` replacement rule. No browser needed. |
 | `python web/tests/smoke_test.py` | Serves `web/` on 5173 (reuses a running server for the same root), checks assets + content types, that every relative module import resolves, that no key material exists under `web/`, that no `innerHTML` is used, the workstation layout contract (image workspace owns the flexible track, no `object-fit: cover`, technical corner radii), and that the API's CORS allows the frontend origin. |
 | `python web/tests/integration_check.py` | Live contract check against a running API: the exact call sequence the browser makes (session → upload → 6 filters → kmeans k=5 → classify → histogram → stats → GCH2 round trip → satellite validation and error paths → chat commands → 404/415). The three checks that need real Copernicus credentials report SKIP when the server has no `api/.env` instead of failing. Requires `uvicorn main:app --port 8000`. |
-| `node web/tests/boot_test.mjs --jsdom <dir>` | Boot test: loads `index.html` in jsdom, imports `js/app.js` and drives the UI through DOM events against the live API — 378 assertions covering the shell (menu bar, toolbar, status bar, dock collapse), viewport behaviour (pan, wheel zoom, pixel readout, distance measurement, sync mirroring), upload, the six filters, the Source panel's place/corner modes, the Filters panel's popovers and slider sessions (preview without requests, one request per release, replace-not-stack, Escape, arrow-key commits, one slider at a time), the rendered K-Means range table, classify, histogram/stats, GCH2 compress → decompress, PNG export, chat router commands, session-expiry recovery, and a clean browser console. jsdom is optional (not a dependency of the app); without it the test skips. |
+| `node web/tests/boot_test.mjs --jsdom <dir>` | Boot test: loads `index.html` in jsdom, imports `js/app.js` and drives the UI through DOM events against the live API — 683 assertions covering the shell (menu bar, toolbar, status bar, dock collapse), viewport behaviour (pan, wheel zoom, pixel readout, distance measurement, sync mirroring), upload, the six filters, the Source panel's place/corner modes, the Filters panel's popovers and slider sessions (preview without requests, one request per release, replace-not-stack, Escape, arrow-key commits, one slider at a time), the rendered K-Means range table (item 11: live linked ranges, clamped commits, locked ends, the browser-side preview with zero requests/history entries, the boundary bar, "Generate map" = one undo step), the File menu's four image actions (item 12: exact compress tooltip, label-map entry, GCH2 compress → decompress through the menu and the toolbar), histogram/stats, chat router commands, session-expiry recovery, and a clean browser console. jsdom is optional (not a dependency of the app); without it the test skips. |
 
 The boot test runs in both serving modes: the default (page on localhost →
 direct API calls) and hosted (`--page-host 5173-demo.e2b.app` → everything

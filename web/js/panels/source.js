@@ -118,14 +118,25 @@ export function createSourcePanel(ctx) {
   }
 
   // --------------------------------------------------------------- satellite
-  const locationInput = el("input", { type: "text", list: "location-options", placeholder: "F-8, NUST, Karachi…" });
+  const locationInput = el("input", {
+    type: "text",
+    list: "location-options",
+    placeholder: "F-8, NUST, Karachi…",
+    title: "Sector code, alias, or any place name",
+  });
   const locationList = el("datalist", { id: "location-options" });
   const sizeSelect = el("select", { class: "select", id: "sat-size", title: "Side of the square to download" },
     SIZE_OPTIONS_KM.map((km) => el("option", { value: String(km), text: `${km} km` })));
   sizeSelect.value = String(DEFAULT_SIZE_KM);
 
-  const corner1Input = el("input", { type: "text", id: "sat-corner1", placeholder: "33.6844, 73.0479" });
-  const corner2Input = el("input", { type: "text", id: "sat-corner2", placeholder: "33.6600, 73.1000" });
+  const corner1Input = el("input", {
+    type: "text", id: "sat-corner1", placeholder: "33.6844, 73.0479",
+    title: "Paste from Google Maps — any corner",
+  });
+  const corner2Input = el("input", {
+    type: "text", id: "sat-corner2", placeholder: "33.6600, 73.1000",
+    title: "The opposite corner; no need to sort them",
+  });
 
   const placeModeRadio = el("input", {
     type: "radio", name: "sat-mode", value: "place", id: "sat-mode-place", checked: true,
@@ -139,23 +150,28 @@ export function createSourcePanel(ctx) {
   ]);
 
   const placeRow = el("div", { class: "sat-row", dataset: { satRow: "place" } }, [
-    labelled("Place", locationInput, "Sector code, alias, or any place name"),
+    labelled("Place", locationInput),
     labelled("Size", sizeSelect),
   ]);
   const cornersRow = el("div", { class: "sat-row", dataset: { satRow: "bbox" } }, [
-    labelled("Corner 1 (lat, lon)", corner1Input, "Paste from Google Maps — any corner"),
-    labelled("Corner 2 (lat, lon)", corner2Input, "The opposite corner; no need to sort them"),
+    labelled("Corner 1 (lat, lon)", corner1Input),
+    labelled("Corner 2 (lat, lon)", corner2Input),
   ]);
 
-  const startInput = el("input", { type: "date", title: "Optional start date (YYYY-MM-DD)" });
-  const endInput = el("input", { type: "date", title: "Optional end date (YYYY-MM-DD)" });
+  const startInput = el("input", {
+    type: "date",
+    title: "Optional start date (YYYY-MM-DD) — leave it empty to use the server's rolling window",
+  });
+  const endInput = el("input", {
+    type: "date",
+    title: "Optional end date (YYYY-MM-DD) — leave it empty to use the server's rolling window",
+  });
   const advanced = el("details", { class: "advanced" }, [
     el("summary", { text: "Advanced" }),
     el("div", { class: "row", style: { marginTop: "6px" } }, [
-      labelled("Start", startInput, "optional"),
-      labelled("End", endInput, "optional"),
+      labelled("Start", startInput),
+      labelled("End", endInput),
     ]),
-    el("p", { class: "note", text: "Leave the dates empty to use the server's rolling window." }),
   ]);
 
   const refreshToggle = el("input", { type: "checkbox", id: "sat-refresh" });

@@ -168,11 +168,15 @@ export function toggleButton(name, { label = "", title = "", pressed = false, on
   return { node, setPressed, isPressed };
 }
 
-export function labelled(labelText, control, hint = "") {
+/**
+ * A labelled control. There is deliberately no hint parameter any more: every
+ * "hint line" under a field was removed (item 12), and whatever a field needs
+ * to explain lives in its own `title` tooltip.
+ */
+export function labelled(labelText, control) {
   return el("div", { class: "field" }, [
     el("label", { text: labelText }),
     control,
-    hint ? el("span", { class: "hint-line", text: hint }) : null,
   ]);
 }
 
@@ -493,8 +497,9 @@ export function createMenuBar(menus) {
         type: "button",
         role: "menuitem",
         disabled,
-        // disabled items explain themselves; enabled ones name their shortcut
-        title: item.disabled ? item.reason || "" : item.note || item.shortcut || "",
+        // disabled items explain themselves; enabled ones name their shortcut,
+        // unless the entry carries its own tooltip (item 12's compress entry)
+        title: item.title || (item.disabled ? item.reason || "" : item.note || item.shortcut || ""),
         onclick: () => {
           closeAll();
           item.onClick?.();

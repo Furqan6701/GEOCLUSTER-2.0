@@ -17,6 +17,7 @@ import { MapStudio } from "./mapstudio_ui.js";
 import { describeDistance } from "./measure.js";
 import { createChatPanel } from "./panels/chat.js";
 import { HistogramWindows } from "./histowindow.js";
+import { createImageActions } from "./imageactions.js";
 import { createPanels } from "./panels/index.js";
 import { SessionExpiredError, SessionManager, carryGroundMetadata } from "./session.js";
 import { activeImage, createAppState, createBus } from "./state.js";
@@ -59,6 +60,11 @@ const resultViewer = new Viewer(document.getElementById("viewer-result"), {
 // Panels that paint a live preview (the classification editor) draw from the
 // bitmap a viewport already holds instead of asking the server for it again.
 ctx.viewers = { original: originalViewer, result: resultViewer };
+
+// The four image file actions (export PNG, export label map, compress, open a
+// .gch) used to be a Files sidebar section; they now live in the File menu and
+// behind the toolbar's Export/Compress buttons, in one place.
+const imageActions = createImageActions(ctx);
 
 /** Role-based label, used by the status bar for both image viewports. */
 function viewerLabel(viewer) {
@@ -711,16 +717,43 @@ const menuBar = createMenuBar([
       { label: "Open image…", icon: "open", shortcut: "Ctrl+O", onClick: () => bus.emit("open:file-request") },
       { label: "Fetch Sentinel-2 tile…", icon: "satellite", onClick: () => { focusSection("source"); bus.emit("satellite:request"); } },
       { separator: true },
+      // The gate is the single source of truth for these four entries: they are
+      // enabled exactly when the toolbar buttons would be.
       {
         label: "Export current image (PNG)…",
         icon: "download",
         shortcut: "Ctrl+S",
-        disabled: !activeImage(state),
-        reason: "load, fetch or decompress an image first",
+        disabled: !gate.canRun(),
+        reason: gate.isBusy() ? "a request is in flight" : "load, fetch or decompress an image first",
         onClick: exportCurrent,
       },
-      { label: "Compress to .gch (GCH2)…", icon: "archive", onClick: () => bus.emit("huffman:compress-request") },
-      { label: "Decompress a .gch…", icon: "file", onClick: () => { focusSection("files"); bus.emit("huffman:decompress-request"); } },
+      {
+        label: "Export raw label map (PNG)…",
+        icon: "layers",
+        note: "one grey value per cluster",
+        disabled: !gate.canRun() || !state.kmeans,
+        reason: gate.isBusy()
+          ? "a request is in flight"
+          : "run K-Means first — the label map is one of its outputs",
+        onClick: () => bus.emit("labelmap:request"),
+      },
+      {
+        label: "Compress to .gch (GCH2)…",
+        icon: "archive",
+        note: "lossless Huffman coding",
+        // exact wording the user asked for, shown as the item's tooltip
+        title: "Lossless .gch compression (Huffman coding); files also open in the desktop app.",
+        disabled: !gate.canRun(),
+        reason: gate.isBusy() ? "a request is in flight" : "load, fetch or decompress an image first",
+        onClick: () => bus.emit("huffman:compress-request"),
+      },
+      {
+        label: "Open .gch file (decompress)…",
+        icon: "file",
+        disabled: gate.isBusy(),
+        reason: "a request is in flight",
+        onClick: () => bus.emit("huffman:decompress-request"),
+      },
       { separator: true },
       {
         label: history.canUndo ? `Undo ${history.current?.label ?? ""}`.trim() : "Undo",
@@ -1072,6 +1105,7 @@ window.geocluster = {
     studio: mapStudio,
   },
   history,
+  imageActions,
   panels: panelById,
   ApiError,
   undo,

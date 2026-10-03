@@ -59,7 +59,8 @@ pointer behaviour, and layout at the two widths the user asked about.
     in the toolbar; each viewport footer has `− Fit 1:1 +`. The **View** menu
     still has Fit / Actual size / Zoom in / Zoom out / 25 / 50 %.
 18. **[both]** Toolbox at startup: **Source** and **Filters** are expanded;
-    Clusters, Analysis and Files are collapsed (click to expand).
+    **Clusters** and **Analysis** are collapsed (click to expand). There is no
+    **Files** section any more.
 19. **[both]** Before running anything, the Result viewport says
     "Run a filter or K-Means to see the result here" (not "No image loaded").
 
@@ -84,19 +85,71 @@ pointer behaviour, and layout at the two widths the user asked about.
     `max_images`, then undo to an old state and run an operation. It must
     succeed silently; the status bar reports the restored image was re-uploaded.
 
-## C2. STEP 2/3 — Clusters and Files (items 1 & 2)
+## C2. STEP 2/3 — Clusters, the classification editor and Files (items 1, 2, 11, 12)
 
 27b. **[both]** Run K-Means: the **Clustered image** is shown on its own — there
     is no "Clustered image / Label map" toggle. The raw label map is downloadable
-    from **Files → Download raw label map (PNG)…**, and the toast names the file
-    it saved (never an internal id).
+    from **File → Export raw label map (PNG)…** (disabled with the reason "run
+    K-Means first…" until a run exists), and the toast names the file it saved
+    (never an internal id).
 27c. **[both]** The Clusters table shows **Color, Land cover, Min, Max, % of
     pixels** for every cluster without scrolling the sidebar sideways (each row
-    is two lines). Long class names stay readable via their tooltips.
+    is two lines). The word **COLOR** is spelled out in full — it is not clipped
+    to "C…". Long class names stay readable via their tooltips.
 27d. **[both]** With **K = 3** the default names are **Class 1 … Class 3**; run
     **k = 5** again and the land-cover names (Shadows, Grass / Lawn, …) come
     back. **Reset ranges** puts the min/max back but keeps names and colours you
     typed.
+
+## C3. STEP 2/3 — the live linked ranges (item 11)
+
+27e. **[both]** The first row's **Min** and the last row's **Max** are locked:
+    clicking them shows **0** and **255** and typing does nothing (they look
+    dimmed, and their tooltips say the ends are fixed).
+27f. **[both]** Type a new **Max** in row 1 (e.g. `120`): the row below's **Min**
+    becomes **121** as you type — no Apply button anywhere. Type a **Min** in a
+    later row (e.g. `140`) and the row above's **Max** becomes **139**.
+27g. **[both]** Type `250` into the first row's **Max** and press **Tab** (or
+    Enter): the field snaps back to the largest legal value (one below the next
+    class's Max), the next row's Min follows, and no class ever becomes empty.
+    `0`, `999` and letters behave the same way (letters fall back to the low
+    bound).
+27h. **[both]** The **%** column changes as the ranges move (a class that takes
+    over a bright range grows) and still adds up to 100 %. Watch F12 → Network:
+    **no request** is made while editing, and the Undo button's label does not
+    change.
+27i. **[both]** The **Result viewport recolours as you type**: the badge reads
+    `preview · classification`, the change appears immediately, and moving a
+    colour swatch also repaints it. Nothing is committed, so F12 → Network
+    stays quiet.
+27j. **[both]** Drag a handle on the 0..255 bar above the table (or focus it and
+    press ←/→): the boundary moves, the table fields follow, and the segment
+    widths/colours track the classes.
+27k. **[both]** Click **Generate map**: ONE request is sent, ONE undo step
+    appears (Ctrl+Z puts the previous result back), the composer opens, and the
+    preview badge disappears (the committed image replaces it).
+
+## C4. STEP 2/3 — the File menu (item 12)
+
+27l. **[both]** There is **no Files section** in the toolbox any more (only
+    Source, Filters, Clusters, Analysis). The four actions are in the **File**
+    menu, above Undo/Redo: **Export current image (PNG)…** (Ctrl+S), **Export
+    raw label map (PNG)…**, **Compress to .gch (GCH2)…**, **Open .gch file
+    (decompress)…**. The old "Decompress a .gch…" entry is gone.
+27m. **[both]** Hover **Compress to .gch (GCH2)…**: the tooltip reads exactly
+    *"Lossless .gch compression (Huffman coding); files also open in the desktop
+    app."* No hint line or hint paragraph sits in any sidebar section — Source
+    included: the place/corner fields and the Advanced dates explain themselves
+    on hover (tooltips) instead of printing text under the field.
+27n. **[both]** With no image loaded, the Export and Compress entries are greyed
+    out with the reason "load, fetch or decompress an image first"; **Open .gch
+    file** stays clickable (it brings an image), and the toolbar's Export /
+    Compress icons are still there and still toast "Load or fetch an image
+    first."
+27o. **[both]** Compress from the File menu and from the toolbar icon give the
+    same `.gch` (open it again with **Open .gch file (decompress)…**: the picker
+    appears and the restored PNG becomes the working image). While a request is
+    running, the menu entries are disabled ("a request is in flight").
 
 ## C3. STEP 1/4 — the editor shell (item 3)
 

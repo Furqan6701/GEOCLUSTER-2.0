@@ -369,19 +369,24 @@ if (!bootFailed) {
   check(state()?.maxImages === 6, "session image cap reported (6)", String(state()?.maxImages));
   check(state()?.health != null, "GET /health fetched and rendered");
   const sections = [...document.querySelectorAll("#toolbox-sections .section")];
-  check(sections.length === 5, "five toolbox sections rendered", String(sections.length));
+  check(sections.length === 4, "four toolbox sections rendered", String(sections.length));
   check(
-    ["Source", "Filters", "Clusters", "Analysis", "Files"].every((title, index) =>
+    ["Source", "Filters", "Clusters", "Analysis"].every((title, index) =>
       sections[index]?.querySelector(".section-title")?.textContent.trim() === title),
-    "toolbox sections are Source/Filters/Clusters/Analysis/Files",
+    "toolbox sections are Source/Filters/Clusters/Analysis — Files is gone",
     sections.map((node) => node.querySelector(".section-title")?.textContent.trim()).join(", "),
   );
+  check(document.getElementById("section-files") == null &&
+    !/\bFiles\b/.test(document.getElementById("toolbox-sections").textContent),
+    "no Files section is left in the sidebar");
+  check(window.geocluster.panels.get("files") == null,
+    "the Files panel is no longer registered");
   const expandedState = sections.map((node) =>
     node.querySelector(".section-head")?.getAttribute("aria-expanded"));
   check(expandedState[0] === "true" && expandedState[1] === "true",
     "Source and Filters are expanded by default", expandedState.join(","));
   check(expandedState.slice(2).every((state) => state === "false"),
-    "Clusters, Analysis and Files start collapsed (short toolbox)", expandedState.join(","));
+    "Clusters and Analysis start collapsed (short toolbox)", expandedState.join(","));
   check(sections.every((node) => node.querySelector(".section-body") != null),
     "every section exposes its body for aria-controls");
   check(document.getElementById("viewer-area") != null, "image workspace exists");
@@ -502,6 +507,24 @@ if (!bootFailed) {
       "the optional dates live inside the Advanced fold");
     check(/Advanced/.test(advanced.querySelector("summary")?.textContent ?? ""),
       "the fold is labelled Advanced");
+
+    // ---- item 12: no hint lines anywhere in the panel; tooltips say it instead
+    check(section.querySelectorAll(".note, .hint-line").length === 0,
+      "the Source panel renders no hint lines",
+      [...section.querySelectorAll(".note, .hint-line")].map((node) => node.textContent).join(" | "));
+    {
+      const place = section.querySelector('[data-sat-row="place"] input[type="text"]');
+      const corners = [...cornersRow.querySelectorAll('input[type="text"]')];
+      check(place?.title === "Sector code, alias, or any place name",
+        "the place field explains itself in its tooltip", place?.title);
+      check(corners[0]?.title === "Paste from Google Maps — any corner" &&
+        corners[1]?.title === "The opposite corner; no need to sort them",
+        "the corner fields explain themselves in their tooltips",
+        corners.map((node) => node.title).join(" | "));
+      const dates = [...advanced.querySelectorAll('input[type="date"]')];
+      check(dates.every((node) => /rolling window/.test(node.title)),
+        "the dates say what an empty value means", dates.map((node) => node.title).join(" | "));
+    }
 
     const refreshControl = section.querySelector("#sat-refresh");
     check(refreshControl != null && !refreshControl.checked,
@@ -740,9 +763,32 @@ if (!bootFailed) {
       "K-Means displayed the clustered image on its own", String(state()?.result?.id));
     check(!/Show clustered image|Show label map/.test(text),
       "no result-view buttons are left in the panel");
+    // ---- item 12: the four file actions live in the File menu
+    const fileMenu = () => {
+      const button = [...document.querySelectorAll("#menubar .menu-button")]
+        .find((node) => node.textContent.trim() === "File");
+      button?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      return [...document.querySelectorAll("#menubar .menu-item")];
+    };
+    const menuItem = (label) => fileMenu().find((node) => node.textContent.trim().startsWith(label));
+    const labelEntry = menuItem("Export raw label map (PNG)");
+    check(labelEntry != null, "the File menu exports the raw label map");
+    check(labelEntry?.disabled === false, "the label-map entry is enabled once K-Means has run",
+      String(labelEntry?.disabled));
+    check(/one grey value per cluster/.test(labelEntry?.textContent ?? ""),
+      "the label-map entry says what the file holds", labelEntry?.textContent);
+    {
+      const before = createdUrls.length;
+      labelEntry.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      const downloaded = await until(() => (toasts.some((entry) => /Label map downloaded/.test(entry)) ? true : null),
+        "the label map downloads from the File menu");
+      check(Boolean(downloaded), "the raw label map still downloads as a PNG");
+      check(createdUrls.length > before, "the label map download reached the browser",
+        String(createdUrls.length - before));
+    }
     const labelAction = window.geocluster.panels.get("clusters").actions.downloadLabelMap;
     check(typeof labelAction === "function",
-      "the raw label map is still reachable (Files panel download)");
+      "the Clusters panel still owns the label-map download");
     {
       const before = createdUrls.length;
       const labelDownload = await labelAction();
@@ -2309,8 +2355,61 @@ if (!bootFailed) {
   }
 
   // --------------------------------------------------- 6. compress/decompress
-  expandSection("Files");
-  clickButton("Compress current image → .gch");
+  // (item 12: the Files section is gone — these are File menu entries now)
+  {
+    const openFileMenu = () => {
+      const button = [...document.querySelectorAll("#menubar .menu-button")]
+        .find((node) => node.textContent.trim() === "File");
+      button?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      return [...document.querySelectorAll("#menubar .menu-item")];
+    };
+    const items = openFileMenu();
+    const labels = items.map((node) => node.textContent.trim());
+    check(labels.some((label) => label.startsWith("Export current image (PNG)")),
+      "the File menu exports the current image", labels.join(" | "));
+    check(labels.some((label) => label.startsWith("Export raw label map (PNG)")),
+      "the File menu exports the raw label map", labels.join(" | "));
+    check(labels.some((label) => label.startsWith("Compress to .gch (GCH2)")),
+      "the File menu compresses to .gch", labels.join(" | "));
+    check(labels.some((label) => label.startsWith("Open .gch file (decompress)")),
+      "the File menu opens a .gch file", labels.join(" | "));
+    const compressEntry = items.find((node) => node.textContent.trim().startsWith("Compress to .gch (GCH2)"));
+    check(compressEntry?.title ===
+      "Lossless .gch compression (Huffman coding); files also open in the desktop app.",
+      "the compress entry carries the exact tooltip", compressEntry?.title);
+    check(!labels.some((label) => /^Decompress a \.gch/.test(label)),
+      "the old Decompress entry is replaced", labels.join(" | "));
+    const emptyNote = compressEntry
+      ?.closest(".menu-popup")?.querySelector(".menu-item-note")?.textContent ?? "";
+    check(!/GCH2 files are compatible|Compression is lossless and stateless/.test(items.map((n) => n.textContent).join(" ")),
+      "the Files panel hint lines are gone", emptyNote);
+    document.body.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+
+    // the toolbar keeps its two icons, wired to the same actions
+    const toolbarExport = document.getElementById("tb-export");
+    const toolbarCompress = document.getElementById("tb-compress");
+    check(toolbarExport != null && toolbarCompress != null &&
+      toolbarExport.querySelector("svg") != null && toolbarCompress.querySelector("svg") != null,
+      "the toolbar keeps its Export and Compress icons");
+    {
+      const before = createdUrls.length;
+      toolbarExport.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      await until(() => toasts.some((entry) => /^Exported .*\.png/.test(entry)),
+        "the toolbar Export downloads the current image");
+      check(createdUrls.length > before, "…and the PNG reached the browser",
+        String(createdUrls.length - before));
+    }
+  }
+  {
+    const compressEntry = (() => {
+      const button = [...document.querySelectorAll("#menubar .menu-button")]
+        .find((node) => node.textContent.trim() === "File");
+      button?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      return [...document.querySelectorAll("#menubar .menu-item")]
+        .find((node) => node.textContent.trim().startsWith("Compress to .gch (GCH2)"));
+    })();
+    compressEntry?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  }
   const gch = await until(async () => {
     const entry = [...downloads].reverse().find((item) => /\.gch$/.test(item.filename));
     if (!entry?.blob) return null;
@@ -2321,8 +2420,10 @@ if (!bootFailed) {
   if (gch) {
     const magic = String.fromCharCode(...gch.slice(0, 4));
     check(magic === "GCH2", "downloaded file carries the GCH2 magic", magic);
-    const fileInputs = document.querySelectorAll('#toolbox-sections input[type=file]');
-    const decompressInput = fileInputs[fileInputs.length - 1];
+    const decompressInput = document.getElementById("gch-file-input");
+    check(decompressInput != null && decompressInput.getAttribute("accept") === ".gch,application/octet-stream",
+      "the .gch picker is owned by the image-actions module",
+      String(decompressInput?.getAttribute("accept")));
     const gchFile = new File([gch], "sample.gch", { type: "application/octet-stream" });
     Object.defineProperty(decompressInput, "files", { value: [gchFile], configurable: true });
     decompressInput.dispatchEvent(new window.Event("change"));
