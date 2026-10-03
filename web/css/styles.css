@@ -299,3 +299,5 @@ table.grid input[type="color"] { height: 24px; }
 .dropzone.drag { border-color: var(--accent); color: var(--accent); background: rgba(53, 208, 186, 0.06); }
 .hr { height: 1px; background: var(--border); margin: 12px 0; }
 .visually-hidden { display: none !important; }
+.histogram-canvas { width: 100%; height: auto; display: block; background: var(--bg-input); border: 1px solid var(--border-strong); border-radius: 7px; }
+.swatch-preview { display: inline-block; width: 16px; height: 16px; border-radius: 4px; border: 1px solid rgba(0, 0, 0, 0.5); }

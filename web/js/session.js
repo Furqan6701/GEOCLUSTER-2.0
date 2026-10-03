@@ -124,6 +124,34 @@ export class SessionManager {
     return info;
   }
 
+  /**
+   * Record a derived image id (classify, K-Means display/labels) as the
+   * result. The API's responses for those steps return only an `image_id`,
+   * so `template` supplies the dimensions of the image they came from.
+   */
+  useAsResultId(imageId, template = {}) {
+    const width = Number(template.width ?? 0);
+    const height = Number(template.height ?? 0);
+    const megapixels = template.megapixels ?? (width * height) / 1_000_000;
+    const info = {
+      image_id: imageId,
+      session_id: this.state.sessionId,
+      name: template.name ?? imageId,
+      source: template.source ?? "derived",
+      width,
+      height,
+      channels: template.channels ?? 3,
+      megapixels,
+      bytes: null,
+      original_width: template.original_width ?? width,
+      original_height: template.original_height ?? height,
+      original_megapixels: template.original_megapixels ?? megapixels,
+      scale: template.scale ?? 1,
+      downscaled: false,
+    };
+    return this.useAsResult(info);
+  }
+
   async fetchSatellite({ location, start = null, end = null }) {
     const info = await this.withSession((sid) =>
       this.api.satelliteFetch({ sessionId: sid, location, start, end }),
