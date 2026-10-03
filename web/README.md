@@ -17,7 +17,7 @@ rather than a dashboard:
 │  Filters     │  │  ORIGINAL    │    RESULT    │   │  …           │
 │  Clusters    │  │  (viewport)  │  (viewport)  │   │  quick cmds  │
 │  Analysis    │  └──────────────┴──────────────┘   │  [ask…] [send]│
-│  Files       │  zoom % · pixel readout · tools    │              │
+│  Files       │  · Map (classified + legend)       │              │
 ├──────────────┴────────────────────────────────────┴──────────────┤
 │ 2449 × 1632 px │ RGB │ Zoom 100% │ X Y │ RGB: … │ session │ API ● │
 └──────────────────────────────────────────────────────────────────┘
@@ -45,12 +45,17 @@ rather than a dashboard:
   silently. Toolbar buttons, File menu and `Ctrl+Z`/`Ctrl+Y` all drive it.
 * **Zoom** — lives in exactly one place, the per-viewport footers (the toolbar
   duplicate was removed); the View menu keeps the same commands.
+* **Map view** — after Classify, a third viewport shows the classified image
+  with its legend **composited on one canvas** (swatch + class name + %), so
+  Analysis → *Map export* writes a single PNG that already includes the legend.
+  The legend can be toggled; with three panes the map takes a full-width row
+  under the two image viewports on laptops.
 * **Shortcuts** — `Ctrl+O` open, `Ctrl+S` export PNG, `Ctrl+Z`/`Ctrl+Y`
   undo/redo, `+`/`−` zoom, `0` fit, `1` actual size, `M` measure, `P` pixel
   readout, `Y` sync viewers.
-* **Not implemented, and visibly so** — Recent files, Map view, Map legend and
-  Map export appear as disabled menu entries with a reason; there are no fake
-  buttons.
+* **Not implemented, and visibly so** — Recent files appears as a disabled menu
+  entry with a reason (session images are listed in the Source section); there
+  are no fake buttons.
 
 ## What it does
 

@@ -20,6 +20,15 @@ import { ApiError, detailToText, humanizeError, sanitizeMessage, validationToTex
 import { OPERATIONS_WITH_PARAMS, describeOperation } from "../js/panels/operations.js";
 import { ApiClient } from "../js/api.js";
 import { HISTORY_LIMIT, ImageHistory, snapshotOf } from "../js/history.js";
+import {
+  composeMap,
+  drawLegend,
+  fitText,
+  formatPercentage,
+  legendMetrics,
+  legendRows,
+  mapFileName,
+} from "../js/map.js";
 import { defaultParamsFor, describeCommand, executeCommands } from "../js/commands.js";
 
 // --------------------------------------------------------------- test doubles
@@ -556,4 +565,155 @@ test("reset clears every state and Blob", () => {
   assert.equal(history.size, 0);
   assert.equal(history.canUndo, false);
   assert.equal(history.blobCount, 0);
+});
+
+// ------------------------------------------------- STEP 4: map composition
+
+/** Canvas/document stub: enough for composeMap to lay out and draw. */
+function fakeDocument() {
+  const created = [];
+  const canvasFor = () => {
+    const canvas = { width: 0, height: 0, __texts: [], __fonts: [] };
+    canvas.getContext = () => ({
+      canvas,
+      fillStyle: "",
+      strokeStyle: "",
+      lineWidth: 1,
+      textBaseline: "",
+      font: "",
+      save() {}, restore() {},
+      fillRect() {}, strokeRect() {}, clearRect() {},
+      beginPath() {}, moveTo() {}, lineTo() {}, stroke() {},
+      drawImage(image) { canvas.__drawn = { width: image?.width, height: image?.height }; },
+      measureText: (text) => ({ width: String(text).length * 7 }),
+      fillText: (text, x, y) => {
+        if (typeof text === "string") {
+          canvas.__fonts.push({ text, font: undefined });
+          canvas.__texts.push(text);
+        }
+        void x; void y;
+      },
+      __texts: [],
+    });
+    return canvas;
+  };
+  return {
+    created,
+    createElement(tag) {
+      if (tag !== "canvas") throw new Error(`unexpected element ${tag}`);
+      const canvas = canvasFor();
+      created.push(canvas);
+      return canvas;
+    },
+  };
+}
+
+const SAMPLE_LEGEND = [
+  { cluster: 1, name: "Water", color: [64, 128, 255], min: 0, max: 85, count: 1200, percentage: 42.31 },
+  { cluster: 2, name: "Vegetation", color: [60, 180, 90], min: 86, max: 170, count: 1100, percentage: 38.02 },
+  { cluster: 3, name: "Built-up", color: [220, 180, 60], min: 171, max: 255, count: 560, percentage: 19.67 },
+];
+
+test("legendRows normalises the classify legend and survives junk", () => {
+  const rows = legendRows(SAMPLE_LEGEND);
+  assert.equal(rows.length, 3);
+  assert.deepEqual(rows[0], {
+    cluster: 1, name: "Water", color: [64, 128, 255], percentage: 42.31, count: 1200, min: 0, max: 85,
+  });
+  const junk = legendRows([{ color: [300, -20, "x"], percentage: "nope", name: "" }]);
+  assert.deepEqual(junk[0].color, [255, 0, 128], "colours are clamped and rounded");
+  assert.equal(junk[0].percentage, 0, "a non-numeric percentage becomes 0");
+  assert.equal(junk[0].name, "Cluster 1", "a missing name falls back to the cluster number");
+  assert.deepEqual(legendRows(undefined), []);
+});
+
+test("formatPercentage keeps slivers readable and never prints '0%' for real data", () => {
+  assert.equal(formatPercentage(42.31), "42.3%");
+  assert.equal(formatPercentage(7.5), "7.50%");
+  assert.equal(formatPercentage(0.04), "<0.1%");
+  assert.equal(formatPercentage(0), "0%");
+  assert.equal(formatPercentage(undefined), "—");
+});
+
+test("fitText ellipsises to the available width", () => {
+  const ctx = { measureText: (text) => ({ width: text.length * 10 }) };
+  assert.equal(fitText(ctx, "Water", 100), "Water");
+  assert.equal(fitText(ctx, "Shadows, Dark Trees / Forest", 100), "Shadows,…");
+  assert.equal(fitText(ctx, "", 100), "");
+});
+
+test("legendMetrics puts the panel right when there is room, below otherwise", () => {
+  const big = legendMetrics(2449, 1632, 5);
+  assert.equal(big.placeRight, true, "a 2449×1632 map takes the side panel");
+  assert.ok(big.panelWidth >= 200 && big.panelWidth <= 420);
+  const tile = legendMetrics(260, 260, 5);
+  assert.equal(tile.placeRight, true, "a short legend fits beside a 260 px tile");
+  const tileTall = legendMetrics(260, 260, 20);
+  assert.equal(tileTall.placeRight, false,
+    "a 20-class legend cannot fit beside a 260 px tile — it goes underneath");
+  const wide = legendMetrics(1200, 180, 5);
+  assert.equal(wide.placeRight, true, "a 1200×180 strip still fits the side panel");
+  const letterbox = legendMetrics(1200, 80, 5);
+  assert.equal(letterbox.placeRight, false, "a letterbox image puts the legend underneath");
+});
+
+test("drawLegend paints a swatch, the class name and the percentage per row", () => {
+  const documentStub = fakeDocument();
+  const canvas = documentStub.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  const height = drawLegend(ctx, {
+    x: 0, y: 0, width: 300, rows: legendRows(SAMPLE_LEGEND), title: "Legend — sample.jpg", unit: 14,
+  });
+  assert.equal(height, 29 + 3 * 27 + 20, "the panel is title + rows + padding");
+  assert.ok(canvas.__texts.includes("Water") && canvas.__texts.includes("Vegetation"));
+  assert.ok(canvas.__texts.includes("42.3%") && canvas.__texts.includes("19.7%"));
+  assert.ok(canvas.__texts.includes("Legend — sample.jpg"));
+});
+
+test("composeMap composites the image and the legend into one canvas", () => {
+  const documentStub = fakeDocument();
+  const image = { width: 800, height: 600 };
+  const result = composeMap({ image, legend: SAMPLE_LEGEND, title: "Legend — sample.jpg", documentRef: documentStub });
+  assert.equal(result.legendShown, true);
+  assert.ok(result.width > 800, `the canvas grew for the legend (${result.width})`);
+  assert.equal(result.height, 600);
+  assert.ok(result.legendBox.x >= 800, "the legend starts at/after where the image ends");
+  assert.equal(result.width, 800 + result.legendBox.x - 800 + result.legendBox.width,
+    "canvas width = image + gutter + legend panel");
+  assert.equal(result.canvas.__drawn.width, 800);
+  assert.equal(result.canvas.__drawn.height, 600);
+  assert.ok(result.canvas.__texts.includes("Water"));
+});
+
+test("composeMap can leave the legend out (toggle off) without changing the image", () => {
+  const documentStub = fakeDocument();
+  const result = composeMap({
+    image: { width: 800, height: 600 }, legend: SAMPLE_LEGEND, showLegend: false, documentRef: documentStub,
+  });
+  assert.equal(result.legendShown, false);
+  assert.equal(result.width, 800, "no legend means the canvas matches the image");
+  assert.equal(result.height, 600);
+  assert.equal(result.legendBox, null);
+  assert.equal(result.canvas.__texts.length, 0, "nothing is painted besides the image");
+});
+
+test("composeMap puts a tall legend under a small tile", () => {
+  const documentStub = fakeDocument();
+  const many = Array.from({ length: 20 }, (_value, index) => ({
+    cluster: index + 1,
+    name: `Class ${index + 1}`,
+    color: [index * 10, 128, 200],
+    percentage: 100 / 20,
+  }));
+  const result = composeMap({ image: { width: 260, height: 260 }, legend: many, documentRef: documentStub });
+  assert.equal(result.width, 260, "the tile keeps its full width");
+  assert.ok(result.height > 260, `the canvas grew downwards (${result.height})`);
+  assert.equal(result.legendBox.y, 260, "the legend starts below the image");
+  assert.equal(result.legendBox.width, 260, "the under-panel spans the canvas");
+});
+
+test("mapFileName derives a readable, safe filename", () => {
+  assert.equal(mapFileName("sample.jpg"), "map-sample.png");
+  assert.equal(mapFileName(""), "map-map.png");
+  assert.equal(mapFileName("a b/c.tif"), "map-a-b-c.png");
 });

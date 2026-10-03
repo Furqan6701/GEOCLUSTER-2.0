@@ -12,6 +12,7 @@ import { ApiClient } from "./api.js";
 import { resolveApiBase } from "./config.js";
 import { ApiError, humanizeError } from "./errors.js";
 import { ImageHistory, HISTORY_LIMIT, snapshotOf } from "./history.js";
+import { composeMap, mapCanvasToBlob, mapFileName } from "./map.js";
 import { createChatPanel } from "./panels/chat.js";
 import { createPanels } from "./panels/index.js";
 import { SessionExpiredError, SessionManager } from "./session.js";
@@ -46,6 +47,45 @@ const resultViewer = new Viewer(document.getElementById("viewer-result"), {
   bus,
   placeholder: "Run a filter or K-Means to see the result here",
 });
+
+// --------------------------------------------------------------- map viewer
+/**
+ * Map viewport (STEP 4): the classified image composited with its legend on a
+ * single canvas, so what is on screen is exactly what "Map export" writes.
+ * The legend comes from the classify response — no extra requests.
+ */
+let mapVisible = false;
+let mapLegendShown = true;
+
+/** toggleButton fires onChange while constructing: ignore that first call. */
+let mapTogglesReady = false;
+
+const mapLegendToggle = toggleButton("map-legend", {
+  label: "Legend",
+  pressed: true,
+  title: "Show or hide the legend in the map and in the exported PNG",
+  onChange: (enabled) => {
+    if (!mapTogglesReady) return;
+    mapLegendShown = enabled;
+    if (state.map?.canvas || mapVisible) void buildMap();
+    bus.emit("status", { message: `Map legend ${enabled ? "shown" : "hidden"}` });
+  },
+});
+
+const mapViewer = new Viewer(document.getElementById("viewer-map"), {
+  title: "Map",
+  role: "map",
+  bus,
+  placeholder: "Run Classify in the Clusters section — this viewport shows the classified image with its legend",
+  footerExtras: [mapLegendToggle],
+});
+
+/** Role-based label, used by the status bar for all three viewports. */
+function viewerLabel(viewer) {
+  if (viewer === originalViewer) return "Original";
+  if (viewer === resultViewer) return "Result";
+  return "Map";
+}
 
 const loadTokens = { original: 0, result: 0 };
 
@@ -90,6 +130,108 @@ bus.on("viewer:distance", ({ text }) => {
 bus.on("viewer:distance-mode", ({ enabled, role }) => {
   if (enabled) toast(`Distance tool on the ${role} viewer — click two points (Esc clears).`, "", { timeout: 6000 });
   bus.emit("status", { message: enabled ? `Measure tool active on ${role}` : "Measure tool off" });
+});
+
+// ------------------------------------------------------------------ map view
+/** Rebuild the composed map canvas from the classified image + legend data. */
+async function buildMap() {
+  const map = state.map;
+  if (!map) return null;
+  try {
+    const blob = await session.imageBlob(map.imageId);
+    const bitmap = await createImageBitmap(blob);
+    const composed = composeMap({
+      image: bitmap,
+      legend: map.legend,
+      title: `Legend — ${map.name}`,
+      showLegend: mapLegendShown,
+    });
+    map.canvas = composed.canvas;
+    map.box = composed.legendBox;
+    map.width = composed.width;
+    map.height = composed.height;
+    mapViewer.setBitmap(composed.canvas,
+      `${composed.width}×${composed.height} · ${composed.rows.length} classes · legend ${mapLegendShown ? "on" : "off"}`);
+    mapViewer.setName(`Map — ${map.name}`);
+    if (mapVisible) requestAnimationFrame(() => mapViewer.render());
+    return composed;
+  } catch (error) {
+    report(error, "Could not build the map view");
+    return null;
+  }
+}
+
+function setMapVisible(visible, { announce = true } = {}) {
+  const wanted = Boolean(visible);
+  if (wanted && !state.map) {
+    toast("There is no classified map yet — run K-Means, then Classify in the Clusters section.", "warn");
+    return false;
+  }
+  mapVisible = wanted;
+  document.getElementById("viewer-map").hidden = !mapVisible;
+  document.getElementById("viewer-area").classList.toggle("map-open", mapVisible);
+  // only mirror into the toggle when they disagree (setPressed re-enters here)
+  if (mapToggle && mapToggle.isPressed() !== mapVisible) mapToggle.setPressed(mapVisible);
+  if (mapVisible) {
+    requestAnimationFrame(() => {
+      mapViewer.fit();
+      mapViewer.render();
+      fitToolbar();
+    });
+  } else {
+    requestAnimationFrame(() => originalViewer.render());
+  }
+  if (announce) {
+    bus.emit("status", {
+      message: mapVisible
+        ? `Map view shown — classified image with its legend (${state.map?.legend?.length ?? 0} classes)`
+        : "Map view hidden",
+    });
+  }
+  return mapVisible;
+}
+
+/** Export the composed map: one PNG containing the image *and* the legend. */
+async function exportMap() {
+  const map = state.map;
+  if (!map?.canvas) {
+    toast("Nothing to export yet — run Classify; then the map is the classified image plus its legend.", "warn");
+    return { ok: false, reason: "no-map" };
+  }
+  const blob = await mapCanvasToBlob(map.canvas);
+  if (!blob) {
+    toast("This browser could not turn the map canvas into a PNG.", "bad");
+    return { ok: false, reason: "no-blob" };
+  }
+  const filename = mapFileName(map.name);
+  downloadBlob(blob, filename);
+  toast(`Map exported — ${map.canvas.width}×${map.canvas.height} PNG, legend ${mapLegendShown ? "included" : "hidden"} (${filename})`, "ok");
+  bus.emit("status", { message: `Map exported to ${filename} (legend composited on the canvas)` });
+  return { ok: true, blob, width: map.canvas.width, height: map.canvas.height, filename };
+}
+
+const mapToggle = toggleButton("map", {
+  label: "Map",
+  pressed: false,
+  title: "Show the classified map (image + legend) — run Classify first",
+  onChange: (enabled) => {
+    if (!mapTogglesReady || enabled === mapVisible) return;
+    if (!setMapVisible(enabled)) mapToggle.setPressed(false);
+  },
+});
+mapTogglesReady = true;
+const mapButtonHost = document.getElementById("tb-map");
+mapButtonHost?.replaceWith(mapToggle.node);
+mapToggle.node.id = "tb-map";
+document.getElementById("tb-map")?.prepend(icon("map", { size: 13 }));
+// the toolbar is a single row: re-measure now that the button exists
+requestAnimationFrame(() => fitToolbar());
+
+bus.on("map:updated", async ({ legend, imageId, name }) => {
+  state.map = { legend: legend ?? [], imageId, name: name ?? imageId, canvas: null };
+  await buildMap();
+  setMapVisible(true);
+  toast(`Map view updated — ${(legend ?? []).length} classes with their legend.`, "ok");
 });
 
 // ------------------------------------------------------------------ history
@@ -208,6 +350,9 @@ async function applyHistoryEntry(entry) {
   } finally {
     applyingHistory = false;
   }
+  const onMapState = state.map && state.map.imageId === entry.snapshot.result?.id;
+  if (onMapState) setMapVisible(true, { announce: false });
+  else if (mapVisible) setMapVisible(false, { announce: false });
   updateHistoryControls();
   updateStatusBar();
 }
@@ -273,6 +418,9 @@ redoButton?.addEventListener("click", redo);
 bus.on("session:reset", () => {
   history.reset();
   updateHistoryControls();
+  state.map = null;
+  mapViewer.clear();
+  setMapVisible(false, { announce: false });
 });
 
 bus.on("viewer:error", () => {
@@ -297,11 +445,13 @@ bus.on("viewer:active", ({ role }) => {
   activeRole = role;
   originalViewer.setActive(role === "original");
   resultViewer.setActive(role === "result");
+  mapViewer.setActive(role === "map");
   updateStatusBar();
 });
 
 /** The viewer toolbar actions apply to: the focused viewport, else one with an image. */
 function activeViewer() {
+  if (activeRole === "map" && mapViewer.hasImage) return mapViewer;
   const tracked = activeRole === "result" ? resultViewer : originalViewer;
   if (tracked.hasImage) return tracked;
   const other = tracked === resultViewer ? originalViewer : resultViewer;
@@ -616,6 +766,7 @@ const menuBar = createMenuBar([
       { label: "Show toolbox", icon: "panelLeft", checked: dockVisibility.toolbox, onClick: () => setDockVisible("toolbox", !dockVisibility.toolbox) },
       { label: "Show assistant", icon: "chat", checked: dockVisibility.assistant, onClick: () => setDockVisible("assistant", !dockVisibility.assistant) },
       { label: "Show result viewport", icon: "grid", checked: resultVisible, onClick: () => setResultVisible(!resultVisible) },
+      { label: "Show map viewport", icon: "map", checked: mapVisible, disabled: !state.map, reason: "run Classify first", onClick: () => setMapVisible(!mapVisible) },
     ],
   },
   {
@@ -646,9 +797,32 @@ const menuBar = createMenuBar([
       { separator: true },
       { label: "Histogram & statistics", icon: "chart", onClick: () => { focusSection("analysis"); panelById.get("analysis")?.actions?.refresh(); } },
       { separator: true },
-      { label: "Map view", icon: "map", disabled: true, reason: "planned — no map backend yet" },
-      { label: "Map legend", icon: "legend", disabled: true, reason: "planned — lives in the Clusters section for now" },
-      { label: "Map export", icon: "download", disabled: true, reason: "planned — no map backend yet" },
+      {
+        label: "Map view",
+        icon: "map",
+        checked: mapVisible,
+        note: state.map
+          ? `classified image + legend (${state.map.legend.length} classes)`
+          : "run Classify first — the map is built from its response",
+        onClick: () => setMapVisible(!mapVisible),
+      },
+      {
+        label: "Map legend",
+        icon: "legend",
+        checked: mapLegendShown,
+        disabled: !state.map,
+        reason: "run Classify first — the legend comes from its response",
+        note: mapLegendShown ? "drawn into the map and the exported PNG" : "hidden in the map and the exported PNG",
+        onClick: () => mapLegendToggle.setPressed(!mapLegendToggle.isPressed()),
+      },
+      {
+        label: "Map export (PNG)…",
+        icon: "download",
+        disabled: !state.map,
+        reason: "run Classify first — there is no map to export yet",
+        note: "one PNG with the image and its legend",
+        onClick: () => exportMap(),
+      },
     ],
   },
   {
@@ -781,13 +955,15 @@ function updateStatusBar() {
   const active = activeViewer();
   const viewer = active.hasImage ? active : (activeImage(state) ? (active === originalViewer ? resultViewer : originalViewer) : null);
   const info = viewer?.hasImage
-    ? (viewer === originalViewer ? state.original?.info : state.result?.info) ?? null
+    ? viewer === mapViewer
+      ? { channels: 3, name: `map of ${state.map?.name ?? "the classification"}` }
+      : (viewer === originalViewer ? state.original?.info : state.result?.info) ?? null
     : null;
   const shown = viewer?.image ? { width: viewer.image.width, height: viewer.image.height } : null;
 
-  setCell(sb.viewer, viewer?.hasImage ? `Viewport: ${viewer === originalViewer ? "Original" : "Result"}` : "Viewport: —");
+  setCell(sb.viewer, viewer?.hasImage ? `Viewport: ${viewerLabel(viewer)}` : "Viewport: —");
   setCell(sb.size, shown ? `${shown.width} × ${shown.height} px` : "—",
-    shown ? `${shown.width} × ${shown.height} pixels (${viewer === originalViewer ? "original" : "result"})` : "No image");
+    shown ? `${shown.width} × ${shown.height} pixels (${viewerLabel(viewer).toLowerCase()})` : "No image");
   setCell(sb.mode, channelLabel(info), info ? `${channelLabel(info)} — ${info.channels} channel(s), ${info.name ?? ""}`.trim() : "No image");
   setCell(sb.zoom, viewer?.hasImage ? `Zoom ${Math.round(viewer.scale * 100)}%` : "Zoom —",
     viewer?.hasImage ? `Zoom ${Math.round(viewer.scale * 100)}% — ${viewer.image.width} × ${viewer.image.height} px image` : "No image");
@@ -880,7 +1056,8 @@ window.geocluster = {
   session,
   state,
   bus,
-  viewers: { original: originalViewer, result: resultViewer },
+  viewers: { original: originalViewer, result: resultViewer, map: mapViewer },
+  map: { setVisible: setMapVisible, build: buildMap, export: exportMap },
   history,
   panels: panelById,
   ApiError,

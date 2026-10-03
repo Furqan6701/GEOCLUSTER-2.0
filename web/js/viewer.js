@@ -25,7 +25,7 @@ const MIN_SCALE = 0.02;
 const MAX_SCALE = 32;
 
 export class Viewer {
-  constructor(root, { title = "Viewer", role = "viewer", bus = null, placeholder = "" } = {}) {
+  constructor(root, { title = "Viewer", role = "viewer", bus = null, placeholder = "", footerExtras = [] } = {}) {
     this.root = root;
     this.title = title;
     this.placeholder = placeholder || `No image loaded — ${title} viewport`;
@@ -41,6 +41,7 @@ export class Viewer {
     this.points = [];
     this.panEnabled = true;
     this.pixelReadout = true;
+    this.footerExtras = footerExtras ?? [];
     this.mirror = null;          // partner viewer when synchronised
     this.syncEnabled = false;
     this.active = false;
@@ -94,6 +95,7 @@ export class Viewer {
         this.oneToOneButton,
         this.zoomInButton,
         this.distanceButton,
+        ...this.footerExtras,
         this.zoomLabel,
         this.readout,
       ]),

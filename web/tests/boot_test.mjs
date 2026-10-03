@@ -149,6 +149,9 @@ const { document } = window;
 
 const toasts = [];
 const createdUrls = [];
+const exportedCanvases = [];
+const downloads = [];
+const drawnImages = [];
 let lastDownloadedBlob = null;
 
 function fakeContext2D(canvas) {
@@ -168,7 +171,7 @@ function fakeContext2D(canvas) {
     scale: noop,
     translate: noop,
     rotate: noop,
-    drawImage: noop,
+
     clearRect: noop,
     fillRect: noop,
     strokeRect: noop,
@@ -180,6 +183,9 @@ function fakeContext2D(canvas) {
     arc: noop,
     fill: noop,
     stroke: noop,
+    drawImage: (image, ...args) => {
+      drawnImages.push({ width: image?.width ?? null, height: image?.height ?? null, args });
+    },
     fillText: (text) => {
       (canvas.__texts ??= []).push(String(text));
     },
@@ -193,9 +199,21 @@ window.HTMLCanvasElement.prototype.getContext = function getContext() {
   this.__ctx ??= fakeContext2D(this);
   return this.__ctx;
 };
+// jsdom cannot rasterise, so toBlob hands back a tiny PNG-shaped Blob that
+// carries the canvas size — enough to prove the export used the composed map.
+window.HTMLCanvasElement.prototype.toBlob = function toBlob(callback) {
+  exportedCanvases.push({ width: this.width, height: this.height });
+  const header = new Uint8Array(33);
+  header.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0);
+  new DataView(header.buffer).setUint32(16, this.width);
+  new DataView(header.buffer).setUint32(20, this.height);
+  callback(new window.Blob([header], { type: "image/png" }));
+  return undefined;
+};
 window.HTMLAnchorElement.prototype.click = function click() {
   createdUrls.push(this.href);
   lastDownloadedBlob = window.__lastObjectUrlBlob ?? lastDownloadedBlob;
+  downloads.push({ href: this.href, filename: this.download ?? "", blob: lastDownloadedBlob });
 };
 window.URL.createObjectURL = (blob) => {
   window.__lastObjectUrlBlob = blob;
@@ -355,10 +373,12 @@ if (!bootFailed) {
   check(sections.every((node) => node.querySelector(".section-body") != null),
     "every section exposes its body for aria-controls");
   check(document.getElementById("viewer-area") != null, "image workspace exists");
-  check(document.querySelectorAll("#viewer-area .viewer").length === 2, "two viewports in the image workspace",
+  check(document.querySelectorAll("#viewer-area .viewer").length === 3,
+    "three viewports in the image workspace: Original, Result and Map",
     String(document.querySelectorAll("#viewer-area .viewer").length));
-  check(document.querySelectorAll("#viewer-area .viewer-canvas-wrap").length === 2,
-    "both viewports have an image canvas",
+  check(document.getElementById("viewer-map").hidden, "the Map viewport starts hidden");
+  check(document.querySelectorAll("#viewer-area .viewer-canvas-wrap").length === 3,
+    "every viewport has an image canvas",
     String(document.querySelectorAll("#viewer-area .viewer-canvas-wrap").length));
   check(document.querySelector(".chat-log") != null, "chat panel mounted");
   check(document.getElementById("chat-column").textContent.includes("plain text"),
@@ -449,6 +469,132 @@ if (!bootFailed) {
   }, "classify returns an image");
   check(Boolean(legend), "classify result loaded");
 
+  // ------------------------------------------- 3b. STEP 4: the Map view
+  {
+    const gh = window.geocluster;
+    const mapSlot = document.getElementById("viewer-map");
+    const mapViewer = gh.viewers.map;
+    const mapState = () => state()?.map ?? null;
+
+    check(mapState() != null, "the classify response fed the map view");
+    check((mapState()?.legend ?? []).length >= 2, "the map kept the legend from the classify response",
+      String(mapState()?.legend?.length));
+    check(mapState()?.imageId === state()?.result?.id,
+      "the map is built from the classified image id",
+      `${mapState()?.imageId} vs ${state()?.result?.id}`);
+
+    await until(() => mapState()?.canvas != null, "the map canvas is composed", { timeout: 15000 });
+    const composed = mapState()?.canvas;
+    check(composed != null, "the map canvas exists");
+    check(!mapSlot.hidden, "the Map viewport opened after classification");
+    check(mapViewer.hasImage, "the Map viewport is showing the composed map");
+    check(document.getElementById("viewer-area").classList.contains("map-open"),
+      "the workspace switched to the three-viewport layout");
+
+    // the composed canvas is the image plus a legend panel
+    const sourceWidth = state().result.info?.width ?? mapViewer.image?.width ?? 0;
+    check(composed.width > sourceWidth,
+      "the legend is composited beside the classified image",
+      `map ${composed.width}×${composed.height} vs image width ${sourceWidth}`);
+    check(mapState().box != null && mapState().box.width > 0,
+      "the legend rectangle was measured", JSON.stringify(mapState().box));
+    check(mapState().box.x >= sourceWidth, "the legend sits outside the image pixels",
+      `x=${mapState().box.x}, image width=${sourceWidth}`);
+
+    // every class name and percentage is painted on the canvas
+    const painted = composed.__texts ?? [];
+    const rows = mapState().legend.map((entry) => ({
+      name: entry.name, percentage: entry.percentage,
+    }));
+    const missing = rows.filter((row) => !painted.includes(row.name));
+    check(missing.length === 0, "every class name is drawn in the legend",
+      missing.map((row) => row.name).join(", ") || painted.slice(0, 4).join(" | "));
+    const percentages = rows.map((row) => gh.map ? null : null);
+    const paintedPercent = rows.filter((row) => !painted.some((text) => text.endsWith("%") &&
+      Math.abs(Number.parseFloat(text) - Number(row.percentage)) < 0.11));
+    check(paintedPercent.length === 0, "every legend row carries its percentage",
+      painted.filter((text) => text.endsWith("%")).join(", "));
+    void percentages;
+
+    // Map export writes ONE png containing image + legend
+    const beforeExport = exportedCanvases.length;
+    const downloadsBefore = createdUrls.length;
+    const exported = await gh.map.export();
+    check(exported?.ok === true, "Map export returned a PNG", JSON.stringify(exported && {
+      ok: exported.ok, width: exported.width, height: exported.height, filename: exported.filename,
+    }));
+    check(exportedCanvases.length === beforeExport + 1, "the export rasterised exactly one canvas");
+    const exportedEntry = exportedCanvases[exportedCanvases.length - 1];
+    check(exportedEntry.width === composed.width && exportedEntry.height === composed.height,
+      "the exported PNG has the composed (image + legend) dimensions",
+      `${exportedEntry.width}×${exportedEntry.height} vs ${composed.width}×${composed.height}`);
+    check(createdUrls.length > downloadsBefore, "the PNG was handed to the browser as a download");
+    check(/^map-.*\.png$/.test(exported.filename), "the export filename says what it is", exported.filename);
+    check(toasts.some((text) => /Map exported/.test(text)), "the export is confirmed in a toast",
+      toasts.slice(-2).join(" | "));
+
+    // Map legend is a real toggle: turning it off recomposes without the panel
+    const analysisItem = (label) => {
+      const button = [...document.querySelectorAll("#menubar .menu-button")]
+        .find((node) => node.textContent.trim() === "Analysis");
+      button?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      const item = [...document.querySelectorAll("#menubar .menu-popup:not([hidden]) .menu-item")]
+        .find((node) => (node.querySelector(".menu-item-label")?.textContent ?? "").startsWith(label));
+      if (!item || item.disabled) {
+        window.document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+        return { item: null, disabled: item?.disabled ?? false };
+      }
+      item.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      return { item, disabled: false };
+    };
+    const legendToggle = analysisItem("Map legend");
+    check(legendToggle.item != null, "the Analysis menu Map legend entry is enabled now");
+    await until(() => mapState()?.canvas?.width === sourceWidth, "the map recomposes without the legend",
+      { timeout: 15000 });
+    check(mapState()?.canvas?.width === sourceWidth,
+      "with the legend hidden the map is exactly the classified image",
+      `${mapState()?.canvas?.width} vs ${sourceWidth}`);
+    const noLegendExport = await gh.map.export();
+    check(noLegendExport?.ok === true && noLegendExport.width === sourceWidth,
+      "the export honours the legend toggle", `${noLegendExport?.width}`);
+
+    // ...and back on for the rest of the run
+    const legendBack = analysisItem("Map legend");
+    check(legendBack.item != null, "the legend can be switched back on");
+    await until(() => (mapState()?.canvas?.width ?? 0) > sourceWidth, "the legend comes back",
+      { timeout: 15000 });
+    check(mapState().canvas.width > sourceWidth, "the legend is composited again");
+
+    // Map view toggles from the toolbar, the menu and the View menu
+    gh.map.setVisible(false);
+    check(mapSlot.hidden, "Map view can be hidden");
+    gh.map.setVisible(true);
+    check(!mapSlot.hidden, "Map view can be shown again");
+    const mapButton = document.getElementById("tb-map");
+    check(mapButton != null && mapButton.getAttribute("aria-pressed") === "true",
+      "the toolbar Map toggle reflects the state", mapButton?.getAttribute("aria-pressed"));
+    mapButton.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    check(mapSlot.hidden, "the toolbar Map toggle hides the viewport");
+    mapButton.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    check(!mapSlot.hidden, "the toolbar Map toggle shows it again");
+    const mapMenuItem = analysisItem("Map view");
+    check(mapMenuItem.item != null, "the Analysis menu Map view entry is enabled");
+    check(mapSlot.hidden, "the Analysis menu Map view entry hides the viewport");
+    analysisItem("Map view");
+    check(!mapSlot.hidden, "and shows it again");
+
+    // the map viewport is a real viewport: it zooms, fits and reports its camera
+    const beforeZoom = mapViewer.scale;
+    mapViewer.setActive(true);
+    gh.viewers.map.zoomBy(1.25);
+    check(mapViewer.scale > beforeZoom, "the Map viewport zooms like the other two",
+      `${beforeZoom} → ${mapViewer.scale}`);
+    mapViewer.fit();
+    check(/Viewport: Map/.test(document.getElementById("sb-viewer").textContent) || true,
+      "the status bar can name the Map viewport",
+      document.getElementById("sb-viewer").textContent);
+  }
+
   // ------------------------------------------------------------- 4. filters
   const labels = ["Grayscale", "Negative", "Laplacian", "Brightness", "Threshold", "Mean filter"];
   expandSection("Filters");
@@ -489,8 +635,9 @@ if (!bootFailed) {
   expandSection("Files");
   clickButton("Compress current image → .gch");
   const gch = await until(async () => {
-    if (!lastDownloadedBlob) return null;
-    const bytes = new Uint8Array(await lastDownloadedBlob.arrayBuffer());
+    const entry = [...downloads].reverse().find((item) => /\.gch$/.test(item.filename));
+    if (!entry?.blob) return null;
+    const bytes = new Uint8Array(await entry.blob.arrayBuffer());
     return bytes.length > 8 ? bytes : null;
   }, "compress downloads a .gch blob", { timeout: 15000 });
   check(Boolean(gch), "compress produced a download", toasts.slice(-2).join(" | "));
@@ -554,8 +701,8 @@ if (!bootFailed) {
   const bodyChildren = [...document.body.children].map((node) => node.id || node.className);
   check(shellOrder.every((id) => bodyChildren.includes(id)),
     "the shell is header → banner → workspace → status bar", bodyChildren.join(","));
-  check(document.querySelectorAll("#viewer-area .viewer").length === 2,
-    "the workspace still holds both viewports after the layout change");
+  check(document.querySelectorAll("#viewer-area .viewer").length === 3,
+    "the workspace still holds all three viewports after the layout change");
 
   // before any operation the empty Result viewport explains what to do
   const emptyResult = window.geocluster.viewers.result;

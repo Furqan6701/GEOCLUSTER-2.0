@@ -13,7 +13,7 @@ The frontend is a desktop-style workspace, not a dashboard:
 | Title bar | GeoCluster 2.0, menu bar (File · View · Processing · Analysis · Help), status chips (API, session, AI, satellite, max MP) |
 | Toolbar | Open · Satellite · Export · Compress · Undo/Redo · Pan · Pixel · Measure · Sync · dock toggles (single non-wrapping row; labels collapse to icons below 1440 px) |
 | Toolbox dock | collapsible sections: Source, Filters, Clusters, Analysis, Files (every control from the previous panels, unchanged in behaviour) |
-| Image workspace | two viewports, **Original** and **Result**, each with a header (name + dimensions + active tool) and a footer (Fit/1:1/±/Distance, zoom %, pixel readout) |
+| Image workspace | up to three viewports — **Original**, **Result** and **Map** (hidden until a classification exists) — each with a header (name + dimensions + active tool) and a footer (Fit/1:1/±/Distance, zoom %, pixel readout); the Map footer also toggles its legend |
 | Assistant dock | scrollable conversation, quick-command buttons, compact input; collapsible |
 | Status bar | dimensions · channel layout · zoom · cursor X/Y · pixel value · active viewport · session · API · New session |
 
@@ -57,14 +57,32 @@ viewport slots so "Clear result" is undoable too.
   nothing. Old Blobs are released after 24 images to bound memory.
 * Starting a new session clears the history (server ids are gone).
 
+### Map view (implemented)
+
+The classify step returns a recoloured image plus a legend
+(`cluster, name, colour, min, max, count, percentage, label`), so the Map
+viewport is a real product of the pipeline, not a placeholder:
+
+* `js/map.js` draws the classified image **and** its legend onto one canvas:
+  swatch + class name + percentage per row, panel beside the image when it
+  fits, underneath when it does not (260×260 satellite tiles with 20 classes,
+  letterbox images). Long names are ellipsised, colours are normalised.
+* That canvas is what the Map viewport shows, so **Map export** writes a single
+  PNG that already contains the legend — the same canvas, `toBlob("image/png")`,
+  named `map-<source>.png`.
+* Analysis → *Map view* / *Map legend* / *Map export*, the toolbar **Map**
+  toggle and View → *Show map viewport* all drive it. The legend toggle
+  recomposes the canvas with or without the panel, and the export follows it.
+* Classify opens the Map view automatically; with three panes the workspace
+  puts the map on a full-width row under the two image panes below 1500 px, and
+  undoing past the classification hides it again.
+* No new requests: the classified image comes from the session Blob cache and
+  everything else is canvas work in the browser.
+
 ### Deliberately not implemented
 
-Recent files, Map view, Map legend and Map export are listed in the menus as
-**disabled entries with a reason** instead of fake buttons:
-
-* Map view / legend / export — there is no map or georeferencing backend. The
-  per-cluster legend that *does* exist lives in the Clusters section.
-* Recent files — session images are listed in the Source section instead.
+Recent files appears as a **disabled entry with a reason** instead of a fake
+button: session images are listed in the Source section instead.
 
 ## Serving and CORS
 

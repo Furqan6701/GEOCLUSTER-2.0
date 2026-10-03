@@ -148,6 +148,13 @@ export function createClustersPanel(ctx) {
       );
       session.useAsResultId(result.image_id, { ...(active.info ?? {}), source: "classify" });
       renderLegend(result.legend ?? []);
+      // the Map view is built from this response: classified image + legend
+      state.legend = result.legend ?? [];
+      bus.emit("map:updated", {
+        legend: result.legend ?? [],
+        imageId: result.image_id,
+        name: active.info?.name ?? result.image_id,
+      });
       toast("Classification applied.", "ok");
       bus.emit("status", { message: `Classified ${Object.keys(ranges).length} clusters` });
     } catch (error) {

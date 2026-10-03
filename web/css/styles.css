@@ -299,6 +299,7 @@ p { margin: 0; }
   min-height: 0;
   min-width: 0;
 }
+.image-workspace.map-open { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .viewer-slot { min-height: 0; min-width: 0; display: flex; }
 .viewer-slot[hidden] { display: none; }
 
@@ -558,8 +559,19 @@ table.grid input[type="color"] { height: 18px; }
 @media (max-width: 1240px) {
   :root { --toolbox-w: 238px; --assistant-w: 260px; }
 }
+/* With the Map viewport open there are three panes: on laptops the map takes a
+   full width row under the two image viewports instead of squeezing all three. */
+@media (max-width: 1500px) {
+  .image-workspace.map-open {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: repeat(2, minmax(150px, 1fr));
+  }
+  .image-workspace.map-open #viewer-map { grid-column: 1 / -1; }
+}
 @media (max-width: 1080px) {
   .image-workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(160px, 1fr) minmax(160px, 1fr); }
+  .image-workspace.map-open { grid-template-rows: repeat(3, minmax(140px, 1fr)); }
+  .image-workspace.map-open #viewer-map { grid-column: auto; }
   :root { --assistant-w: 240px; }
 }
 /* Narrow screens: one column, but the image workspace keeps the flexible row

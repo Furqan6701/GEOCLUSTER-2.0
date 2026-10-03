@@ -252,6 +252,24 @@ def check_workstation_layout() -> None:
     check(".viewer-head .meta" in css and ".sb-item" in css,
           "both the viewport header and the status bar participate in truncation")
 
+    # STEP 4: the Map viewport is a third real viewport, not a card
+    check('id="viewer-map"' in index, "index.html has a Map viewport slot")
+    check('id="viewer-map" hidden' in index or 'hidden id="viewer-map"' in index
+          or re.search(r'id="viewer-map"[^>]*hidden', index) is not None,
+          "the Map viewport starts hidden (nothing to map before a classification)")
+    check('id="tb-map"' in index, "the toolbar has a Map toggle")
+    viewer_js = _js_text("js/viewer.js")
+    check("footerExtras" in viewer_js, "viewers accept extra footer controls (legend toggle)")
+    map_js = _js_text("js/map.js")
+    for token in ["composeMap", "drawLegend", "legendRows", "mapCanvasToBlob", "formatPercentage"]:
+        check(f"export function {token}" in map_js or f"export async function {token}" in map_js,
+              f"map.js exports {token}")
+    check("createElement(\"canvas\")" in map_js,
+          "the legend is composited on a canvas (so the PNG export includes it)")
+    check("map-open" in css, "the workspace can lay out three viewports")
+    check("@media (max-width: 1500px)" in css and "map-open" in css,
+          "three viewports never squeeze the image panes on a laptop")
+
     # STEP 2.3: zoom controls exist in exactly one place
     index_zoom_ids = [i for i in ["tb-zoom-in", "tb-zoom-out", "tb-fit", "tb-1to1", "tb-zoom-25"] if f'id="{i}"' in index]
     check(not index_zoom_ids, "the toolbar has no zoom buttons (no duplicate controls)",
