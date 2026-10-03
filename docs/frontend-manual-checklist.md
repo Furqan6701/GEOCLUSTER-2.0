@@ -84,6 +84,27 @@ pointer behaviour, and layout at the two widths the user asked about.
     `max_images`, then undo to an old state and run an operation. It must
     succeed silently; the status bar reports the restored image was re-uploaded.
 
+## C2. STEP 2/3 — Clusters and Files (items 1 & 2)
+
+27b. **[both]** Run K-Means: the **Clustered image** is shown on its own — there
+    is no "Clustered image / Label map" toggle. The raw label map is downloadable
+    from **Files → Download raw label map (PNG)…**, and the toast names the file
+    it saved (never an internal id).
+27c. **[both]** The Clusters table shows **Color, Land cover, Min, Max, % of
+    pixels** for every cluster without scrolling the sidebar sideways (each row
+    is two lines). Long class names stay readable via their tooltips.
+27d. **[both]** With **K = 3** the default names are **Class 1 … Class 3**; run
+    **k = 5** again and the land-cover names (Shadows, Grass / Lawn, …) come
+    back. **Reset ranges** puts the min/max back but keeps names and colours you
+    typed.
+
+## C3. STEP 1/4 — the editor shell (item 3)
+
+27e. **[both]** Open the Map composer and look at the page behind it: the
+    toolbar and status bar are visible but nothing shows THROUGH the dialog or
+    its properties sidebar (no see-through panels), and the composer's own
+    header sits below the page toolbar — never on top of it.
+
 ## D. STEP 4 — the Map composer
 
 28. **[both]** Type **k=5** in Clusters → **Run K-Means** → **Classify**. The
@@ -97,64 +118,96 @@ pointer behaviour, and layout at the two widths the user asked about.
 31. **[both]** Title defaults to the image name without its extension; edit the
     title, add a subtitle and change the credit line — the preview updates as
     you type.
-32. **[both]** Toggle the legend off/on, switch percentages off/on, move it to
-    another corner and change its font size — every change is visible in the
-    preview.
+32. **[both]** Toggle the legend off/on and switch percentages off/on. The
+    **Placement** dropdown defaults to **Outside right** and the preview gets
+    WIDER so the legend sits beside the image; **Outside bottom** trades that
+    width for height; the four **On map — …** corners draw it over the image.
+    Nothing outside the image is ever covered. Change its text size too.
 33. **[both]** The scale bar is on with alternating black/white segments; edit
-    the total length, the divisions (1–10) and the unit (m, km, ft, mi). Without
-    ground-scale metadata it says **not to scale** — type an image width under
-    “image width = X unit” and the bar becomes exact. For a satellite fetch
-    (item 5) it is exact immediately.
-34. **[both]** The north arrow is on; try the three styles, rotate it and move
-    it to another corner. Satellite crops are north-up, so 0° is correct.
+    the total length, the divisions (1–10), the label size and the unit (m, km,
+    ft, mi). Without ground-scale metadata it says **not to scale** — type an
+    image width under “image width = X unit” and the bar becomes exact. For a
+    satellite fetch (item 5) it is exact immediately.
+34. **[both]** The north arrow is **on for a satellite crop and off for an
+    upload**; try the three styles, its **Size (px)** and another corner. There
+    is no Rotation control any more (the arrow is drawn north-up).
+34b. **[both]** The **Font** dropdown (Arial, Times New Roman, Georgia,
+    Verdana, Courier New, Trebuchet MS) changes EVERY text on the canvas —
+    title, subtitle, legend, scale bar, credit, corner coordinates. Title size
+    (default 26) is larger than the subtitle's (14); each of subtitle, legend,
+    scale-bar label and credit has its own size field. The **Bold title** toggle
+    and the **Title alignment** (left / center / right) work, and the title sits
+    **centred at the top** by default.
+34c. **[both]** The credit line is EMPTY for an uploaded image and reads
+    "Contains modified Copernicus Sentinel data" for a satellite crop (or a
+    result derived from one). Type your own credit — it survives opening
+    another image; tick/untick the arrow and check that choice survives too.
 35. **[both]** Click **PNG 2x** / **PNG 3x**: Chrome downloads
     `<title>-map@2x.png` and the file is exactly the preview at that scale
     (open it and compare the legend text and the bar).
 36. **[both]** Analysis → *Map legend* toggles the legend without opening the
     modal; Analysis → *Map export (PNG)…* opens the modal so the scale can be
     chosen first.
-## E. STEP 5 — histogram and distance
+## E. STEP 5 — histogram windows and distance
 
-35. **[both]** Analysis → **Histogram & stats**. Switch **Log scale**,
-    **Smooth** (3/5/9), **Cumulative**, **Density** and **Light theme** one at a
-    time: the chart redraws instantly, the caption lists the active options,
-    and the Network tab shows **no new request**.
-36. **[both]** Cumulative changes the y-axis label to "pixels ≤ intensity";
-    density to "share of pixels"; the light theme repaints the canvas pale.
-37. **[both]** **Export PNG**: the downloaded `histogram-<image>.png` is 1040×340
-    (2× the panel), keeps the options you had selected, and carries the title
-    line ("Histogram — … · log scale · smoothed 5").
-38. **[both]** Distance → set unit **centimetres**, pixels-per-unit `100`, then
-    use the Measure tool (two clicks on the Original viewport). The panel and
-    the toast both show `… cm on screen (100 px/cm)`.
-39. **[both]** Upload a large image (bigger than the API's max megapixels so it
-    is downscaled) and repeat (38): the panel additionally shows
-    `… cm at the original W×H px (upload downscaled ×N)` — two labelled values.
-40. **[both]** Set the unit back to **pixels**: the measurement shows plain
-    pixels and says the image was not downscaled (when that is the case).
-41. **[both]** Choose **mm** with an empty pixels-per-unit box: the UI asks for
-    the calibration instead of printing a made-up number.
+35. **[both]** Analysis holds **one "Histogram" button** and the Distance
+    controls; there is no inline chart, no Statistics block and no hint lines.
+    Press **Histogram**: a floating window opens over the page (the page behind
+    stays visible and usable — it is NOT modal).
+36. **[both]** Drag it by its title bar, press **Escape** (closes it), reopen
+    and press the **✕**, and move it with the arrow keys while the title bar is
+    focused. Tab cycles inside the window.
+37. **[both]** Open **four** windows: each new one appears beside the previous
+    one without covering it; a fifth press says to close one first. Each window
+    is titled `Histogram: sample.jpg#…` for its own image.
+38. **[both]** Switch **Scale** (Linear/Log), **Smoothing** (Off/Low/High),
+    **Display** (Counts/Density/Cumulative) and **Theme** (Dark/Light) in one
+    window: the chart redraws instantly, the five statistics (Min, Max, Mean,
+    Std dev, Pixels) stay beside it, and the Network tab shows **no new
+    request**. A second window keeps its own options.
+39. **[both]** Change the **Image** dropdown to Result and then to an earlier
+    undo state: the window redraws for that image and its title follows.
+40. **[both]** Optional **Compare**: pick another image and a second outline is
+    drawn in orange with a two-row legend; switch it off again.
+41. **[both]** **Export PNG**: the downloaded `histogram-<image>.png` is
+    1120×520 (2× the window), keeps the options and the title line.
+42. **[both]** Distance: with a plain upload the unit is **pixels** and the
+    pixel-size field is hidden. Measure on a viewport (toolbar **Measure** or
+    the viewport's **Distance** button, two clicks): the panel shows ONE line
+    like `Distance: 450.20 px`, and **Clear** (or Esc) empties it.
+43. **[both]** Switch the unit to **cm** and type a pixel size of `0.5`:
+    the line converts (`500 px → 250.00 cm`). Switch to **km** and the number
+    converts with it (the ground size a pixel spans never changes by itself).
+44. **[both]** Fetch a satellite crop (or classify one) and measure: the unit
+    comes up **m** with the pixel size already filled from
+    `meters_per_pixel` (e.g. `10`), and the line reads e.g.
+    `Distance: 5,000.00 m`.
+45. **[both]** Upload a large image (bigger than the API's max megapixels so it
+    is downscaled) and measure: the line adds
+    `(… px at the original resolution)`. A normal upload shows no such note.
+46. **[both]** Choose a ground unit with an EMPTY pixel size: the line asks for
+    the pixel size instead of printing a made-up number.
 
 ## F. STEP 6 — menus
 
-42. **[both]** Open File / View / Processing / Analysis / Help: every entry is
+47. **[both]** Open File / View / Processing / Analysis / Help: every entry is
     real; none says "not implemented", "planned" or "coming soon".
-43. **[both]** **Recent files** is gone. Instead **File → Session images…**
+48. **[both]** **Recent files** is gone. Instead **File → Session images…**
     opens the Source section and lists the session's images.
-44. **[both]** Every greyed-out entry has a tooltip saying what to do first
+49. **[both]** Every greyed-out entry has a tooltip saying what to do first
     (Export with no image, Clear result with no result, map entries with no
     classification). Hover each one to confirm.
-45. **[both]** Disabled toolbar buttons (Undo/Redo when empty) also explain
+50. **[both]** Disabled toolbar buttons (Undo/Redo when empty) also explain
     themselves on hover.
 
 ## G. Wrap-up
 
-46. **[both]** Walk the Console log: **0 errors** and no `[bus] listener … failed`
+51. **[both]** Walk the Console log: **0 errors** and no `[bus] listener … failed`
     warnings after all of the above.
-47. **[both]** `Ctrl+O` opens the file picker, `Ctrl+S` exports a PNG, `+`/`-`/`0`/`1`
+52. **[both]** `Ctrl+O` opens the file picker, `Ctrl+S` exports a PNG, `+`/`-`/`0`/`1`
     drive the active viewport, `M` measures, `P` toggles the pixel readout, `Y`
     toggles viewer sync — and none of them throw.
-48. **[both]** Optional: run the automated layers yourself —
+53. **[both]** Optional: run the automated layers yourself —
     `node --test "web/tests/*.test.mjs"`, `python web/tests/smoke_test.py`,
     `python web/tests/integration_check.py`,
     `node web/tests/boot_test.mjs --jsdom <path>/node_modules`,
@@ -171,3 +224,10 @@ pointer behaviour, and layout at the two widths the user asked about.
 * Cross-origin behaviour from a hosted preview (the `/api` proxy path is tested,
   but a real browser's CORS decision is not).
 * Long-run memory behaviour of the 15-state / 24-Blob history under large images.
+* The real canvas font metrics behind the legend placement maths: jsdom measures
+  every glyph as one width, so the exact legend box size (and therefore the
+  exact exported canvas width) must be eyeballed once in a browser.
+* Dragging a floating histogram window with a real pointer (mousemove/mouseup
+  are synthesised in the boot test), and window stacking with several open.
+* Scrollbars/overflow of the histogram window body when a desktop font renders
+  wider than jsdom's stub.
