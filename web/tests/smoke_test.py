@@ -278,6 +278,28 @@ def check_workstation_layout() -> None:
     ui_js = _js_text("js/mapstudio_ui.js")
     for token in ['role="dialog"', 'aria-modal', "Escape", "FOCUSABLE", "MapStudio"]:
         check(token in ui_js, f"mapstudio_ui.js implements {token}")
+    # ---- item 3: the composer is opaque and clears the page toolbar
+    # every var() the stylesheet uses has to be defined: `var(--panel)` was a
+    # typo for --bg-panel, which made the dialog and its sidebar transparent
+    defined = set(re.findall(r"^\s*(--[a-z0-9-]+)\s*:", css, re.M))
+    used = set(re.findall(r"var\((--[a-z0-9-]+)", css))
+    missing = sorted(used - defined)
+    check(not missing, "every CSS custom property is defined", ", ".join(missing))
+    check("var(--panel" not in css and "var(--panel-2" not in css,
+          "the transparent --panel typo is gone")
+    check("background: var(--bg-panel-2)" in css and "background-color: #141824" in css,
+          "the modal header and footer are opaque, with a fallback colour")
+    check("background-color: #10131a" in css,
+          "the properties sidebar is opaque even if the var is missing")
+    check("background-color: #141a1f" in css,
+          "the preview host behind the checkerboard is opaque")
+    check("--map-modal-top" in css and "padding: var(--map-modal-top" in css,
+          "the overlay starts below the app header")
+    check("--map-modal-top" in ui_js and "_fitToViewport" in ui_js,
+          "the composer measures the page header and sets that inset")
+    check(re.search(r"\.map-modal\b[^{]*\{[^}]*position: fixed", css) is not None,
+          "the overlay itself is fixed")
+
     check("map-modal-dialog" in css and ".cluster-actions" in css,
           "the composer and the cluster editor are styled")
 

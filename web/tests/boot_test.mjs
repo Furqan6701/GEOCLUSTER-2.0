@@ -827,6 +827,28 @@ if (!bootFailed) {
     check(document.getElementById("tb-map").getAttribute("aria-haspopup") === "dialog",
       "the toolbar Map button opens a dialog");
 
+    // ---- item 3: the composer must not be transparent, nor cover the toolbar
+    {
+      const style = (node) => {
+        const rules = window.getComputedStyle?.(node);
+        return rules ?? null;
+      };
+      const header = document.querySelector(".app-header");
+      check(header != null, "the page header exists above the workspace");
+      // the dialog reserves the measured header height above itself
+      const top = modal.style?.getPropertyValue?.("--map-modal-top") ?? "";
+      check(/^\d+px$/.test(top), "the composer measured the page header", top);
+      check(Number.parseInt(top, 10) >= 0 && Number.parseInt(top, 10) < 400,
+        "the reserved header height is sane", top);
+      // the modal root is fixed, so nothing behind can scroll it away
+      check(style(modal)?.position === "fixed" || modal.style?.position === "fixed" ||
+        modal.classList.contains("map-modal"),
+        "the composer overlay is the fixed .map-modal layer");
+      const dialogStyle = dialog.getAttribute("style") ?? "";
+      check(!/background[^;]*transparent/.test(dialogStyle),
+        "the dialog does not override its background with transparent", dialogStyle);
+    }
+
     // ---- layout: preview in the middle, properties on the right
     const body = dialog.querySelector(".map-modal-body");
     check(body != null && body.querySelector(".map-preview-host") === body.firstElementChild,

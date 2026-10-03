@@ -64,6 +64,23 @@ the server's `image_id`: "Result — sample.jpg#negative (1600×1066)", not
 "new image EkEkL0bUvBYg". A boot assertion collects every `/images/<id>` id the
 session used and fails if any of them appears in a toast.
 
+### Map composer modal: opaque, and clear of the toolbar
+
+* The dialog and its sidebar were **transparent**: `.map-modal-dialog`,
+  `.map-modal-head`/`-foot`, `.map-modal-body` and `.map-props` asked for
+  `var(--panel)` / `var(--panel-2)`, which were never defined — a typo for
+  `--bg-panel` / `--bg-panel-2`. A missing custom property makes the whole
+  declaration invalid, so the modal fell back to `background: transparent`
+  and the workspace showed through. Every `var()` in `styles.css` is now
+  defined (a smoke test fails on any undefined one) and the opaque surfaces
+  also carry literal `background-color` fallbacks.
+* The dialog used to start at `3vh` from the viewport top, i.e. **over** the
+  page header/toolbar. `.map-modal` is now a fixed overlay with
+  `padding-top: var(--map-modal-top, 104px)`, and `MapStudio._fitToViewport()`
+  measures the real `.app-header` height (on open and on window resize) and
+  writes `--map-modal-top`, so the composer's own header always starts below
+  the toolbar.
+
 ### Clusters editor layout and class names
 
 * Each cluster is a **two-line grid row** (`grid-template-areas` on the table

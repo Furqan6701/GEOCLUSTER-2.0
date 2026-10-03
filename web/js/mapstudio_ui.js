@@ -44,6 +44,25 @@ export class MapStudio {
     this.dialog.addEventListener("mousedown", (event) => {
       if (event.target === this.dialog) this.close();
     });
+    // keep the composer's header below the page toolbar at every window size
+    this._onViewportResize = () => this._fitToViewport();
+    (this.doc.defaultView ?? globalThis).addEventListener?.("resize", this._onViewportResize);
+  }
+
+  /**
+   * Reserve the height of the chrome above the dialog (header + toolbar), so
+   * the dialog's own header can never overlap the toolbar. CSS keeps a
+   * fallback of the same value in case the measurement cannot run.
+   */
+  _fitToViewport() {
+    const win = this.doc.defaultView ?? globalThis;
+    const height = Number(win.innerHeight) || 0;
+    if (!height) return;
+    const header = this.doc.querySelector(".app-header");
+    const headerHeight = Number(header?.getBoundingClientRect?.().height) || 0;
+    const fallback = height < 700 ? 40 : 104;
+    const top = headerHeight > 0 ? Math.round(headerHeight + 8) : fallback;
+    this.root.style?.setProperty?.("--map-modal-top", `${Math.min(top, Math.max(40, height - 200))}px`);
   }
 
   // ------------------------------------------------------------------ markup
@@ -392,6 +411,7 @@ export class MapStudio {
     );
     if (!rows.length && this.settings.legend.rows.length) this._savedLegendRows = this.settings.legend.rows;
     this.dialog.querySelector(".map-modal-sub").textContent = this.name ? `image: ${this.name}` : "";
+    this._fitToViewport();
     this.root.hidden = false;
     this.dialog.setAttribute("aria-hidden", "false");
     this._applyFields();
