@@ -275,10 +275,16 @@ async function patchedFetch(input, init = {}) {
   // the page's own origin: a relative "/api/..." call belongs to the server
   // that served the page (this is what a real browser does)
   if (typeof input === "string" && input.startsWith("/")) input = WEB_ORIGIN + input;
+  const isForm = options.body && options.body.constructor?.name === "FormData";
   requests.push({
     url: String(input),
     method: (options.method ?? "GET").toUpperCase(),
     body: typeof options.body === "string" ? options.body : options.body ? `<${options.body.constructor?.name}>` : null,
+    // multipart uploads: [field, filename-or-value] pairs (never the bytes)
+    form: isForm
+      ? [...options.body.entries()].map(([key, value]) =>
+        [key, typeof value === "string" ? value : (value.name ?? null)])
+      : null,
   });
   if (options.body && options.body.constructor?.name === "FormData") {
     const converted = new NodeFormData();
@@ -1281,6 +1287,7 @@ if (!bootFailed) {
   const uploadsBefore = requests.filter((entry) => entry.method === "POST" && /\/images$/.test(entry.url)).length;
   let failedOnce = false;
   let retriedWith = null;
+  const nameBeforeRevive = state().result.info?.name ?? null;
   api.runOperation = async (sid, imageId, op, params) => {
     if (!failedOnce) {
       failedOnce = true;
@@ -1300,6 +1307,18 @@ if (!bootFailed) {
     `${uploadsBefore} → ${uploadsAfter}`);
   check(state()?.result?.id === revived.info?.image_id,
     "the revived result became the displayed image");
+  const uploadFor = (request) => (request.form ?? []).find(([key]) => key === "file")?.[1] ?? null;
+  const reviveUpload = [...requests].reverse()
+    .find((entry) => entry.method === "POST" && /\/images$/.test(entry.url) && uploadFor(entry));
+  check(uploadFor(reviveUpload) === nameBeforeRevive,
+    "the re-upload keeps the image's original name",
+    `${nameBeforeRevive} → ${uploadFor(reviveUpload)}`);
+  check(!/restored/i.test(String(uploadFor(reviveUpload))),
+    "the re-upload no longer uses a generated 'restored-…' name", String(uploadFor(reviveUpload)));
+  const revivedEntry = history.entries.find((entry) => entry.imageId === revived.info?.image_id);
+  check((revivedEntry?.info?.name ?? "").startsWith(String(nameBeforeRevive)),
+    "history keeps the original name for the revived state",
+    String(revivedEntry?.info?.name));
   check(history.entries.every((entry) =>
     entry.imageId !== evictedId && (entry.snapshot.result?.id ?? "") !== evictedId),
     "history re-pointed every entry from the evicted id to the replacement");

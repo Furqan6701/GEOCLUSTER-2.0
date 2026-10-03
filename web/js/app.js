@@ -235,10 +235,10 @@ const mapToggle = toggleButton("map", {
   },
 });
 mapTogglesReady = true;
+// toggleButton already prepends the "map" icon — do not prepend a second one
 const mapButtonHost = document.getElementById("tb-map");
 mapButtonHost?.replaceWith(mapToggle.node);
 mapToggle.node.id = "tb-map";
-document.getElementById("tb-map")?.prepend(icon("map", { size: 13 }));
 // the toolbar is a single row: re-measure now that the button exists
 requestAnimationFrame(() => fitToolbar());
 
@@ -408,9 +408,13 @@ function redo() {
 async function revive(imageId) {
   const blob = history.blobFor(imageId) ?? session.blobCache.get(imageId);
   if (!blob) return null;
-  const info = await session.withSession((sid) =>
-    api.uploadImage(sid, blob, `restored-${String(imageId).slice(-6)}.png`),
-  );
+  // Keep the name the image already had: the re-upload is an implementation
+  // detail and must not change what the UI (or an export) calls the image.
+  const entry = history.entries.find((item) => item.imageId === imageId);
+  const slot = [state.original, state.result].find((item) => item?.id === imageId);
+  const name = entry?.info?.name ?? slot?.info?.name ?? state.images.get(imageId)?.name
+    ?? `image-${String(imageId).slice(-6)}.png`;
+  const info = await session.withSession((sid) => api.uploadImage(sid, blob, name));
   session.blobCache.set(info.image_id, blob);
   history.adopt(imageId, info, blob);
   for (const slot of [state.original, state.result]) {
