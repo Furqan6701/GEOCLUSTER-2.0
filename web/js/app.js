@@ -105,22 +105,28 @@ bus.on("session:reset", () => {
 });
 
 bus.on("viewer:distance", ({ distance, role, text }) => {
-  // Units + original resolution: the analysis panel explains this in full, the
-  // toast repeats the two numbers with the label that says which is which.
+  // The analysis panel owns the controls; the toast repeats its one line so a
+  // measurement taken with the panel collapsed is still reported.
   const info = role === "original" ? state.original?.info : role === "result" ? state.result?.info : null;
-  const settings = state.measure ?? { unit: "px", pxPerUnit: null };
+  const settings = state.measure ?? { unit: "px", pixelSize: null };
   const description = Number.isFinite(Number(distance))
     ? describeDistance({
       pixels: Number(distance),
       unit: settings.unit ?? "px",
-      pxPerUnit: settings.pxPerUnit ?? null,
+      pixelSize: settings.pixelSize ?? null,
       scale: Number(info?.scale) > 0 ? Number(info.scale) : 1,
       info,
     })
-    : { lines: [text] };
-  const message = description.lines.join(" · ");
-  toast(message, "", { timeout: 12000 });
-  bus.emit("status", { message });
+    : { line: text };
+  const message = description.line || text || "";
+  if (message) toast(message, "", { timeout: 12000 });
+});
+
+// The panel's Clear button empties both viewports' overlays; the viewers report
+// back so the result line clears with them.
+bus.on("distance:clear", () => {
+  originalViewer.clearDistance();
+  resultViewer.clearDistance();
 });
 
 bus.on("viewer:distance-mode", ({ enabled, role }) => {

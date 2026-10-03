@@ -2023,67 +2023,160 @@ if (!bootFailed) {
     void requestsBefore;
   }
 
-  // ---- distance units, including the original resolution of a downscaled upload
+  // ------------------------------------------- item 10: the Distance section
   {
+    const gh = window.geocluster;
+    const section = document.getElementById("section-analysis");
+    const unitSelect = document.getElementById("measure-unit");
+    const sizeInput = document.getElementById("measure-pixel-size");
+    const resultLine = section.querySelector(".measure-line");
     const setControl = (node, value, event = "change") => {
-      if (node.type === "checkbox") node.checked = Boolean(value);
-      else node.value = String(value);
+      node.value = String(value);
       node.dispatchEvent(new window.Event(event, { bubbles: true }));
     };
-    const gh = window.geocluster;
+
+    // ---- the sidebar has no Measure button, and no developer wording
+    const measureButtons = [...section.querySelectorAll("button")]
+      .filter((node) => /Measure/.test(node.textContent));
+    check(measureButtons.length === 0, "the sidebar has no Measure button",
+      measureButtons.map((node) => node.textContent).join(" | "));
+    check(!/Client-only|API has no distance|not downscaled|Euclidean|Two clicks/.test(section.textContent),
+      "no explanatory or developer text lines are left in the suite",
+      section.textContent.slice(0, 200));
+
+    // ---- controls: unit + pixel size
+    check(unitSelect != null, "the Distance section has a Unit dropdown");
+    check([...unitSelect.querySelectorAll("option")].map((node) => node.value).join("|") ===
+      "px|mm|cm|m|km|in|ft|mi",
+      "the unit dropdown offers pixels, mm, cm, m, km, inches, ft, mi",
+      [...unitSelect.querySelectorAll("option")].map((node) => node.value).join("|"));
+    check([...unitSelect.querySelectorAll("option")].map((node) => node.textContent).join("|") ===
+      "pixels|millimetres|centimetres|metres|kilometres|inches|feet|miles",
+      "the units are spelled out",
+      [...unitSelect.querySelectorAll("option")].map((node) => node.textContent).join("|"));
+    check(sizeInput != null && /Pixel size/.test(section.textContent),
+      "there is a Pixel size control");
+    check(/ground length/i.test(sizeInput.title ?? ""),
+      "the Pixel size field explains what it wants", sizeInput.title);
+    check(resultLine != null, "there is a single result line");
+
+    // ---- an upload defaults to pixels, with the size field out of the way
+    check(unitSelect.value === "px", "a plain upload starts in pixels", unitSelect.value);
+    check(section.querySelector("label:has(#measure-pixel-size)")?.closest("label")?.hidden === true ||
+      document.getElementById("measure-pixel-size")?.closest("label")?.hidden === true,
+      "the pixel-size field is hidden while the unit is pixels");
+
+    // ---- one line, with Clear beside it
+    const measured = 500;
+    const emit = () => gh.bus.emit("viewer:distance", {
+      role: "original", points: [{ x: 0, y: 0 }, { x: measured, y: 0 }], distance: measured,
+      text: `Distance ${measured} px`,
+    });
+    emit();
+    check(resultLine.textContent === "Distance: 500.00 px",
+      "the result is one clear line in pixels", resultLine.textContent);
+    check(section.querySelectorAll("p.measure-line").length === 1 &&
+      section.querySelectorAll(".empty-note").length === 0,
+      "there is exactly one result line and no placeholder text");
+    const clearButton = [...section.querySelectorAll("button")]
+      .find((node) => node.textContent.trim() === "Clear");
+    check(clearButton != null, "the result line has a Clear button");
+    clearButton.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    check(resultLine.textContent === "", "Clear empties the line", JSON.stringify(resultLine.textContent));
+    emit();
+
+    // ---- millimetres: the pixel size converts the measurement
+    setControl(unitSelect, "mm");
+    check(document.getElementById("measure-pixel-size").closest("label").hidden === false,
+      "the pixel-size field appears for a ground unit");
+    setControl(sizeInput, "0.5");
+    check(resultLine.textContent === "Distance: 250.00 mm",
+      "500 px × 0.5 mm/pixel = 250 mm", resultLine.textContent);
+    setControl(sizeInput, "2");
+    check(resultLine.textContent === "Distance: 1,000.00 mm",
+      "the same measurement follows the pixel size", resultLine.textContent);
+
+    // ---- a ground unit without a number asks for one, in the same line
+    setControl(sizeInput, "");
+    check(/set the pixel size/.test(resultLine.textContent),
+      "without a pixel size the line asks for one", resultLine.textContent);
+    check(section.querySelectorAll("p.note, .empty-note").length === 0,
+      "no extra hint paragraph was added",
+      [...section.querySelectorAll("p.note, .empty-note")].map((n) => n.textContent).join(" | "));
+
+    // ---- km / ft / mi conversions agree with the metric ones
+    setControl(unitSelect, "km");
+    setControl(sizeInput, "0.01");
+    check(resultLine.textContent === "Distance: 5.00 km",
+      "500 px × 0.01 km/pixel = 5 km", resultLine.textContent);
+    setControl(unitSelect, "ft");
+    setControl(sizeInput, "3");
+    check(resultLine.textContent === "Distance: 1,500.00 ft",
+      "imperial units convert the same way", resultLine.textContent);
+
+    // ---- a downscaled upload mentions the original-resolution value
     const original = state().original;
+    const infoBefore = { ...original.info };
     original.info = { ...original.info, scale: 0.5, downscaled: true,
       original_width: (original.info.width ?? 0) * 2, original_height: (original.info.height ?? 0) * 2 };
-    const measured = 500;
-    gh.bus.emit("viewer:distance", {
-      role: "original", points: [{ x: 0, y: 0 }, { x: measured, y: 0 }], distance: measured,
-      text: `Distance ${measured} px`,
-    });
-    const unitSelect = [...document.querySelectorAll("#toolbox-sections select")]
-      .find((node) => [...node.options].some((option) => option.textContent === "centimetres"));
-    check(unitSelect != null, "the distance section offers mm/cm/inches");
-    const rateInput = [...document.querySelectorAll("#toolbox-sections input[type=number]")]
-      .find((node) => /one unit/.test(node.title ?? ""));
-    check(rateInput != null, "there is a pixels-per-unit input");
-    setControl(unitSelect, "cm");
-    setControl(rateInput, "100");
-    gh.bus.emit("viewer:distance", {
-      role: "original", points: [{ x: 0, y: 0 }, { x: measured, y: 0 }], distance: measured,
-      text: `Distance ${measured} px`,
-    });
-    const sectionText = document.getElementById("toolbox-sections").textContent;
-    check(/5\.00 cm on screen/.test(sectionText),
-      "the measurement converts with the user's px/cm", sectionText.slice(-320));
-    check(/10\.00 cm at the original/.test(sectionText),
-      "a downscaled upload also shows the distance at original resolution", sectionText.slice(-320));
-    check(/upload downscaled ×0\.5/.test(sectionText),
-      "the two values say which is which (screen vs original, and the factor)",
-      sectionText.slice(-320));
-    await until(() => toasts.some((text) => /at the original/.test(text)),
-      "the measurement toast appears", { timeout: 8000 });
-    check(toasts.some((text) => /on screen/.test(text)) && toasts.some((text) => /at the original/.test(text)),
-      "the toast carries both numbers too", toasts.slice(-3).join(" || "));
-
-    // pixels stay the default and need no calibration
     setControl(unitSelect, "px");
-    gh.bus.emit("viewer:distance", {
-      role: "original", points: [{ x: 0, y: 0 }, { x: measured, y: 0 }], distance: measured,
-      text: `Distance ${measured} px`,
-    });
-    check(/500\.00 px on screen/.test(document.getElementById("toolbox-sections").textContent),
-      "pixels need no calibration value");
+    emit();
+    check(resultLine.textContent === "Distance: 500.00 px (1,000.00 px at the original resolution)",
+      "a downscaled upload also reports the original-resolution pixels",
+      resultLine.textContent);
+    check(!/not downscaled/.test(resultLine.textContent), "and no developer wording is added");
+    await until(() => toasts.some((text) => /at the original resolution/.test(text)),
+      "the toast reports the same line", { timeout: 8000 });
 
-    // image units with no calibration number say so instead of inventing one
-    setControl(unitSelect, "mm");
-    setControl(rateInput, "");
-    gh.bus.emit("viewer:distance", {
-      role: "original", points: [{ x: 0, y: 0 }, { x: measured, y: 0 }], distance: measured,
-      text: `Distance ${measured} px`,
-    });
-    check(/set pixels per unit/.test(document.getElementById("toolbox-sections").textContent),
-      "without pixels-per-unit the UI asks for it rather than guessing");
-    setControl(unitSelect, "px");
-    original.info = { ...original.info, scale: 1, downscaled: false };
+    // ---- satellite imagery prefills BOTH controls from meters_per_pixel
+    original.info = { ...infoBefore, meters_per_pixel: 10, source: "satellite" };
+    gh.bus.emit("image:loaded", { role: "original", info: original.info });
+    check(unitSelect.value === "m", "a satellite crop starts in metres", unitSelect.value);
+    check(Number(sizeInput.value) === 10, "its pixel size is the image's own 10 m/px", sizeInput.value);
+    emit();
+    check(resultLine.textContent === "Distance: 5,000.00 m",
+      "500 px × 10 m = 5,000 m", resultLine.textContent);
+    // ...and the two controls stay in step when the unit changes
+    setControl(unitSelect, "km");
+    check(Number(sizeInput.value) === 0.01,
+      "switching unit keeps the same ground pixel size (10 m = 0.01 km)", sizeInput.value);
+    check(resultLine.textContent === "Distance: 5.00 km", "…and the measurement follows",
+      resultLine.textContent);
+
+    // ---- a fresh image re-prefills from its own metadata
+    original.info = { ...infoBefore, meters_per_pixel: 20, source: "satellite" };
+    gh.bus.emit("image:loaded", { role: "original", info: original.info });
+    check(unitSelect.value === "m" && Number(sizeInput.value) === 20,
+      "a new satellite image prefills both controls from its own scale",
+      `${unitSelect.value} / ${sizeInput.value}`);
+    setControl(unitSelect, "km");
+    check(Number(sizeInput.value) === 0.02, "20 m/px is 0.02 km/px", sizeInput.value);
+    original.info = { ...infoBefore, meters_per_pixel: null, source: "upload" };
+    gh.bus.emit("image:loaded", { role: "original", info: original.info });
+    check(unitSelect.value === "px", "an image without ground metadata goes back to pixels",
+      unitSelect.value);
+
+    // ---- Esc in the viewer empties the line as well (the real two-click path)
+    {
+      const viewer = gh.viewers.original;
+      const canvasRect2 = viewer.canvas.getBoundingClientRect();
+      viewer.toggleDistance(true);
+      const clickAt = (x, y) => viewer.canvas.dispatchEvent(new window.MouseEvent("pointerdown", {
+        bubbles: true,
+        clientX: canvasRect2.left + x, clientY: canvasRect2.top + y,
+      }));
+      clickAt(5, 5);
+      clickAt(30, 45);
+      await until(() => /^Distance: /.test(resultLine.textContent), "the two clicks reach the panel");
+      check(/^Distance: [\d,.]+ px$/.test(resultLine.textContent),
+        "the panel shows the click measurement in one line", resultLine.textContent);
+      viewer.canvas.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      check(resultLine.textContent === "", "Esc in the viewer empties the line too",
+        resultLine.textContent);
+      viewer.toggleDistance(false);
+    }
+
+    original.info = infoBefore;
   }
 
   // --------------------------------------------------- 6. compress/decompress
@@ -2262,9 +2355,8 @@ if (!bootFailed) {
   await until(() => /distance: [\d.]+ px/.test(ov.readout.textContent), "distance readout");
   check(/distance: 50 px/.test(ov.readout.textContent),
     "two clicks measure the Euclidean pixel distance", ov.readout.textContent);
-  check(toasts.some((text) => /50\.00 px on screen \(image pixels\)/.test(text)) &&
-    toasts.some((text) => /not downscaled on upload/.test(text)),
-    "the measurement is announced in pixels, with its basis", toasts.slice(-1).join(" | "));
+  check(toasts.some((text) => /^Distance: 50\.00 px$/.test(text)),
+    "the measurement is announced as one clear line", toasts.slice(-1).join(" | "));
   ov.toggleDistance(false);
 
   // ------------------------------------------------ 8. workstation shell

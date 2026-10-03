@@ -64,6 +64,28 @@ the server's `image_id`: "Result — sample.jpg#negative (1600×1066)", not
 "new image EkEkL0bUvBYg". A boot assertion collects every `/images/<id>` id the
 session used and fails if any of them appears in a toast.
 
+### Distance (item 10)
+
+* The sidebar's "Measure on the active viewport" button is gone (the toolbar
+  Measure button and each viewport's own Distance button remain), together with
+  every explanatory line — no "Client-only", no "the API has no distance
+  endpoint", no "image was not downscaled".
+* Controls: **Unit** (`UNIT_ORDER`: pixels, mm, cm, m, km, inches, ft, mi) and
+  **Pixel size** — the ground length of ONE image pixel in the chosen unit.
+  Satellite imagery pre-fills both from `meters_per_pixel` (metres, or
+  kilometres for a coarse mosaic); an upload starts in pixels with the pixel
+  size field hidden. Changing the unit CONVERTS the pixel size, so the ground
+  size a pixel spans never changes behind the user's back. Both are re-filled
+  when another image loads, because the pixel size describes that image.
+* The latest measurement is **one line** — `Distance: 450.20 px` — with a
+  **Clear** button. A ground unit without a pixel size asks for it in that same
+  line rather than inventing a number, and the original-resolution pixel count
+  is appended **only when the upload was actually downscaled**
+  (`describeDistance`), e.g.
+  `Distance: 500.00 px (1,000.00 px at the original resolution)`.
+* Measuring is unchanged: two clicks in the active viewport, Esc clears (the
+  viewer reports `viewer:distance-cleared`, so the panel's line empties too).
+
 ### Histogram windows (item 9)
 
 The Analysis panel is now **one "Histogram" button plus the Distance controls**:

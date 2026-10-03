@@ -8,17 +8,19 @@
  * option is recomputed in the browser from the API's 256 bins, so changing an
  * option never causes another request.
  *
- * The distance tool measures image pixels in the viewer; the unit controls here
- * convert that measurement (js/measure.js) and, when the upload was downscaled,
- * also show the distance at the original resolution — labelled, so it is clear
- * which number is which.
+ * The distance tool measures image pixels in the viewer (two clicks; Esc
+ * clears). The controls here are the unit and the ground length of one pixel
+ * (js/measure.js), prefilled from `meters_per_pixel` for satellite imagery and
+ * defaulting to pixels otherwise. The latest measurement is one line —
+ * "Distance: 450.20 px" — plus a Clear button, and the original-resolution
+ * pixel count is mentioned only when the upload was downscaled.
  */
 
-import { humanizeError } from "../errors.js";
-import { UNITS, describeDistance, unitRateLabel } from "../measure.js";
-import { SessionExpiredError } from "../session.js";
+import {
+  UNITS, UNIT_ORDER, defaultMeasureSettings, describeDistance, isGroundUnit, pixelSizeFor, toMeters,
+} from "../measure.js";
 import { activeImage } from "../state.js";
-import { button, createSection, el, icon, setChildren, toast, toolGroup } from "../ui.js";
+import { button, createSection, el, icon, toast, toolGroup } from "../ui.js";
 
 export function createAnalysisPanel(ctx) {
   const { bus, state } = ctx;
@@ -39,94 +41,133 @@ export function createAnalysisPanel(ctx) {
   }
 
   // ------------------------------------------------------------- distance
-  const measureButton = button("Measure on the active viewport", () => bus.emit("distance:request"), { size: "small" });
-  measureButton.prepend(icon("measure", { size: 12 }));
-
-  const unitSelect = el("select", { class: "select", title: "Unit for the measured distance" }, [
-    ...Object.values(UNITS).map((unit) => el("option", { value: unit.id, text: unit.label })),
-  ]);
-  const rateInput = el("input", {
-    type: "number",
-    class: "input",
-    min: "0.0001",
-    step: "any",
-    placeholder: "—",
-    title: "How many image pixels span one unit (your calibration)",
+  // Unit + the ground length of one pixel; the latest measurement in ONE line.
+  const unitSelect = el("select", {
+    class: "select", id: "measure-unit", title: "Unit for the measured distance",
+  }, UNIT_ORDER.map((id) => el("option", { value: id, text: UNITS[id].label })));
+  const pixelSizeInput = el("input", {
+    type: "number", class: "input", min: "0", step: "any", id: "measure-pixel-size",
+    placeholder: "—", title: "Ground length of one image pixel, in the chosen unit",
   });
-  rateInput.style.maxWidth = "96px";
-  const rateLabel = el("span", { class: "note", text: "px/unit" });
-  const rateWrap = el("label", { class: "row center", style: { gap: "4px" } }, [rateInput, rateLabel]);
-  const measureHost = el("div", {}, el("p", { class: "empty-note", text: "No measurement yet." }));
+  pixelSizeInput.style.maxWidth = "104px";
+  const pixelSizeUnit = el("span", { class: "note", text: "" });
+  const pixelSizeWrap = el("label", { class: "row center", style: { gap: "4px" } }, [
+    el("span", { class: "note", text: "Pixel size" }), pixelSizeInput, pixelSizeUnit,
+  ]);
+  const resultLine = el("p", { class: "measure-line", role: "status", "aria-live": "polite", text: "" });
+  const clearButton = button("Clear", clearMeasurement, { size: "small", variant: "ghost" });
 
-  state.measure = state.measure ?? { unit: "px", pxPerUnit: null };
-  unitSelect.value = state.measure.unit ?? "px";
-  if (state.measure.pxPerUnit) rateInput.value = String(state.measure.pxPerUnit);
-  syncRateVisibility();
+  /**
+   * Prefill both controls from the image itself: satellite imagery (anything
+   * carrying `meters_per_pixel`) starts in metres — kilometres for a coarse
+   * mosaic — with its own pixel size; every other image starts in pixels. This
+   * runs for each image that arrives, because the pixel size describes THAT
+   * image; edits the user makes apply until the next image loads.
+   */
+  function applyDefaults(info) {
+    const defaults = defaultMeasureSettings(info);
+    state.measure = { unit: defaults.unit, pixelSize: defaults.pixelSize, satellite: defaults.satellite };
+    unitSelect.value = defaults.unit;
+    pixelSizeInput.value = Number.isFinite(Number(defaults.pixelSize)) ? String(defaults.pixelSize) : "";
+    syncPixelSizeVisibility();
+    return defaults;
+  }
 
-  function syncRateVisibility() {
+  applyDefaults(activeImage(state)?.info ?? null);
+
+  function syncPixelSizeVisibility() {
     const unit = unitSelect.value;
-    const needsRate = unit !== "px";
-    rateWrap.hidden = !needsRate;
-    rateLabel.textContent = unitRateLabel(unit) || "px/unit";
+    pixelSizeWrap.hidden = !isGroundUnit(unit);
+    pixelSizeUnit.textContent = isGroundUnit(unit) ? `${UNITS[unit].suffix}/pixel` : "";
+    // remembered so a unit change can convert the number instead of re-reading it
+    pixelSizeUnit.dataset.unit = unit;
   }
 
   function readMeasureSettings() {
     const unit = unitSelect.value;
-    const rate = Number(rateInput.value);
+    const size = Number(pixelSizeInput.value);
     state.measure = {
       unit,
-      pxPerUnit: unit === "px" ? null : (Number.isFinite(rate) && rate > 0 ? rate : null),
+      pixelSize: isGroundUnit(unit) && Number.isFinite(size) && size > 0 ? size : null,
+      satellite: state.measure?.satellite === true,
     };
     return state.measure;
   }
 
-  function settingsForRole(role) {
-    const info = role === "original"
-      ? state.original?.info
-      : role === "result"
-        ? state.result?.info
-        : null;
-    return { info, scale: Number(info?.scale) > 0 ? Number(info.scale) : 1 };
+  /** The info of whichever viewport the measurement came from. */
+  function infoFor(role) {
+    if (role === "original") return state.original?.info ?? null;
+    if (role === "result") return state.result?.info ?? null;
+    return activeImage(state)?.info ?? null;
   }
 
-  /** One measurement, described with the current settings. */
   function describeMeasurement({ pixels, role }) {
-    const { info, scale } = settingsForRole(role);
+    const info = infoFor(role);
     return describeDistance({
       pixels,
       unit: unitSelect.value,
-      pxPerUnit: unitSelect.value === "px" ? null : Number(rateInput.value) || null,
-      scale,
+      pixelSize: state.measure?.pixelSize ?? null,
+      scale: Number(info?.scale) > 0 ? Number(info.scale) : 1,
       info,
     });
   }
 
+  /** ONE line, e.g. "Distance: 450.20 px"; the panel has no other text. */
   function renderMeasurement({ pixels, role }, description) {
-    const viewerName = role === "map" ? "Map" : role === "result" ? "Result" : "Original";
-    setChildren(measureHost, [
-      el("p", { class: "note", text: `Measured on the ${viewerName} viewport` }),
-      ...description.lines.map((line, index) =>
-        el("p", { class: index === 0 ? "measure-line" : "note", text: line })),
-    ]);
+    if (description?.ok === false && description.reason === "no-distance") {
+      resultLine.textContent = "";
+      return;
+    }
+    resultLine.textContent = description.line;
+    resultLine.dataset.role = role ?? "";
+    bus.emit("status", { message: description.line });
   }
 
-  for (const node of [unitSelect, rateInput]) {
+  function clearMeasurement() {
+    lastMeasurement = null;
+    resultLine.textContent = "";
+    bus.emit("distance:clear", {});
+  }
+
+  for (const node of [unitSelect, pixelSizeInput]) {
     node.addEventListener("change", () => {
-      syncRateVisibility();
-      const settings = readMeasureSettings();
-      if (lastMeasurement) {
-        const description = describeMeasurement(lastMeasurement);
-        renderMeasurement(lastMeasurement, description);
-        bus.emit("status", { message: `Distance units: ${settings.unit === "px" ? "pixels" : description.primary}` });
+      const unit = unitSelect.value;
+      const ground = isGroundUnit(unit);
+      const previous = pixelSizeUnit.dataset.unit ?? "";
+      if (node === unitSelect) {
+        // switching the unit must not change the GROUND size one pixel spans:
+        // convert the number, or take the image's own scale when there is one
+        const metres = previous && isGroundUnit(previous)
+          ? toMeters(Number(pixelSizeInput.value), previous)
+          : null;
+        const known = metres != null && ground
+          ? metres / UNITS[unit].meters
+          : pixelSizeFor(infoFor(lastMeasurement?.role), unit);
+        if (ground && known != null) pixelSizeInput.value = String(Number(known.toPrecision(6)));
       }
+      syncPixelSizeVisibility();
+      readMeasureSettings();
+      if (lastMeasurement) renderMeasurement(lastMeasurement, describeMeasurement(lastMeasurement));
     });
   }
+  pixelSizeUnit.dataset.unit = unitSelect.value;
 
   let lastMeasurement = null;
   bus.on("viewer:distance", ({ distance, role }) => {
     if (!Number.isFinite(Number(distance))) return;
     lastMeasurement = { pixels: Number(distance), role };
     renderMeasurement(lastMeasurement, describeMeasurement(lastMeasurement));
+  });
+
+  // the viewer's own Esc, or another window's Clear, empties the line too
+  bus.on("viewer:distance-cleared", () => {
+    lastMeasurement = null;
+    resultLine.textContent = "";
+  });
+
+  // A fresh image brings its own ground scale: prefill both controls again.
+  bus.on("image:loaded", ({ info }) => {
+    applyDefaults(info ?? null);
   });
 
   // The chat command "histogram" asks for a window (the app switches to this
@@ -143,10 +184,9 @@ export function createAnalysisPanel(ctx) {
     body: [
       toolGroup("Histogram", [histogramButton]),
       toolGroup("Distance", [
-        measureButton,
-        el("div", { class: "row center wrap", style: { marginTop: "6px" } }, [unitSelect, rateWrap]),
-        measureHost,
-        el("p", { class: "note", text: "Two clicks on the active viewport measure the Euclidean pixel distance. Esc clears. Client-side only — the API has no distance endpoint." }),
+        el("div", { class: "row center wrap", style: { gap: "6px" } }, [unitSelect, pixelSizeWrap]),
+        el("div", { class: "row center wrap", style: { marginTop: "6px", gap: "6px" } }, [clearButton]),
+        resultLine,
       ]),
     ],
   });

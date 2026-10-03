@@ -514,8 +514,10 @@ def check_workstation_layout() -> None:
     check("originalPixels" in measure_js and "/ factor" in measure_js,
           "the original-resolution distance divides by the upload scale")
     analysis_js = _js_text("js/panels/analysis.js")
-    check("pxPerUnit" in analysis_js and "unitRateLabel" in analysis_js,
-          "the distance panel asks for pixels-per-unit")
+    check("pixelSizeFor" in analysis_js and "defaultMeasureSettings" in analysis_js,
+          "the distance panel prefills the unit and the pixel size from the image")
+    check("Convert" not in analysis_js and "unitRateLabel" not in analysis_js,
+          "the old pixels-per-unit label is gone")
 
     # STEP 2.3: zoom controls exist in exactly one place
     index_zoom_ids = [i for i in ["tb-zoom-in", "tb-zoom-out", "tb-fit", "tb-1to1", "tb-zoom-25"] if f'id="{i}"' in index]
@@ -638,6 +640,38 @@ def check_histogram_windows() -> None:
           "the window layer floats over the page")
 
 
+
+def check_distance_panel() -> None:
+    """Item 10: unit + pixel size, one result line, no developer wording."""
+    measure_js = _js_text("js/measure.js")
+    analysis_js = _js_text("js/panels/analysis.js")
+    for unit in ["mm", "cm", "m", "km", "in", "ft", "mi"]:
+        check(f'{unit}: {{' in measure_js, f"distance supports {unit}")
+    check('UNIT_ORDER = Object.freeze(["px", "mm", "cm", "m", "km", "in", "ft", "mi"])' in measure_js,
+          "the unit dropdown order is pixels, mm, cm, m, km, ft, mi")
+    for token in ["defaultMeasureSettings", "pixelSizeFor", "pixelSize", "at the original resolution"]:
+        check(token in measure_js, f"measure.js provides {token}")
+    check("pxPerUnit" not in measure_js, "the old pixels-per-unit model is gone")
+    check('"not downscaled on upload"' not in measure_js and "was not downscaled" not in measure_js,
+          "the developer wording about downscaling is gone")
+
+    check("Measure on the active viewport" not in analysis_js,
+          "the sidebar Measure button is gone (the toolbar and viewport keep theirs)")
+    check("measure-line" in analysis_js and 'button("Clear"' in analysis_js,
+          "the latest result is one line with a Clear button")
+    for gone in ["Client-only", "API has no distance endpoint", "Two clicks", "Euclidean",
+                 "pxPerUnit", "unitRateLabel", "No measurement yet"]:
+        check(gone not in analysis_js, f"the distance section no longer says {gone!r}")
+    check("describeMeasurement" in analysis_js, "the panel describes the measurement itself")
+    app_js = _js_text("js/app.js")
+    check("distance:clear" in app_js and "clearDistance" in app_js,
+          "Clear empties both viewports' overlays")
+    check("pixelSize" in app_js, "the toast uses the same pixel-size model")
+    viewer_js = _js_text("js/viewer.js")
+    check("viewer:distance-cleared" in viewer_js,
+          "the viewer reports a cleared measurement so the line empties too")
+
+
 def main() -> int:
     print(f"web frontend smoke test — root: {WEB}\n")
     check_serving()
@@ -647,6 +681,7 @@ def main() -> int:
     check_no_secrets()
     check_no_innerhtml()
     check_histogram_windows()
+    check_distance_panel()
     print()
     check_workstation_layout()
     print()

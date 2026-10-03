@@ -74,7 +74,17 @@ import {
   smoothingLabel,
   smoothingWindow,
 } from "../js/histogram.js";
-import { UNITS, convertPixels, describeDistance, formatMeasurement, unitRateLabel } from "../js/measure.js";
+import {
+  UNITS,
+  UNIT_ORDER,
+  defaultMeasureSettings,
+  describeDistance,
+  formatMeasurement,
+  fromMeters as groundFromMeters,
+  isGroundUnit,
+  pixelSizeFor,
+  toMeters as groundToMeters,
+} from "../js/measure.js";
 import {
   MAX_WINDOWS,
   WINDOW_CHART,
@@ -787,7 +797,7 @@ test("titleFromName drops the extension and survives missing names", () => {
 
 test("SCALE_UNITS converts metres in both directions", () => {
   assert.deepEqual(Object.keys(SCALE_UNITS), ["m", "km", "ft", "mi"]);
-  assert.equal(fromMeters(1000, "km"), 1);
+  assert.equal(fromMeters(1000, "km"), 1);          // mapstudio's own converter
   assert.equal(toMeters(1, "km"), 1000);
   assert.ok(Math.abs(fromMeters(1000, "ft") - 3280.84) < 0.01);
   assert.ok(Math.abs(toMeters(1, "mi") - 1609.344) < 0.01);
@@ -1260,49 +1270,108 @@ test("drawHistogram paints the chart, its title and both axes for every mode", (
   assert.equal(histogramFileName("sample.jpg"), "histogram-sample.png");
 });
 
-test("distance conversion uses the calibration the user types in", () => {
-  assert.deepEqual(convertPixels(250), { unit: "px", value: 250, basis: "image pixels" });
-  assert.equal(convertPixels(250, { unit: "cm", pxPerUnit: 100 }).value, 2.5);
-  assert.equal(convertPixels(250, { unit: "mm", pxPerUnit: 50 }).value, 5);
-  assert.equal(convertPixels(250, { unit: "in", pxPerUnit: 96 }).value, 250 / 96);
-  assert.equal(convertPixels(250, { unit: "cm" }), null, "no calibration means no conversion");
-  assert.equal(convertPixels(250, { unit: "cm", pxPerUnit: 0 }), null, "0 px/unit is meaningless");
-  assert.equal(convertPixels("nope", { unit: "cm", pxPerUnit: 10 }), null);
-  assert.deepEqual(Object.keys(UNITS), ["px", "mm", "cm", "in"]);
-  assert.equal(unitRateLabel("cm"), "px/cm");
-  assert.equal(unitRateLabel("px"), "");
+test("the unit dropdown lists pixels plus the metric and imperial units", () => {
+  assert.deepEqual([...UNIT_ORDER], ["px", "mm", "cm", "m", "km", "in", "ft", "mi"]);
+  assert.deepEqual(Object.keys(UNITS), ["px", "mm", "cm", "m", "km", "in", "ft", "mi"]);
+  assert.equal(isGroundUnit("px"), false);
+  assert.equal(isGroundUnit("km"), true);
+  assert.equal(UNITS.km.meters, 1000);
+  assert.ok(Math.abs(UNITS.in.meters - 0.0254) < 1e-12);
+  assert.ok(Math.abs(UNITS.ft.meters - 0.3048) < 1e-12);
+  assert.ok(Math.abs(UNITS.mi.meters - 1609.344) < 1e-12);
+  assert.equal(UNITS.mm.label, "millimetres");
+  assert.equal(UNITS.mi.suffix, "mi");
+});
+
+test("metres convert into every unit and back", () => {
+  assert.equal(groundFromMeters(1000, "m"), 1000);
+  assert.equal(groundFromMeters(1000, "km"), 1);
+  assert.equal(groundFromMeters(1, "mm"), 1000);
+  assert.equal(groundFromMeters(1, "cm"), 100);
+  assert.ok(Math.abs(groundFromMeters(1, "in") - 39.3700787) < 1e-6);
+  assert.equal(groundFromMeters(1, "px"), null, "pixels have no ground size");
+  assert.equal(groundToMeters(1, "km"), 1000);
+  assert.ok(Math.abs(groundToMeters(1, "ft") - 0.3048) < 1e-12);
+  assert.equal(groundToMeters("nonsense", "m"), null);
+  assert.equal(groundFromMeters(undefined, "m"), null);
+});
+
+test("the pixel size comes from the image's own meters_per_pixel", () => {
+  const sentinel = { meters_per_pixel: 10 };
+  assert.equal(pixelSizeFor(sentinel, "m"), 10);
+  assert.equal(pixelSizeFor(sentinel, "km"), 10 / 1000);
+  assert.equal(pixelSizeFor(sentinel, "px"), null, "pixels need no ground size");
+  assert.equal(pixelSizeFor({}, "m"), null, "an upload has no ground size");
+  assert.equal(pixelSizeFor({ meters_per_pixel: 0 }, "m"), null);
+  assert.equal(pixelSizeFor({ meters_per_pixel: "x" }, "m"), null);
+});
+
+test("satellite images prefill both controls, everything else starts in pixels", () => {
+  const satellite = defaultMeasureSettings({ meters_per_pixel: 10 });
+  assert.equal(satellite.unit, "m");
+  assert.equal(satellite.pixelSize, 10);
+  assert.equal(satellite.satellite, true);
+  const coarse = defaultMeasureSettings({ meters_per_pixel: 5000 });
+  assert.equal(coarse.unit, "km", "a coarse mosaic starts in kilometres");
+  assert.equal(coarse.pixelSize, 5);
+  const upload = defaultMeasureSettings({});
+  assert.equal(upload.unit, "px");
+  assert.equal(upload.pixelSize, null);
+  assert.equal(upload.satellite, false);
+  assert.equal(defaultMeasureSettings(null).unit, "px");
+});
+
+test("describeDistance produces ONE clear line in the chosen unit", () => {
+  assert.equal(describeDistance({ pixels: 450.2 }).line, "Distance: 450.20 px");
+  assert.equal(describeDistance({ pixels: 500, unit: "mm", pixelSize: 0.5 }).line,
+    "Distance: 250.00 mm");
+  assert.equal(describeDistance({ pixels: 500, unit: "m", pixelSize: 10 }).line,
+    "Distance: 5,000.00 m");
+  assert.equal(describeDistance({ pixels: 500, unit: "km", pixelSize: 0.01 }).line,
+    "Distance: 5.00 km");
+  assert.equal(describeDistance({ pixels: 500, unit: "ft", pixelSize: 3 }).line,
+    "Distance: 1,500.00 ft");
+  assert.equal(describeDistance({ pixels: 100, unit: "mi", pixelSize: 0.1 }).line,
+    "Distance: 10.00 mi");
+  assert.equal(describeDistance({ pixels: "nope" }).ok, false);
+  assert.equal(describeDistance({ pixels: "nope" }).line, "");
+});
+
+test("a missing pixel size is asked for in the same line, never invented", () => {
+  const missing = describeDistance({ pixels: 500, unit: "cm" });
+  assert.equal(missing.ok, false);
+  assert.equal(missing.reason, "missing-pixel-size");
+  assert.match(missing.line, /^Distance: 500\.00 px — set the pixel size to convert to centimetres$/);
+  assert.equal(describeDistance({ pixels: 500, unit: "cm", pixelSize: 0 }).ok, false);
+  assert.equal(describeDistance({ pixels: 500, unit: "cm", pixelSize: -1 }).ok, false);
+});
+
+test("the original-resolution value appears only for a downscaled upload", () => {
+  const plain = describeDistance({ pixels: 500 });
+  assert.equal(plain.downscaled, false);
+  assert.equal(plain.original, null);
+  assert.equal(plain.line, "Distance: 500.00 px", "nothing else is mentioned");
+  assert.ok(!/downscaled|original/.test(plain.line), "no developer wording either");
+
+  const down = describeDistance({
+    pixels: 500, unit: "px", scale: 0.5, info: { original_width: 4000, original_height: 3000 },
+  });
+  assert.equal(down.downscaled, true);
+  assert.equal(down.originalPixels, 1000, "original pixels = displayed / scale");
+  assert.equal(down.line,
+    "Distance: 500.00 px (1,000.00 px at the original resolution)");
+  assert.ok(!/not downscaled|Client-only|API has no distance/.test(down.line));
+
+  const scaled = describeDistance({ pixels: 250, unit: "cm", pixelSize: 2, scale: 0.25 });
+  assert.equal(scaled.primary, "500.00 cm");
+  assert.equal(scaled.line, "Distance: 500.00 cm (1,000.00 px at the original resolution)");
+});
+
+test("formatMeasurement keeps small values readable", () => {
   assert.equal(formatMeasurement(250), "250.00");
   assert.equal(formatMeasurement(2.5), "2.50");
   assert.equal(formatMeasurement(0.0042), "0.0042");
   assert.equal(formatMeasurement(undefined), "—");
-});
-
-test("describeDistance labels the screen value and the original resolution", () => {
-  const plain = describeDistance({ pixels: 500 });
-  assert.equal(plain.primary, "500.00 px");
-  assert.equal(plain.downscaled, false);
-  assert.match(plain.lines.join(" "), /on screen/);
-  assert.match(plain.lines.join(" "), /was not downscaled on upload/);
-
-  const downscaled = describeDistance({
-    pixels: 500, unit: "cm", pxPerUnit: 100, scale: 0.5,
-    info: { original_width: 4000, original_height: 3000 },
-  });
-  assert.equal(downscaled.primary, "5.00 cm");
-  assert.equal(downscaled.originalPixels, 1000, "original pixels = pixels / scale");
-  assert.equal(downscaled.original.text, "10.00 cm");
-  assert.match(downscaled.lines[0], /5\.00 cm on screen \(100 px\/cm\)/);
-  assert.match(downscaled.lines[1], /10\.00 cm at the original 4000×3000 px \(upload downscaled ×0\.5\)/);
-
-  const originalPx = describeDistance({ pixels: 500, scale: 0.25 });
-  assert.equal(originalPx.primary, "500.00 px");
-  assert.equal(originalPx.originalPixels, 2000);
-  assert.match(originalPx.lines[1], /2,000\.00 px at the original resolution/);
-
-  const uncalibrated = describeDistance({ pixels: 500, unit: "mm" });
-  assert.equal(uncalibrated.ok, false);
-  assert.equal(uncalibrated.reason, "missing-calibration");
-  assert.match(uncalibrated.lines[0], /set pixels per unit to convert to millimetres/);
 });
 
 // ───────────────────────── STEP 3: preview maths + slider helpers ───────────

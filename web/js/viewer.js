@@ -415,8 +415,14 @@ export class Viewer {
   }
 
   clearDistance() {
+    if (!this.points.length) {
+      this.render();
+      return false;
+    }
     this.points = [];
     this.render();
+    this.bus?.emit("viewer:distance-cleared", { role: this.role });
+    return true;
   }
 
   // -------------------------------------------------------------- reading

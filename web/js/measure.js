@@ -1,26 +1,73 @@
 /**
- * Distance units (STEP 5).
+ * Distance measurement (item 10).
  *
  * The viewer measures a Euclidean distance in *image pixels*. Everything else
- * is arithmetic on that number plus two facts the user provides/we already
- * know:
+ * is arithmetic on that number plus one fact the app can often supply itself:
  *
- *   - `pxPerUnit` — how many pixels span one real-world unit (the calibration
- *     the user types in, e.g. 200 px per cm);
+ *   - `pixelSize` — the ground length of ONE image pixel, in the chosen unit
+ *     (e.g. "10 m" for a Sentinel-2 crop, or a number the user calibrates);
  *   - `scale` — the factor the API applied when it downscaled the upload
- *     (displayed = original × scale), so the original-resolution distance is
- *     `pixels / scale`.
+ *     (displayed = original × scale), used only to mention the distance in
+ *     original-resolution pixels, and only when a downscale actually happened.
  *
- * Both are labelled in the output, because a number without its basis is
- * useless in a measurement tool.
+ * `meters_per_pixel` (satellite crops and anything derived from them) prefills
+ * the unit and the pixel size; every other image starts in pixels.
  */
 
 export const UNITS = Object.freeze({
-  px: { id: "px", label: "pixels", suffix: "px", perUnit: null },
-  mm: { id: "mm", label: "millimetres", suffix: "mm", perUnit: "px/mm" },
-  cm: { id: "cm", label: "centimetres", suffix: "cm", perUnit: "px/cm" },
-  in: { id: "in", label: "inches", suffix: "in", perUnit: "px/in" },
+  px: { id: "px", label: "pixels", suffix: "px", ground: false, meters: null },
+  mm: { id: "mm", label: "millimetres", suffix: "mm", ground: true, meters: 0.001 },
+  cm: { id: "cm", label: "centimetres", suffix: "cm", ground: true, meters: 0.01 },
+  m: { id: "m", label: "metres", suffix: "m", ground: true, meters: 1 },
+  km: { id: "km", label: "kilometres", suffix: "km", ground: true, meters: 1000 },
+  in: { id: "in", label: "inches", suffix: "in", ground: true, meters: 0.0254 },
+  ft: { id: "ft", label: "feet", suffix: "ft", ground: true, meters: 0.3048 },
+  mi: { id: "mi", label: "miles", suffix: "mi", ground: true, meters: 1609.344 },
 });
+
+/** Dropdown order: pixels first, then metric, then imperial. */
+export const UNIT_ORDER = Object.freeze(["px", "mm", "cm", "m", "km", "in", "ft", "mi"]);
+
+export function isGroundUnit(unit) {
+  return Boolean(UNITS[unit]?.ground);
+}
+
+/** A ground length in metres → the chosen unit. */
+export function fromMeters(meters, unit) {
+  const factor = UNITS[unit]?.meters;
+  const value = Number(meters);
+  if (!Number.isFinite(value) || !factor) return null;
+  return value / factor;
+}
+
+/** A value in the chosen unit → metres. */
+export function toMeters(value, unit) {
+  const factor = UNITS[unit]?.meters;
+  const number = Number(value);
+  if (!Number.isFinite(number) || !factor) return null;
+  return number * factor;
+}
+
+/** Ground length of one image pixel in `unit`, or null when it is unknown. */
+export function pixelSizeFor(info, unit) {
+  const metres = Number(info?.meters_per_pixel);
+  if (!isGroundUnit(unit) || !Number.isFinite(metres) || metres <= 0) return null;
+  return fromMeters(metres, unit);
+}
+
+/**
+ * The unit and pixel size a measurement starts from for this image: satellite
+ * imagery (or anything derived from it, which keeps `meters_per_pixel`) starts
+ * in metres (kilometres for a coarse mosaic); everything else in pixels.
+ */
+export function defaultMeasureSettings(info) {
+  const metres = Number(info?.meters_per_pixel);
+  if (Number.isFinite(metres) && metres > 0) {
+    const unit = metres >= 1000 ? "km" : "m";
+    return { unit, pixelSize: pixelSizeFor(info, unit), touched: false, satellite: true };
+  }
+  return { unit: "px", pixelSize: null, touched: false, satellite: false };
+}
 
 /** Format a measurement: 1234.5 → "1,234.50" (keeps small values readable). */
 export function formatMeasurement(value) {
@@ -31,81 +78,54 @@ export function formatMeasurement(value) {
   return number.toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
-/** Convert a pixel distance into the chosen unit. `pxPerUnit` is required for real units. */
-export function convertPixels(pixels, { unit = "px", pxPerUnit = null } = {}) {
-  const distance = Number(pixels);
-  if (!Number.isFinite(distance)) return null;
-  if (unit === "px") return { unit: "px", value: distance, basis: "image pixels" };
-  const per = Number(pxPerUnit);
-  if (!Number.isFinite(per) || per <= 0) return null;
-  return { unit, value: distance / per, basis: `${per} ${UNITS[unit]?.perUnit ?? "px/unit"}` };
-}
-
 /**
- * Everything the UI needs for one measurement, labelled:
- *
- *   primary   — in the chosen unit, on the image as it is displayed;
- *   original  — the same distance at the upload's original resolution
- *               (`pixels / scale`) *only when the image was downscaled*;
- *   lines     — ready-to-show sentences that say which is which.
+ * The one line the panel shows: "Distance: 450.20 px" (or in the chosen unit),
+ * with the original-resolution pixel count only when the upload was downscaled.
  */
-export function describeDistance({ pixels, unit = "px", pxPerUnit = null, scale = 1, info = null } = {}) {
-  const converted = convertPixels(pixels, { unit, pxPerUnit });
-  const pixelsText = `${formatMeasurement(pixels)} px`;
-  if (!converted) {
-    return {
-      ok: false,
-      reason: "missing-calibration",
-      lines: [`${pixelsText} (set pixels per unit to convert to ${UNITS[unit]?.label ?? unit})`],
-      primary: pixelsText,
-      original: null,
-      pixels,
-      unit,
-    };
+export function describeDistance({ pixels, unit = "px", pixelSize = null, scale = 1, info = null } = {}) {
+  const count = Number(pixels);
+  if (!Number.isFinite(count)) {
+    return { ok: false, reason: "no-distance", line: "", primary: null, pixels: null, unit };
   }
-  const suffix = UNITS[unit]?.suffix ?? unit;
-  const primary = unit === "px" ? pixelsText : `${formatMeasurement(converted.value)} ${suffix}`;
-
+  const meta = UNITS[unit] ?? UNITS.px;
+  const ground = isGroundUnit(unit);
+  const size = Number(pixelSize);
   const factor = Number(scale);
   const downscaled = Number.isFinite(factor) && factor > 0 && factor < 1;
-  const originalPixels = downscaled ? Number(pixels) / factor : null;
-  const originalConverted = downscaled
-    ? convertPixels(originalPixels, { unit, pxPerUnit })
-    : null;
-  const original = downscaled
-    ? {
-      pixels: originalPixels,
-      text: originalConverted
-        ? `${formatMeasurement(originalConverted.value)} ${suffix}`
-        : `${formatMeasurement(originalPixels)} px`,
-      width: info?.original_width ?? null,
-      height: info?.original_height ?? null,
-    }
-    : null;
+  const originalPixels = downscaled ? count / factor : null;
+  const originalNote = downscaled
+    ? ` (${formatMeasurement(originalPixels)} px at the original resolution)`
+    : "";
 
-  const lines = [`${primary} on screen (${converted.basis})`];
-  if (downscaled) {
-    const size = original.width && original.height
-      ? ` at the original ${original.width}×${original.height} px`
-      : " at the original resolution";
-    lines.push(unit === "px"
-      ? `${formatMeasurement(originalPixels)} px${size} (upload downscaled ×${factor})`
-      : `${original.text}${size} (upload downscaled ×${factor})`);
-  } else if (unit === "px") {
-    lines.push(`${formatMeasurement(pixels)} px — the image was not downscaled on upload`);
-  } else {
-    lines.push(`${pixelsText} — the image was not downscaled on upload`);
+  if (ground && (!Number.isFinite(size) || size <= 0)) {
+    const pixelsText = `${formatMeasurement(count)} px`;
+    return {
+      ok: false,
+      reason: "missing-pixel-size",
+      primary: pixelsText,
+      unit,
+      pixels: count,
+      downscaled,
+      originalPixels,
+      original: downscaled ? { pixels: originalPixels, text: `${formatMeasurement(originalPixels)} px` } : null,
+      line: `Distance: ${pixelsText} — set the pixel size to convert to ${meta.label}${originalNote}`,
+    };
   }
-  return {
-    ok: true, pixels, unit, scale: downscaled ? factor : 1,
-    primary, original, lines,
-    displayPixels: Number(pixels),
-    originalPixels,
-    downscaled,
-  };
-}
 
-/** "px/cm", "px/in" — the label for the calibration input. */
-export function unitRateLabel(unit = "px") {
-  return UNITS[unit]?.perUnit ?? "";
+  const value = ground ? count * size : count;
+  const primary = ground ? `${formatMeasurement(value)} ${meta.suffix}` : `${formatMeasurement(count)} px`;
+  return {
+    ok: true,
+    unit,
+    pixels: count,
+    value,
+    pixelSize: ground ? size : null,
+    scale: downscaled ? factor : 1,
+    downscaled,
+    originalPixels,
+    original: downscaled ? { pixels: originalPixels, text: `${formatMeasurement(originalPixels)} px` } : null,
+    primary,
+    line: `Distance: ${primary}${originalNote}`,
+    info: info ?? null,
+  };
 }
