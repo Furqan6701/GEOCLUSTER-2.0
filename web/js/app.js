@@ -78,7 +78,8 @@ const mapViewer = new Viewer(document.getElementById("viewer-map"), {
   role: "map",
   bus,
   placeholder: "Run Classify in the Clusters section — this viewport shows the classified image with its legend",
-  footerExtras: [mapLegendToggle],
+  // .node: the handle object itself would be printed as "[object Object]"
+  footerExtras: [mapLegendToggle.node],
 });
 
 /** Role-based label, used by the status bar for all three viewports. */

@@ -778,6 +778,17 @@ if (!bootFailed) {
     check(mapState().box.x >= sourceWidth, "the legend sits outside the image pixels",
       `x=${mapState().box.x}, image width=${sourceWidth}`);
 
+    // the footer used to print the legend toggle's handle object
+    const footText = mapViewer.node.querySelector(".viewer-foot").textContent;
+    check(!footText.includes("[object Object]"), "the Map viewport footer shows no [object Object]", footText);
+    check(mapViewer.node.querySelector(".viewer-foot .toggle")?.textContent.trim() === "Legend",
+      "the legend toggle is a real button in the footer",
+      mapViewer.node.querySelector(".viewer-foot .toggle")?.textContent ?? "missing");
+    const strayHandles = [...document.querySelectorAll(".viewer-foot span, .viewer-foot div")]
+      .filter((node) => /^\[object \w+\]$/.test(node.textContent.trim()));
+    check(strayHandles.length === 0, "no viewer footer contains a stringified object",
+      strayHandles.map((node) => node.textContent).join(" | "));
+
     // every class name and percentage is painted on the canvas
     const painted = composed.__texts ?? [];
     const rows = mapState().legend.map((entry) => ({

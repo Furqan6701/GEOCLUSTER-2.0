@@ -41,7 +41,9 @@ export class Viewer {
     this.points = [];
     this.panEnabled = true;
     this.pixelReadout = true;
-    this.footerExtras = footerExtras ?? [];
+    // only real DOM nodes: a handle object here would render as
+    // "[object Object]" in the footer, which is exactly the bug this guard fixes
+    this.footerExtras = (footerExtras ?? []).filter((node) => node instanceof Node);
     this.mirror = null;          // partner viewer when synchronised
     this.syncEnabled = false;
     this.active = false;
