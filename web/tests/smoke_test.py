@@ -281,6 +281,30 @@ def check_workstation_layout() -> None:
     check("map-modal-dialog" in css and ".segmented" in css and ".cluster-actions" in css,
           "the composer and the cluster editor are styled")
 
+    # item 5: ground-scale metadata travels from the provider to the composer
+    api_root = WEB.parent / "api"
+    api_schemas = (api_root / "schemas.py").read_text(encoding="utf-8")
+    api_sessions = (api_root / "sessions.py").read_text(encoding="utf-8")
+    api_operations = (api_root / "routers" / "operations.py").read_text(encoding="utf-8")
+    api_satellite = (api_root / "routers" / "satellite.py").read_text(encoding="utf-8")
+    for field in ("bbox", "meters_per_pixel"):
+        check(field in api_schemas, f"ImageOut exposes {field}")
+        check(field in api_sessions, f"the store carries {field}")
+    check("def derive_ground_metadata" in api_sessions,
+          "one helper derives the metadata for derived images")
+    check(api_operations.count("derive_ground_metadata(") >= 4,
+          "operations, K-Means (labels + display) and classify all carry it",
+          str(api_operations.count("derive_ground_metadata(")))
+    check("bbox=" in api_satellite and "meters_per_pixel=" in api_satellite,
+          "the satellite fetch stores the box and the pixel size")
+    check("resolution_m" in api_satellite and "/ scale" in api_satellite,
+          "meters per pixel accounts for the downscale")
+    session_js = _js_text("js/session.js")
+    check("carryGroundMetadata" in session_js, "the frontend carries metadata across a re-upload")
+    check("carryGroundMetadata" in _js_text("js/app.js"), "the revive path uses it")
+    check("meters_per_pixel" in studio_js and "bbox" in studio_js,
+          "the composer reads the ground scale from the image info")
+
     # STEP 6: nothing is left advertising an unimplemented feature
     app_js = _js_text("js/app.js")
     check("Recent files" not in app_js and "Recent files" not in index,

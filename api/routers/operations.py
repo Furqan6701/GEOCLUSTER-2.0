@@ -13,7 +13,7 @@ from geocluster import filters, kmeans
 from geocluster.classify import default_cluster_assignments, legend_percentages, recolor_by_labels, recolor_by_ranges
 from geocluster.errors import ClassificationError, FilterError, GeoclusterError, KMeansError
 from geocluster.stats import histogram256, statistics
-from sessions import SessionStore
+from sessions import SessionStore, derive_ground_metadata
 
 router = APIRouter(
     prefix="/sessions/{session_id}/images/{image_id}",
@@ -89,6 +89,7 @@ def run_operation(
         result,
         name=f"{stored.name}#{operation}",
         source=f"operation:{operation}",
+        **derive_ground_metadata(stored, result.shape[1]),
     )
     return schemas.ImageOut.from_stored(session_id, new_image)
 
@@ -119,12 +120,14 @@ def run_kmeans(
         outcome.labels,
         name=f"{stored.name}#kmeans-labels",
         source="kmeans:labels",
+        **derive_ground_metadata(stored, outcome.labels.shape[1]),
     )
     display_image = store.add_image(
         session_id,
         display,
         name=f"{stored.name}#kmeans-display",
         source="kmeans:display",
+        **derive_ground_metadata(stored, display.shape[1]),
     )
     return schemas.KMeansResponse(
         k=request.k,
@@ -170,6 +173,7 @@ def classify_image(
         display,
         name=f"{stored.name}#classify",
         source="classify",
+        **derive_ground_metadata(stored, display.shape[1]),
     )
     return schemas.ClassifyResponse(
         image_id=new_image.image_id,

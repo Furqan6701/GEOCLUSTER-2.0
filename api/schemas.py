@@ -33,6 +33,10 @@ class ImageOut(BaseModel):
     original_megapixels: float
     scale: float
     downscaled: bool
+    # ground scale (satellite imagery): [west, south, east, north] and the
+    # metres one stored pixel covers. None for uploads / unknown scales.
+    bbox: Optional[list[float]] = None
+    meters_per_pixel: Optional[float] = None
 
     @classmethod
     def from_stored(cls, session_id: str, stored: "StoredImage") -> "ImageOut":
@@ -51,6 +55,12 @@ class ImageOut(BaseModel):
             original_megapixels=round(stored.original_size[0] * stored.original_size[1] / 1_000_000.0, 4),
             scale=round(stored.scale, 6),
             downscaled=stored.scale != 1.0,
+            bbox=list(stored.bbox) if stored.bbox else None,
+            meters_per_pixel=(
+                round(float(stored.meters_per_pixel), 6)
+                if stored.meters_per_pixel is not None
+                else None
+            ),
         )
 
 

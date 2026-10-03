@@ -110,8 +110,12 @@ def main() -> int:
         image_id = uploaded.get("image_id")
         check(uploaded.get("width") == 1600 and uploaded.get("height") == 1066, "uploaded 1600×1066", str(uploaded)[:200])
         check(uploaded.get("downscaled") is False, "sample is not downscaled")
-        for key in ("name", "source", "channels", "megapixels", "bytes", "original_width", "scale"):
+        for key in ("name", "source", "channels", "megapixels", "bytes", "original_width", "scale",
+                    "bbox", "meters_per_pixel"):
             check(key in uploaded, f"image info exposes {key}")
+        check(uploaded.get("bbox") is None and uploaded.get("meters_per_pixel") is None,
+              "an upload reports no ground scale (it cannot know one)",
+              str({key: uploaded.get(key) for key in ("bbox", "meters_per_pixel")}))
 
         # ------------------------------------------------------------ filters
         for operation, body in [

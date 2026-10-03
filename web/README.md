@@ -168,10 +168,17 @@ node web/tests/boot_test.mjs --jsdom /tmp/geocluster-jsdom/node_modules
 
 The boot test is optional but the strongest signal short of a real browser: it
 loads `index.html`, boots `js/app.js`, uploads the fixture image through the
-file input and then clicks through the filters, K-Means (checking the rendered
-range table), classify, histogram/stats, GCH2 compress → decompress, the chat
-router commands and the session-expired recovery path. It skips itself (exit 0)
-when jsdom or the API is missing.
+file input and then clicks through the filters, K-Means, the Clusters editor
+table, classify → the Map composer modal (aria, focus trap, one-canvas export),
+histogram/stats, GCH2 compress → decompress, the chat router commands and the
+session-expired recovery path. It skips itself (exit 0) when jsdom or the API is
+missing.
+
+The two live suites exercise `/satellite/fetch` validation more often than the
+default `SATELLITE_RATE_LIMIT_PER_MINUTE=5`, so when you run them back to back
+start the API with a raised limit for that session (the limiter itself is
+covered by `api/tests/test_rate_limit.py`): `SATELLITE_RATE_LIMIT_PER_MINUTE=60
+python -m uvicorn main:app` — or wait a minute between runs.
 
 Run it twice to cover both ways the page is served:
 

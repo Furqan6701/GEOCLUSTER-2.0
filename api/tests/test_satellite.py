@@ -288,6 +288,65 @@ def test_api_stores_the_fetched_image(app, client):
     assert decoded.shape[:2] == (40, 60)
 
 
+def test_api_reports_ground_scale_for_the_stored_image(app, client):
+    """item 5: the fetch response carries bbox + meters_per_pixel, adjusted for
+    the downscale the store applied."""
+    BBOX = [-73.6, 45.4, -73.5, 45.5]
+
+    class StubSatellite:
+        configured = True
+
+        def fetch(self, location_name=None, start=None, end=None, **kwargs):
+            return make_png(), {
+                "cached": True, "label": location_name, "bbox": BBOX,
+                "resolution_m": RESOLUTION_M, "width": 60, "height": 40,
+            }
+
+    app.state.satellite = StubSatellite()
+    session_id = client.post("/sessions").json()["session_id"]
+    payload = client.post("/satellite/fetch", json={"session_id": session_id, "location": "F-8"}).json()
+    assert payload["bbox"] == BBOX
+    assert payload["meters_per_pixel"] == RESOLUTION_M / payload["scale"]
+    assert payload["meters_per_pixel"] == 10.0  # 60x40 px is far below the cap, so no downscale
+
+
+def test_api_ground_scale_survives_a_downscale(app, client, monkeypatch):
+    """A downscaled fetch stores wider pixels: metres/pixel scales with 1/scale."""
+    import settings as runtime_settings
+    monkeypatch.setattr(runtime_settings, "MAX_IMAGE_MEGAPIXELS", 0.001)  # forces a resize
+
+    class StubSatellite:
+        configured = True
+
+        def fetch(self, location_name=None, start=None, end=None, **kwargs):
+            import cv2
+            image = np.zeros((300, 300, 3), dtype=np.uint8)
+            ok, buffer = cv2.imencode(".png", image)
+            assert ok
+            return buffer.tobytes(), {
+                "cached": False, "label": location_name,
+                "bbox": [-73.6, 45.4, -73.5, 45.5], "resolution_m": RESOLUTION_M,
+            }
+
+    app.state.satellite = StubSatellite()
+    session_id = client.post("/sessions").json()["session_id"]
+    payload = client.post("/satellite/fetch", json={"session_id": session_id, "location": "F-8"}).json()
+    assert payload["downscaled"] is True
+    assert payload["scale"] < 1.0
+    # the response rounds to 6 decimals, so compare with a relative tolerance
+    assert payload["meters_per_pixel"] == pytest.approx(RESOLUTION_M / payload["scale"], rel=1e-4)
+
+
+def test_an_upload_has_no_ground_scale(client, sample_bytes):
+    session_id = client.post("/sessions").json()["session_id"]
+    payload = client.post(
+        f"/sessions/{session_id}/images",
+        files={"file": ("sample.jpg", sample_bytes, "image/jpeg")},
+    ).json()
+    assert payload["bbox"] is None
+    assert payload["meters_per_pixel"] is None
+
+
 def test_api_returns_502_for_provider_errors(app, client):
     class FailingSatellite:
         configured = True

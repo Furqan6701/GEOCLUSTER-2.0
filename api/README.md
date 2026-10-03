@@ -78,6 +78,23 @@ Non-secret settings (defaults in brackets):
 | `AI_RATE_LIMIT_PER_MINUTE` | `10` | `/ai/chat` limit per client |
 | `SATELLITE_RATE_LIMIT_PER_MINUTE` | `5` | `/satellite/fetch` limit per client |
 
+### Ground-scale metadata (`ImageOut`)
+
+`POST /satellite/fetch` (and every image it derives from) reports the ground
+scale it knows:
+
+| Field | Meaning |
+| --- | --- |
+| `bbox` | `[west, south, east, north]` of the stored pixels; `null` for uploads |
+| `meters_per_pixel` | metres one **stored** pixel covers — `resolution_m / scale`, so a downscale is accounted for; `null` for uploads |
+
+Filters, K-Means and classify pass the source image's `bbox` through unchanged
+and adjust `meters_per_pixel` by the size change (`derive_ground_metadata()` in
+`sessions.py`), so a derived image never claims a scale it does not have — and
+an upload never gains one. The frontend keeps these values with each history
+state and carries them across a re-upload, which is what lets the Map
+composer's scale bar be exact.
+
 ## Endpoints
 
 All endpoints are synchronous. Sessions are in-memory and expire; images are

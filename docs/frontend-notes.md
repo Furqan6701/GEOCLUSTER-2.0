@@ -57,6 +57,20 @@ viewport slots so "Clear result" is undoable too.
   nothing. Old Blobs are released after 24 images to bound memory.
 * Starting a new session clears the history (server ids are gone).
 
+### Ground scale (item 5)
+
+* `ImageOut` gained `bbox` and `meters_per_pixel`. `POST /satellite/fetch`
+  fills them: the bbox the provider was asked for, and the metres one *stored*
+  pixel covers (`resolution_m / scale`, so a downscale is included). Uploads
+  report `null` — the API never invents a scale.
+* Filters, K-Means and classify carry them (`derive_ground_metadata()`), with
+  `meters_per_pixel` multiplied by the size change, so a derived image is
+  measured as accurately as its source.
+* The frontend keeps that metadata with every history state and re-applies it
+  when an evicted image is re-uploaded (`carryGroundMetadata()`), so the Map
+  composer's scale bar stays exact after a restore. Without metadata the
+  composer says “not to scale” and offers “image width = X unit”.
+
 ### Map composer (implemented)
 
 * **One canvas, one renderer.** `js/mapstudio.js` draws everything — image,

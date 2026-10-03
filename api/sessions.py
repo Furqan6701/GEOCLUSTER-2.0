@@ -33,6 +33,11 @@ class StoredImage:
     stored_size: tuple[int, int]  # (width, height) after the downscale policy
     scale: float
     source: str = "upload"
+    # ground-scale metadata for satellite imagery: the stored pixels cover this
+    # box, so one pixel is `meters_per_pixel` wide on the ground. Both are None
+    # for uploads, where the scale is unknown (and must stay unknown).
+    bbox: list[float] | None = None
+    meters_per_pixel: float | None = None
     created_at: float = 0.0
     last_used: float = 0.0
 
@@ -66,6 +71,22 @@ class Session:
 
     def touch(self, now: float) -> None:
         self.last_used = now
+
+
+def derive_ground_metadata(source: StoredImage, width: int) -> dict[str, Any]:
+    """Ground metadata for an image derived from ``source`` at ``width`` pixels.
+
+    Filters, K-Means and classify keep the source's box, but a result that is
+    narrower than its source (a downscale) covers the same ground with fewer
+    pixels, so every pixel is wider by exactly that factor. Nothing is invented:
+    an image without ground metadata stays without it.
+    """
+    bbox = list(source.bbox) if source.bbox else None
+    meters_per_pixel = source.meters_per_pixel
+    if meters_per_pixel is not None:
+        new_width = max(1, int(width))
+        meters_per_pixel = float(meters_per_pixel) * (source.width / new_width)
+    return {"bbox": bbox, "meters_per_pixel": meters_per_pixel}
 
 
 class SessionStore:
@@ -140,6 +161,8 @@ class SessionStore:
         original_size: tuple[int, int] | None = None,
         scale: float = 1.0,
         source: str = "upload",
+        bbox: list[float] | None = None,
+        meters_per_pixel: float | None = None,
     ) -> StoredImage:
         session = self.get(session_id)
         now = self._clock()
@@ -151,6 +174,8 @@ class SessionStore:
             stored_size=(int(image.shape[1]), int(image.shape[0])),
             scale=float(scale),
             source=source,
+            bbox=list(bbox) if bbox is not None else None,
+            meters_per_pixel=float(meters_per_pixel) if meters_per_pixel is not None else None,
             created_at=now,
             last_used=now,
         )

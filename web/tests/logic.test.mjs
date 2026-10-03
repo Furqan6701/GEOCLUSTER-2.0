@@ -39,6 +39,7 @@ import {
 } from "../js/preview.js";
 import { ApiClient } from "../js/api.js";
 import { HISTORY_LIMIT, ImageHistory, snapshotOf } from "../js/history.js";
+import { carryGroundMetadata } from "../js/session.js";
 import {
   KMEANS_MAX_ITER,
   KMEANS_MAX_K,
@@ -641,6 +642,47 @@ test("reset clears every state and Blob", () => {
   assert.equal(history.size, 0);
   assert.equal(history.canUndo, false);
   assert.equal(history.blobCount, 0);
+});
+
+// --------------------------- ground scale metadata (item 5, frontend side)
+
+test("carryGroundMetadata keeps bbox/meters_per_pixel across a re-upload", () => {
+  const satellite = { image_id: "new", name: "F-8.png", bbox: [67, 24.8, 67.1, 24.9], meters_per_pixel: 20 };
+  const uploaded = { image_id: "new", name: "F-8.png", bbox: null, meters_per_pixel: null };
+  const kept = carryGroundMetadata(uploaded, satellite);
+  assert.deepEqual(kept.bbox, satellite.bbox);
+  assert.equal(kept.meters_per_pixel, 20);
+  assert.equal(kept.name, "F-8.png", "the rest of the info is untouched");
+
+  const fresh = { image_id: "x", name: "photo.jpg" };
+  assert.deepEqual(carryGroundMetadata(fresh, {}), {
+    image_id: "x", name: "photo.jpg", bbox: null, meters_per_pixel: null,
+  }, "an image without metadata never gains invented values");
+
+  assert.deepEqual(carryGroundMetadata(fresh, null), {
+    image_id: "x", name: "photo.jpg", bbox: null, meters_per_pixel: null,
+  });
+
+  const serverKnows = { image_id: "y", bbox: [1, 2, 3, 4], meters_per_pixel: 5 };
+  assert.deepEqual(carryGroundMetadata(serverKnows, { bbox: [9, 9, 9, 9], meters_per_pixel: 99 }),
+    serverKnows, "the server's own metadata always wins");
+  assert.equal(carryGroundMetadata(null, satellite), null);
+});
+
+test("a satellite info object drives the composer's scale bar", () => {
+  const info = { width: 800, height: 600, bbox: [67.0, 24.8, 67.1, 24.9], meters_per_pixel: 12.5 };
+  assert.equal(hasGroundScale(info), true);
+  assert.equal(groundWidthMeters({ info }), 10_000, "12.5 m/px × 800 px");
+  assert.equal(roundScaleLength(groundWidthMeters({ info }), "km"), 2);
+  const settings = normalizeSettings(null, { name: "crop.png", source: "satellite", info });
+  assert.equal(settings.scaleBar.unit, "km", "a 10 km wide image defaults to km");
+  assert.equal(settings.credit, "Contains modified Copernicus Sentinel data");
+  assert.equal(settings.cornerCoordinates, false, "coordinates stay opt-in");
+  const composed = composeStudioMap({
+    image: { width: 800, height: 600 }, settings, info, documentRef: fakeDocument(),
+  });
+  assert.ok(!composed.canvas.__texts.includes("not to scale"));
+  assert.ok(composed.canvas.__texts.includes("2 km"), composed.canvas.__texts.join(" | "));
 });
 
 // ------------------------------------- STEP 4: the Map composer (mapstudio)

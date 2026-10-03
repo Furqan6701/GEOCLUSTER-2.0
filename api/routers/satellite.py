@@ -34,7 +34,7 @@ from geocluster.errors import SatelliteError, SatelliteUnavailable
 from geocluster.images import decode_image, downscale_to_limit
 from geocluster.locations import LocationNotFound
 from geocluster.places import parse_coordinate_pair
-from geocluster.satellite import sanitize_location
+from geocluster.satellite import RESOLUTION_M, sanitize_location
 from ratelimit import client_key, rate_limit_dependency
 from sessions import SessionStore
 
@@ -113,6 +113,11 @@ def fetch_satellite_image(
 
     stored_image, scale = downscale_to_limit(image, runtime_settings.MAX_IMAGE_MEGAPIXELS)
     name = f"{sanitize_location(str(meta.get('label') or request.location or 'satellite'))}.png"
+    # Ground scale: the provider's resolution is metres per pixel at the native
+    # size; a downscale makes every stored pixel that much wider on the ground.
+    native_meters_per_pixel = float(meta.get("resolution_m") or RESOLUTION_M)
+    meters_per_pixel = native_meters_per_pixel / scale if scale > 0 else native_meters_per_pixel
+    bbox = meta.get("bbox")
     stored = store.add_image(
         request.session_id,
         stored_image,
@@ -120,5 +125,7 @@ def fetch_satellite_image(
         original_size=(int(image.shape[1]), int(image.shape[0])),
         scale=scale,
         source="satellite",
+        bbox=[float(value) for value in bbox] if bbox else None,
+        meters_per_pixel=meters_per_pixel,
     )
     return schemas.ImageOut.from_stored(request.session_id, stored)

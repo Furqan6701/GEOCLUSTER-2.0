@@ -16,7 +16,7 @@ import { MapStudio } from "./mapstudio_ui.js";
 import { describeDistance } from "./measure.js";
 import { createChatPanel } from "./panels/chat.js";
 import { createPanels } from "./panels/index.js";
-import { SessionExpiredError, SessionManager } from "./session.js";
+import { SessionExpiredError, SessionManager, carryGroundMetadata } from "./session.js";
 import { activeImage, createAppState, createBus } from "./state.js";
 import { chip, createMenuBar, downloadBlob, el, icon, setChildren, toast, toggleButton } from "./ui.js";
 import { Viewer } from "./viewer.js";
@@ -366,7 +366,12 @@ async function revive(imageId) {
   const slot = [state.original, state.result].find((item) => item?.id === imageId);
   const name = entry?.info?.name ?? slot?.info?.name ?? state.images.get(imageId)?.name
     ?? `image-${String(imageId).slice(-6)}.png`;
-  const info = await session.withSession((sid) => api.uploadImage(sid, blob, name));
+  const uploaded = await session.withSession((sid) => api.uploadImage(sid, blob, name));
+  // An upload cannot know the ground scale, so carry the metadata the image
+  // had before it was evicted: the composer's scale bar must not lose the
+  // satellite's bbox / meters_per_pixel just because the server forgot it.
+  const previous = entry?.info ?? slot?.info ?? state.images.get(imageId) ?? {};
+  const info = carryGroundMetadata(uploaded, previous);
   session.blobCache.set(info.image_id, blob);
   history.adopt(imageId, info, blob);
   for (const slot of [state.original, state.result]) {
