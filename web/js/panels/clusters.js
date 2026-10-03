@@ -13,12 +13,23 @@ import { SessionExpiredError } from "../session.js";
 import { activeImage } from "../state.js";
 import { button, createSection, el, numberInput, setChildren, swatch, table, toast, toolGroup } from "../ui.js";
 
+/**
+ * K-Means always runs with this many Lloyd iterations. The field was removed
+ * from the panel (the algorithm converges long before the cap on real images,
+ * and api/schemas.py allows up to 200), so the number is fixed here instead of
+ * being another value to get wrong.
+ */
+export const KMEANS_MAX_ITER = 100;
+/** Cluster count the panel accepts (api/schemas.py allows 2..20). */
+export const KMEANS_MIN_K = 2;
+export const KMEANS_MAX_K = 10;
+
 export function createClustersPanel(ctx) {
   const { session, bus, state } = ctx;
 
-  const kInput = numberInput({ value: 5, min: 2, max: 20, step: 1 });
-  const iterInput = numberInput({ value: 30, min: 1, max: 200, step: 1 });
+  const kInput = numberInput({ value: 5, min: KMEANS_MIN_K, max: KMEANS_MAX_K, step: 1 });
   const runButton = button("Run K-Means", runKMeans, { variant: "primary", size: "small" });
+  runButton.classList.add("block"); // full width on its own row
   const runStatus = el("span", { class: "muted", text: "" });
   const summaryHost = el("div", {}, el("p", { class: "empty-note", text: "No clustering yet." }));
   const editorHost = el("div", {}, el("p", { class: "empty-note", text: "Run K-Means to edit cluster ranges and colours." }));
@@ -30,14 +41,16 @@ export function createClustersPanel(ctx) {
     const active = activeImage(state);
     if (!active) return toast("Load or fetch an image first.", "warn");
     const k = Math.round(Number(kInput.value));
-    const maxIter = Math.round(Number(iterInput.value));
-    if (!Number.isFinite(k) || k < 2 || k > 20) return toast("K must be between 2 and 20.", "warn");
-    if (!Number.isFinite(maxIter) || maxIter < 1 || maxIter > 200) return toast("Max iterations must be between 1 and 200.", "warn");
+    if (!Number.isFinite(k) || k < KMEANS_MIN_K || k > KMEANS_MAX_K) {
+      return toast(`K must be between ${KMEANS_MIN_K} and ${KMEANS_MAX_K}.`, "warn");
+    }
 
     setBusy(true);
     try {
+      // max_iter is not a user-facing value any more: it is always sent, so
+      // the request can never fall back to the schema default
       const result = await session.withImage(active.id, (sid, imageId) =>
-        ctx.api.kmeans(sid, imageId, { k, maxIter }),
+        ctx.api.kmeans(sid, imageId, { k, maxIter: KMEANS_MAX_ITER }),
       );
       state.kmeans = { ...result, sourceImageId: active.id, sourceInfo: active.info };
       renderSummary(result);
@@ -57,7 +70,6 @@ export function createClustersPanel(ctx) {
     setChildren(summaryHost, [
       el("div", { class: "chip-row", style: { marginBottom: "5px" } }, [
         el("span", { class: "badge", text: `k = ${result.k}` }),
-        el("span", { class: `badge ${result.converged ? "ok" : "warn"}`, text: result.converged ? "converged" : "max iterations" }),
         el("span", { class: "badge", text: `${result.iterations} iters` }),
       ]),
       el("div", { class: "table-wrap" }, table(
@@ -210,13 +222,12 @@ export function createClustersPanel(ctx) {
     collapsed: true,
     body: [
       toolGroup("K-Means", [
-        el("div", { class: "row center" }, [
-          el("div", { class: "field", style: { marginBottom: "0" } }, [el("label", { text: "Clusters (K)" }), kInput]),
-          el("div", { class: "field", style: { marginBottom: "0" } }, [el("label", { text: "Max iterations" }), iterInput]),
-          runButton,
-          runStatus,
+        el("div", { class: "field", style: { marginBottom: "6px" } }, [
+          el("label", { text: "Clusters (K)" }),
+          kInput,
         ]),
-        el("p", { class: "note", text: "Clusters the grayscale intensities and returns labels, centroids and ranges." }),
+        runButton,
+        runStatus,
       ]),
       toolGroup("Last run", [summaryHost]),
       toolGroup("Classification editor", [editorHost]),

@@ -79,7 +79,7 @@ export class ApiClient {
     return this.request(path, { method: "POST", json: params ?? undefined });
   }
 
-  kmeans(sessionId, imageId, { k, maxIter = 30 } = {}) {
+  kmeans(sessionId, imageId, { k, maxIter = 100 } = {}) {
     return this.request(
       `/sessions/${encodeURIComponent(sessionId)}/images/${encodeURIComponent(imageId)}/kmeans`,
       { method: "POST", json: { k, max_iter: maxIter } },

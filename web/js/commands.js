@@ -13,7 +13,9 @@
  */
 
 export const OPERATION_DEFAULTS = Object.freeze({
-  kmeans: Object.freeze({ k: 5, max_iter: 30 }),
+  // max_iter is fixed app-wide (the panel sends the same value; the field was
+  // removed) so every K-Means entry point behaves identically
+  kmeans: Object.freeze({ k: 5, max_iter: 100 }),
   meanfilter: Object.freeze({ window: 3 }),
   threshold: Object.freeze({ value: 128 }),
   brightness: Object.freeze({ value: 20 }),

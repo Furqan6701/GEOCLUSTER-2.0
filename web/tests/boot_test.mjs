@@ -608,6 +608,28 @@ if (!bootFailed) {
   expandSection("Clusters");
   const kInput = numberInputNear("Clusters (K)");
   check(kInput?.value === "5", "K defaults to 5", String(kInput?.value));
+  check(kInput?.min === "2" && kInput?.max === "10", "K accepts 2…10",
+    `${kInput?.min}…${kInput?.max}`);
+  check(numberInputNear("Max iterations") == null, "the Max iterations field is gone");
+  {
+    const clusterSection = document.querySelector("#section-clusters");
+    check(!/Max iterations/i.test(clusterSection.textContent),
+      "no label, badge or hint mentions max iterations",
+      clusterSection.textContent.slice(0, 160));
+    check(!/Clusters the grayscale intensities/.test(clusterSection.textContent),
+      "the K-Means hint text is gone");
+    const runNode = [...clusterSection.querySelectorAll("button")]
+      .find((node) => node.textContent.trim() === "Run K-Means");
+    check(runNode?.classList.contains("block"),
+      "Run K-Means is full width on its own row", runNode?.className);
+    const group = runNode?.closest(".tool-group");
+    const field = group?.querySelector(".field");
+    check(Boolean(field) && field.contains(kInput) && !field.contains(runNode),
+      "the K field and the run button are on separate rows");
+    check(group.querySelectorAll(":scope > .btn.block").length === 1,
+      "the run button is the only full-width control in the group");
+  }
+  const kmeansPostsBefore = requests.filter((entry) => /\/kmeans$/.test(entry.url)).length;
   clickButton("Run K-Means");
   const kmeans = await until(() => state()?.kmeans, "K-Means runs from the panel");
   check(Boolean(kmeans), "K-Means response stored");
@@ -623,6 +645,14 @@ if (!bootFailed) {
   check(rangeRows.every((cells, index) => cells[0] === String(index)),
     "ranges table lists clusters in order", JSON.stringify(rangeRows.map((cells) => cells[0])));
   check(Object.keys(kmeans?.assignments ?? {}).length === 5, "assignments received for every cluster");
+  {
+    const posts = requests.filter((entry) => /\/kmeans$/.test(entry.url));
+    const body = JSON.parse(posts[posts.length - 1]?.body ?? "{}");
+    check(posts.length === kmeansPostsBefore + 1, "one K-Means request was sent",
+      String(posts.length - kmeansPostsBefore));
+    check(body.max_iter === 100, "max_iter=100 is always sent", JSON.stringify(body));
+    check(body.k === 5, "k comes from the field", JSON.stringify(body));
+  }
 
   expandSection("Clusters");
   clickButton("Classify");

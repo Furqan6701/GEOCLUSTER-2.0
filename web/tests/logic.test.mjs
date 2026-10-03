@@ -346,7 +346,7 @@ test("request maps a transport failure to ApiError(0)", async () => {
 // ------------------------------------------------------------ chat commands
 
 test("defaultParamsFor returns the documented defaults", () => {
-  assert.deepEqual(defaultParamsFor("kmeans"), { k: 5, max_iter: 30 });
+  assert.deepEqual(defaultParamsFor("kmeans"), { k: 5, max_iter: 100 });
   assert.deepEqual(defaultParamsFor("meanfilter"), { window: 3 });
   assert.deepEqual(defaultParamsFor("threshold"), { value: 128 });
   assert.deepEqual(defaultParamsFor("brightness"), { value: 20 });
@@ -358,11 +358,11 @@ test("defaultParamsFor returns the documented defaults", () => {
 test("defaultParamsFor hands out copies, not shared state", () => {
   const first = defaultParamsFor("kmeans");
   first.k = 99;
-  assert.deepEqual(defaultParamsFor("kmeans"), { k: 5, max_iter: 30 });
+  assert.deepEqual(defaultParamsFor("kmeans"), { k: 5, max_iter: 100 });
 });
 
 test("describeCommand covers every router action", () => {
-  assert.match(describeCommand({ action: "run_operation", operation: "kmeans" }), /run kmeans \(defaults: \{"k":5,"max_iter":30\}\)/);
+  assert.match(describeCommand({ action: "run_operation", operation: "kmeans" }), /run kmeans \(defaults: \{"k":5,"max_iter":100\}\)/);
   assert.equal(describeCommand({ action: "run_operation", operation: "negative" }), "run negative");
   assert.equal(describeCommand({ action: "open_histogram" }), "open the histogram");
   assert.equal(describeCommand({ action: "open_compress" }), "compress the current image to .gch");
@@ -395,7 +395,7 @@ test("executeCommands dispatches every action exactly once", async () => {
 
   assert.deepEqual(calls, [
     ["satellite", "F-8"],
-    ["run", "kmeans", { k: 5, max_iter: 30 }],
+    ["run", "kmeans", { k: 5, max_iter: 100 }],
     ["run", "negative", null],
     ["histogram"],
     ["compress"],
@@ -403,7 +403,7 @@ test("executeCommands dispatches every action exactly once", async () => {
   ]);
   assert.equal(notes.length, 6);
   assert.match(notes[0], /Satellite fetch requested for F-8/);
-  assert.match(notes[1], /Ran kmeans with \{"k":5,"max_iter":30\}/);
+  assert.match(notes[1], /Ran kmeans with \{"k":5,"max_iter":100\}/);
   assert.match(notes[2], /Ran negative/);
 });
 

@@ -35,7 +35,7 @@ const OPERATION_PARAMS = Object.freeze({
   brightness: { field: "value", hint: "a whole number from −255 to 255" },
   threshold: { field: "value", hint: "a whole number from 0 to 255" },
   meanfilter: { field: "window", hint: "an odd window size from 3 to 31" },
-  kmeans: { field: "k", hint: "a cluster count from 2 to 20" },
+  kmeans: { field: "k", hint: "a cluster count from 2 to 10" },
   classify: { field: "ranges", hint: "one 0–255 range per cluster" },
 });
 

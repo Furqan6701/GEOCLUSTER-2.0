@@ -213,7 +213,7 @@ message. Raw JSON is never displayed.
   that came back with the same message. A missing key (`503`) gets its own
   message pointing at the commands that work without the model.
 * Operations triggered from the chat carry no numbers, so documented defaults
-  are used and announced in the chat log: `kmeans {k: 5, max_iter: 30}`,
+  are used and announced in the chat log: `kmeans {k: 5, max_iter: 100}`,
   `meanfilter {window: 3}`, `threshold {value: 128}`, `brightness {value: 20}`.
   The panels remain the place to pick other values.
 * `open_distance` is **client-side**: the API has no distance endpoint, so the

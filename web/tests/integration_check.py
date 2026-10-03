@@ -139,8 +139,10 @@ def main() -> int:
         check("image/png" in headers.get("Content-Type", ""), "content-type is image/png")
 
         # ------------------------------------------------------------ k-means
-        status, _, km = request("POST", f"/sessions/{session_id}/images/{image_id}/kmeans", body={"k": 5, "max_iter": 30})
-        check(status == 200, "POST kmeans → 200", f"{status} {str(km)[:160]}")
+        # the panel always sends max_iter=100 (the field was removed): the live
+        # schema must accept it
+        status, _, km = request("POST", f"/sessions/{session_id}/images/{image_id}/kmeans", body={"k": 5, "max_iter": 100})
+        check(status == 200, "POST kmeans with max_iter=100 → 200", f"{status} {str(km)[:160]}")
         if isinstance(km, dict):
             ranges = [[entry["min"], entry["max"]] for entry in km.get("ranges", [])]
             check(ranges == [[0, 80], [81, 117], [118, 155], [156, 194], [195, 255]], "k=5 ranges match the verified desktop result", str(ranges))
