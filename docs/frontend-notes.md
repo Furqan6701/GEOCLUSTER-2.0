@@ -57,6 +57,24 @@ viewport slots so "Clear result" is undoable too.
   nothing. Old Blobs are released after 24 images to bound memory.
 * Starting a new session clears the history (server ids are gone).
 
+### The action gate (bug fix)
+
+* Root cause of the "not-allowed" point-operation buttons: the Filters panel
+  computed `disabled` inside its own `setBusy()`, which was called once at
+  construction (no image yet → disabled) and afterwards only while *its own*
+  requests ran. Arriving images (upload, satellite fetch, K-Means, classify,
+  undo/redo, restored/revived image) never re-evaluated it, so the buttons only
+  came back as a side effect of some unrelated request finishing.
+* Fix: `js/gate.js` owns the single rule — a registered action is enabled iff a
+  working image exists and no request is in flight — and re-evaluates every
+  button after every state change (`image:loaded`, `image:cleared`,
+  `operation:applied`, `history:changed`, `session:reset`) and whenever a
+  request starts or ends. In-flight requests are counted per owner, so a
+  finished request cannot clear another one's busy state.
+* Filters (Grayscale/Negative/Laplacian/Clear result), Run K-Means and the
+  Files image actions register with the gate; no panel sets `disabled` on them
+  any more.
+
 ### Ground scale (item 5)
 
 * `ImageOut` gained `bbox` and `meters_per_pixel`. `POST /satellite/fetch`

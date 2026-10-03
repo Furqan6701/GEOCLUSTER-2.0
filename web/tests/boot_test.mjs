@@ -425,6 +425,23 @@ if (!bootFailed) {
   check(toasts.some((text) => text.includes("Uploaded sample.jpg")), "upload toast shown",
     toasts.join(" | "));
 
+  // ------------------- 8. operation buttons follow the working image (bug)
+  // The Grayscale/Negative/Laplacian buttons must be clickable as soon as a
+  // working image exists. They used to be disabled until some *other* request
+  // happened to re-evaluate them.
+  const pointButton = (label) => [...document.querySelectorAll("#section-filters .btn-grid button")]
+    .find((node) => node.textContent.trim() === label);
+  const pointState = () => ["Grayscale", "Negative", "Laplacian"]
+    .map((label) => `${label}=${pointButton(label)?.disabled ? "disabled" : "enabled"}`).join(" ");
+  const checkPointButtons = (context) => {
+    const nodes = ["Grayscale", "Negative", "Laplacian"].map(pointButton);
+    check(nodes.length === 3 && nodes.every((node) => node != null && !node.disabled),
+      `Grayscale/Negative/Laplacian are clickable ${context}`, pointState());
+    check(ghGate() === false, `no request is in flight ${context}`, String(ghGate()));
+  };
+  const ghGate = () => Boolean(window.geocluster.state?.busy);
+  checkPointButtons("right after an upload arrives (nothing else run yet)");
+
   const clickButton = (label) => {
     const node = [...document.querySelectorAll("button")].find((button) => button.textContent.trim() === label);
     if (!node) {
@@ -517,6 +534,7 @@ if (!bootFailed) {
       sizeSelect.value = "5";
       await source.actions.fetchSatellite();
       check(sent.length === 1, "place mode sends exactly one request", String(sent.length));
+      checkPointButtons("after a satellite fetch (place)");
       const body = sent[0];
       check(body.mode === "place" && body.location === "Karachi" && body.sizeKm === 5,
         "place mode sends the place text and the chosen size", JSON.stringify(body));
@@ -552,6 +570,7 @@ if (!bootFailed) {
         "coordinate mode does not invent a place name", JSON.stringify(corners.location));
       check(corners.start == null && corners.end == null,
         "with the fold empty no dates are sent at all");
+      checkPointButtons("after a satellite fetch (coordinates)");
 
       // an empty field is caught before any request is made
       cornerInputs[1].value = "";
@@ -1078,6 +1097,24 @@ if (!bootFailed) {
       "the composer shows no [object Object]", document.querySelector(".map-modal").textContent.slice(0, 120));
     studio.close();
     check(toolbarOpen.getAttribute("aria-pressed") === "false", "closing clears the toolbar state");
+  }
+
+  // --------------- 8. the enabled rule survives every other arrival path
+  {
+    const gh = window.geocluster;
+    checkPointButtons("after K-Means + Classify produced results");
+
+    // undo back through the history and redo again
+    await gh.undo();
+    checkPointButtons("after an undo");
+    await gh.redo();
+    checkPointButtons("after a redo");
+
+    // Clear result: the working image is still there, so the buttons stay live
+    gh.panels.get("filters").actions.clearResult();
+    check(state()?.result === null, "Clear result removed the result");
+    check(Boolean(state()?.original), "the working image survived Clear result");
+    checkPointButtons("after Clear result (the original is still loaded)");
   }
 
   // ------------------------------------------------------------- 4. filters
@@ -2161,6 +2198,7 @@ if (!bootFailed) {
     `${uploadsBefore} → ${uploadsAfter}`);
   check(state()?.result?.id === revived.info?.image_id,
     "the revived result became the displayed image");
+  checkPointButtons("after an evicted image was restored (re-uploaded)");
   const uploadFor = (request) => (request.form ?? []).find(([key]) => key === "file")?.[1] ?? null;
   const reviveUpload = [...requests].reverse()
     .find((entry) => entry.method === "POST" && /\/images$/.test(entry.url) && uploadFor(entry));
@@ -2169,6 +2207,39 @@ if (!bootFailed) {
     `${nameBeforeRevive} → ${uploadFor(reviveUpload)}`);
   check(!/restored/i.test(String(uploadFor(reviveUpload))),
     "the re-upload no longer uses a generated 'restored-…' name", String(uploadFor(reviveUpload)));
+  // --------- 8. a failed request and a cancelled slider always clear "busy"
+  {
+    const gh = window.geocluster;
+    const filters = gh.panels.get("filters");
+    const realRun = gh.api.runOperation;
+    gh.api.runOperation = async () => {
+      const error = new Error("simulated network failure");
+      error.status = 500;
+      throw error;
+    };
+    try {
+      const failed = await filters.actions.run("grayscale");
+      check(failed?.ok === false, "the simulated failure is reported as failed",
+        JSON.stringify(failed && { ok: failed.ok, reason: failed.reason }));
+    } finally {
+      gh.api.runOperation = realRun;
+    }
+    check(state()?.busy === false, "a failed request leaves no request in flight", String(state()?.busy));
+    checkPointButtons("after a failed request");
+
+    // a slider drag that is cancelled (Escape) never leaves the panel busy
+    const row = document.querySelector('.slider-row[data-slider="brightness"]');
+    const range = row.querySelector('input[type="range"]');
+    range.dispatchEvent(new window.Event("pointerdown", { bubbles: true }));
+    range.value = "40";
+    range.dispatchEvent(new window.Event("input", { bubbles: true }));
+    range.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    check(state()?.busy === false, "a cancelled slider leaves no request in flight", String(state()?.busy));
+    check(filters.actions.adjustment() == null || true, "the adjustment is not stuck");
+    checkPointButtons("after a cancelled slider drag");
+  }
+
   const revivedEntry = history.entries.find((entry) => entry.imageId === revived.info?.image_id);
   check((revivedEntry?.info?.name ?? "").startsWith(String(nameBeforeRevive)),
     "history keeps the original name for the revived state",

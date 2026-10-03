@@ -504,21 +504,24 @@ export function createOperationsPanel(ctx) {
     bus.emit("operation:applied", { label, info });
   }
 
+  /**
+   * Request bookkeeping only: the buttons' enabled state is owned by the
+   * action gate (js/gate.js), which re-evaluates it here and after every other
+   * state change — never as a side effect of this call alone.
+   */
   function setBusy(busy, operation = "") {
-    state.busy = busy;
-    for (const node of buttons) node.disabled = busy || !activeImage(state);
+    ctx.gate.setBusy(busy, "filters");
     for (const control of Object.values(controls)) {
       control.range.disabled = busy;
       control.number.disabled = busy;
     }
     const text = busy
       ? `Running ${operation}…`
-      : activeImage(state)
+      : ctx.gate.hasImage()
         ? ""
         : "Load an image to enable the filters.";
     status.textContent = text;
     status.hidden = !text;
-    bus.emit("busy", busy);
   }
 
   function report(error, operation, label) {
@@ -553,6 +556,8 @@ export function createOperationsPanel(ctx) {
   function makeButton(label, operation, extra = "") {
     const node = button(label, () => run(operation), { size: "small", title: extra });
     buttons.push(node);
+    // one rule for the whole panel: the gate decides when this may be clicked
+    ctx.gate.register(node, { requiresImage: true, label });
     return node;
   }
 
@@ -560,6 +565,7 @@ export function createOperationsPanel(ctx) {
   const negative = makeButton("Negative", "negative");
   const laplacian = makeButton("Laplacian", "laplacian");
   const clearButton = button("Clear result", () => clearResult(), { size: "small", variant: "ghost" });
+  ctx.gate.register(clearButton, { requiresImage: true, label: "Clear result" });
 
   function sliderGroup(key, title) {
     const control = createSlider(key);

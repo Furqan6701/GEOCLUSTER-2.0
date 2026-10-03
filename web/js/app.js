@@ -11,6 +11,7 @@
 import { ApiClient } from "./api.js";
 import { resolveApiBase } from "./config.js";
 import { ApiError, humanizeError } from "./errors.js";
+import { createActionGate } from "./gate.js";
 import { ImageHistory, HISTORY_LIMIT, snapshotOf } from "./history.js";
 import { MapStudio } from "./mapstudio_ui.js";
 import { describeDistance } from "./measure.js";
@@ -34,7 +35,13 @@ state.apiBase = apiBase;
 const bus = createBus();
 const api = new ApiClient({ base: apiBase });
 const session = new SessionManager({ api, state, bus });
-const ctx = { api, session, state, bus, apiBase };
+/**
+ * The one place that decides whether an operation may run: every operation
+ * button registers with the gate, which re-evaluates them after every state
+ * change (see js/gate.js).
+ */
+const gate = createActionGate({ state, bus });
+const ctx = { api, session, state, bus, apiBase, gate };
 
 // ------------------------------------------------------------------- viewers
 const originalViewer = new Viewer(document.getElementById("viewer-original"), {
@@ -1036,6 +1043,7 @@ window.geocluster = {
   state,
   bus,
   viewers: { original: originalViewer, result: resultViewer },
+  gate,
   map: {
     open: openMapStudio,
     close: () => mapStudio.close(),

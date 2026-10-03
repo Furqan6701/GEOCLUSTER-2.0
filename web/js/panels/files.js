@@ -16,6 +16,7 @@ export function createFilesPanel(ctx) {
   const { session, bus, state } = ctx;
 
   const compressButton = button("Compress current image → .gch", compress, { variant: "primary", size: "small" });
+  ctx.gate.register(compressButton, { requiresImage: true, label: "Compress" });
   const fileInput = el("input", {
     type: "file",
     accept: ".gch,application/octet-stream",
@@ -25,6 +26,7 @@ export function createFilesPanel(ctx) {
   });
   const decompressButton = button("Decompress a .gch file…", () => fileInput.click(), { size: "small" });
   const exportButton = button("Export current image (PNG)…", exportPng, { size: "small" });
+  ctx.gate.register(exportButton, { requiresImage: true, label: "Export" });
   const status = el("p", { class: "note", text: "GCH2 files are compatible with the desktop app." });
 
   function baseName() {
@@ -90,10 +92,10 @@ export function createFilesPanel(ctx) {
     }
   }
 
+  /** The gate owns the image actions' enabled state; decompress needs no image. */
   function setBusy(busy) {
-    compressButton.disabled = busy;
+    ctx.gate.setBusy(busy, "files");
     decompressButton.disabled = busy;
-    exportButton.disabled = busy;
     compressButton.textContent = busy ? "Working…" : "Compress current image → .gch";
     if (busy) compressButton.prepend(icon("archive", { size: 12 }));
   }

@@ -40,6 +40,7 @@ import {
 import { ApiClient } from "../js/api.js";
 import { HISTORY_LIMIT, ImageHistory, snapshotOf } from "../js/history.js";
 import { carryGroundMetadata } from "../js/session.js";
+import { GATE_STATE_EVENTS, createActionGate } from "../js/gate.js";
 import {
   KMEANS_MAX_ITER,
   KMEANS_MAX_K,
@@ -1406,4 +1407,85 @@ test("the K-Means result view is exactly two options", () => {
   assert.deepEqual(RESULT_VIEWS.map((view) => view.key), ["display", "labels"]);
   assert.deepEqual(RESULT_VIEWS.map((view) => view.short), ["Clustered image", "Label map"]);
   assert.deepEqual(RESULT_VIEWS.map((view) => view.label), ["Show clustered image", "Show label map"]);
+});
+
+// ------------------- the action gate: one rule for every operation button ----
+
+function fakeButton() {
+  return { disabled: false };
+}
+
+test("the gate enables a button exactly when an image exists and nothing is in flight", () => {
+  const listeners = new Map();
+  const bus = { on: (type, fn) => listeners.set(type, fn), emit: () => {} };
+  const state = { original: null, result: null, busy: null };
+  const gate = createActionGate({ state, bus });
+  const node = gate.register(fakeButton(), { requiresImage: true, label: "Grayscale" });
+
+  assert.equal(node.disabled, true, "no image yet → disabled");
+
+  state.original = { id: "a", info: {} };
+  listeners.get("image:loaded")();
+  assert.equal(node.disabled, false, "an image arrived → enabled");
+  assert.equal(state.busy, false, "the gate keeps state.busy in step");
+
+  gate.setBusy(true, "filters");
+  assert.equal(node.disabled, true, "a request in flight → disabled");
+  assert.equal(state.busy, true);
+  gate.setBusy(false, "filters");
+  assert.equal(node.disabled, false, "the request finished → enabled again");
+
+  state.original = null;
+  state.result = null;
+  listeners.get("session:reset")();
+  assert.equal(node.disabled, true, "the image is gone → disabled");
+});
+
+test("every state-changing event re-evaluates the buttons", () => {
+  const listeners = new Map();
+  const bus = { on: (type, fn) => listeners.set(type, fn), emit: () => {} };
+  const state = { original: null, result: null };
+  const gate = createActionGate({ state, bus });
+  const node = gate.register(fakeButton(), {});
+  assert.deepEqual([...listeners.keys()].sort(), [...GATE_STATE_EVENTS].sort(),
+    "the gate subscribes to every state change");
+
+  for (const type of GATE_STATE_EVENTS) {
+    state.result = { id: `r-${type}`, info: {} };
+    listeners.get(type)();
+    assert.equal(node.disabled, false, `${type} re-enables the button`);
+    state.result = null;
+    listeners.get(type)();
+    assert.equal(node.disabled, true, `${type} disables it again`);
+  }
+});
+
+test("in-flight requests are counted per owner, so a finished one cannot clear another", () => {
+  const bus = { on: () => {}, emit: () => {} };
+  const state = { original: { id: "a", info: {} }, result: null };
+  const gate = createActionGate({ state, bus });
+  const node = gate.register(fakeButton(), {});
+
+  gate.setBusy(true, "filters");
+  gate.setBusy(true, "kmeans");
+  assert.deepEqual(gate.owners().sort(), ["filters", "kmeans"]);
+  gate.setBusy(false, "filters");
+  assert.equal(node.disabled, true, "the other request is still running");
+  gate.setBusy(false, "kmeans");
+  assert.equal(node.disabled, false, "both finished → enabled");
+  assert.deepEqual(gate.owners(), []);
+});
+
+test("register() reports the rule immediately and buttons without an image requirement only follow busy", () => {
+  const bus = { on: () => {}, emit: () => {} };
+  const state = { original: null, result: null };
+  const gate = createActionGate({ state, bus });
+  const needsImage = gate.register(fakeButton(), { requiresImage: true });
+  const noImage = gate.register(fakeButton(), { requiresImage: false });
+  assert.equal(needsImage.disabled, true);
+  assert.equal(noImage.disabled, false, "an action that brings an image stays clickable");
+  gate.setBusy(true, "files");
+  assert.equal(noImage.disabled, true, "but never while a request is in flight");
+  assert.equal(gate.size(), 2);
+  assert.equal(gate.canRun(), false);
 });

@@ -281,6 +281,28 @@ def check_workstation_layout() -> None:
     check("map-modal-dialog" in css and ".segmented" in css and ".cluster-actions" in css,
           "the composer and the cluster editor are styled")
 
+    # the action gate: one rule for every operation button (bug fix)
+    gate_js = _js_text("js/gate.js")
+    check("export function createActionGate" in gate_js and "GATE_STATE_EVENTS" in gate_js,
+          "gate.js exports the action gate and the state-change list")
+    for event in ("image:loaded", "image:cleared", "operation:applied", "history:changed", "session:reset"):
+        check(event in gate_js, f"the gate re-evaluates after {event}")
+    operations_js = _js_text("js/panels/operations.js")
+    check("ctx.gate.register(" in operations_js and "node.disabled = busy" not in operations_js,
+          "the Filters buttons ask the gate instead of deciding for themselves")
+    check("ctx.gate.setBusy(" in operations_js,
+          "the Filters panel books its requests with the gate")
+    clusters_js_source = _js_text("js/panels/clusters.js")
+    check("ctx.gate.register(" in clusters_js_source and "runButton.disabled" not in clusters_js_source,
+          "Run K-Means follows the same rule")
+    files_js_source = _js_text("js/panels/files.js")
+    check(files_js_source.count("ctx.gate.register(") >= 2,
+          "the Files image actions follow the same rule",
+          str(files_js_source.count("ctx.gate.register(")))
+    app_js_text = _js_text("js/app.js")
+    check("createActionGate({ state, bus })" in app_js_text and "gate," in app_js_text,
+          "app.js creates the single gate and shares it with every panel")
+
     # item 5: ground-scale metadata travels from the provider to the composer
     api_root = WEB.parent / "api"
     api_schemas = (api_root / "schemas.py").read_text(encoding="utf-8")

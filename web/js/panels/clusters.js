@@ -49,6 +49,7 @@ export function createClustersPanel(ctx) {
   const kInput = numberInput({ value: 5, min: KMEANS_MIN_K, max: KMEANS_MAX_K, step: 1 });
   const runButton = button("Run K-Means", runKMeans, { variant: "primary", size: "small" });
   runButton.classList.add("block"); // full width on its own row
+  ctx.gate.register(runButton, { requiresImage: true, label: "Run K-Means" });
   const runStatus = el("span", { class: "muted", text: "" });
   const editorHost = el("div", {}, el("p", { class: "empty-note", text: "Run K-Means to fill the table." }));
 
@@ -259,8 +260,9 @@ export function createClustersPanel(ctx) {
     }
   }
 
+  /** The gate owns the disabled state; this only swaps the label. */
   function setBusy(busy) {
-    runButton.disabled = busy;
+    ctx.gate.setBusy(busy, "kmeans");
     runButton.textContent = busy ? "Working…" : "Run K-Means";
     runStatus.textContent = busy ? "clustering…" : "";
   }
