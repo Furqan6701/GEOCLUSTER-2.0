@@ -1,30 +1,46 @@
 /**
- * Floating histogram windows (item 9).
+ * Floating histogram windows (items 9 and 13).
  *
- * The Analysis panel keeps a single "Histogram" button; every press opens a
- * separate NON-modal, opaque window that floats over the page. Each window is
- * independent: its own image, its own options, its own export. Windows are
- * draggable by their title bar, close with their ✕ or Escape while focused,
- * are keyboard accessible (arrow keys move, Tab stays inside) and tile side by
- * side so a new one never hides an existing one. At most four are open.
+ * The Analysis panel keeps a single "Histogram" button — it opens the window
+ * for the ACTIVE viewport's image, and if that image already has a window it
+ * opens the other viewport's image instead, so Original-vs-Result is two
+ * clicks. Each viewport footer also carries its own small Histogram button for
+ * that viewport's image (js/viewer.js). Every press opens a separate NON-modal,
+ * opaque window that floats over the page.
+ *
+ * Each window is independent: its own image, its own options, its own export.
+ * Windows are draggable by their title bar and RESIZABLE from their bottom-right
+ * grip, are always clamped inside the page (never past the bottom or side
+ * edges), close with their ✕ or Escape while focused, are keyboard accessible
+ * (arrow keys move, Tab stays inside) and tile side by side so a new one never
+ * hides an existing one. At most four are open.
  *
  * Bins are fetched ONCE per image (the API's 256 counts) and cached; every
  * option — scale, smoothing, display, theme, compare — is recomputed in the
  * browser from those numbers, so changing an option never causes a request.
+ * The Channel dropdown adds Gray (the API series) plus Red / Green / Blue /
+ * RGB overlay for colour images, computed here from the decoded pixels
+ * (see channelHistograms in js/histogram.js) — still no API change.
  */
 
+import { previewSize } from "./preview.js";
 import {
+  CHANNEL_OPTIONS,
   COMPARE_COLOR,
   DISPLAY_MODES,
   SCALE_OPTIONS,
-  SMOOTHING_LEVELS,
+  SMOOTHING_RANGE,
   THEME_OPTIONS,
   binStats,
+  channelLabel,
+  channelOptionsFor,
   describeOptions,
   displayFlags,
   drawHistogram,
   formatStats,
   histogramFileName,
+  seriesForChannel,
+  channelHistograms,
 } from "./histogram.js";
 import { SessionExpiredError } from "./session.js";
 import { downloadBlob, el, icon, toast } from "./ui.js";
@@ -35,6 +51,11 @@ export const EXPORT_SCALE = 2;
 /** How many windows may be open at once. */
 export const MAX_WINDOWS = 4;
 export const WINDOW_SIZE = Object.freeze({ width: 560, height: 420, margin: 16, gap: 12 });
+/** Resizing limits: big enough to read, small enough to stay on the page. */
+export const MIN_WINDOW = Object.freeze({ width: 380, height: 240 });
+export const MAX_WINDOW = Object.freeze({ width: 1600, height: 1200 });
+/** Longest side of the decoded copy used for browser-side channel histograms. */
+export const CHANNEL_SAMPLE_MAX = 2048;
 /** Cascade offset used only when the screen has no free slot left. */
 export const CASCADE_STEP = 26;
 export const MOVE_STEP = 16;
@@ -120,9 +141,16 @@ export class HistogramWindows {
     this.windows = [];
     /** image id → 256 bins (never fetched twice for the same image). */
     this.binsCache = new Map();
+    /** image id → {gray,red,green,blue,count} from the DECODED pixels. */
+    this.channelCache = new Map();
+    /** in-flight decodes, so two windows on one image share one decode. */
+    this.channelPending = new Map();
     this.nextId = 1;
     this.layer = null;
     this._onKeyDown = (event) => this._handleKey(event);
+    // a smaller window must never leave a window hanging off the page
+    this._onViewportResize = () => this.reclampAll();
+    (this.doc.defaultView ?? globalThis).addEventListener?.("resize", this._onViewportResize);
   }
 
   get count() {
@@ -131,6 +159,43 @@ export class HistogramWindows {
 
   isFull() {
     return this.windows.length >= this.limit;
+  }
+
+  /**
+   * The image a window is open for right now, so the sidebar button can choose
+   * the other viewport instead of opening the same image twice (item 13).
+   */
+  hasWindowFor(targetId) {
+    return this.windows.some((win) => win.targetId === String(targetId ?? ""));
+  }
+
+  /**
+   * The ACTIVE viewport's image, and the other viewport's image. "Active" is
+   * whoever was last clicked or focused (state.activeRole, kept by app.js);
+   * with nothing loaded anywhere this falls back to the working image.
+   */
+  viewportPair() {
+    const activeRole = this.state?.activeRole === "result" ? "result" : "original";
+    const otherRole = activeRole === "result" ? "original" : "result";
+    const pick = (role) => {
+      const entry = this.state?.[role];
+      return entry?.id ? { id: String(entry.id), role, info: entry.info ?? null } : null;
+    };
+    const active = pick(activeRole);
+    const other = pick(otherRole);
+    return { activeRole, otherRole, active, other };
+  }
+
+  /**
+   * The sidebar button: the active viewport's image; if that already has a
+   * window, the other viewport's image instead — two clicks cover both.
+   */
+  openFromPanel() {
+    const { active, other } = this.viewportPair();
+    if (active && !this.hasWindowFor(active.id)) return this.open({ targetId: active.id });
+    if (other && !this.hasWindowFor(other.id)) return this.open({ targetId: other.id });
+    // both viewports already have a window: open one more for the active image
+    return this.open({ targetId: active?.id ?? other?.id ?? null });
   }
 
   /** Open a window; without a targetId it uses the working image. */
@@ -179,15 +244,39 @@ export class HistogramWindows {
     return this.count === 0;
   }
 
-  /** Is a value inside a window (used by the tests to look for overlap)? */
+  /**
+   * The rectangles the open windows occupy: their real (possibly resized) size
+   * at their current position — the tiling, clamping and the tests all use this
+   * one source.
+   */
   rects() {
-    return this.windows.map((win) => ({
-      id: win.id,
-      left: Number.parseFloat(win.root.style.left) || 0,
-      top: Number.parseFloat(win.root.style.top) || 0,
-      width: WINDOW_SIZE.width,
-      height: WINDOW_SIZE.height,
-    }));
+    return this.windows.map((win) => {
+      const bounds = this.sizeOf(win);
+      return {
+        id: win.id,
+        left: Number.parseFloat(win.root.style.left) || 0,
+        top: Number.parseFloat(win.root.style.top) || 0,
+        width: bounds.width,
+        height: bounds.height,
+      };
+    });
+  }
+
+  /** The current size of a window (style first, then the defaults). */
+  sizeOf(win) {
+    const width = Number.parseFloat(win?.root?.style?.width) || WINDOW_SIZE.width;
+    const height = Number.parseFloat(win?.root?.style?.height) || WINDOW_SIZE.height;
+    return { width, height };
+  }
+
+  /** The page area a window has to stay inside (margin included). */
+  viewport() {
+    const win_ = this.doc.defaultView ?? globalThis;
+    return {
+      width: Number(win_.innerWidth) || 1280,
+      height: Number(win_.innerHeight) || 800,
+      margin: WINDOW_SIZE.margin,
+    };
   }
 
   // ------------------------------------------------------------------ private
@@ -207,10 +296,10 @@ export class HistogramWindows {
    * screen has no free slot left does it cascade the last one a little.
    */
   _place(win) {
-    const win_ = this.doc.defaultView ?? globalThis;
-    const viewportWidth = Number(win_.innerWidth) || 1280;
-    const viewportHeight = Number(win_.innerHeight) || 800;
-    const { width, height, margin, gap } = WINDOW_SIZE;
+    const { width: viewportWidth, height: viewportHeight, margin } = this.viewport();
+    const gap = WINDOW_SIZE.gap;
+    this.fitSize(win); // never wider/taller than the page allows
+    const { width, height } = this.sizeOf(win);
     const rects = this.rects();
     const columns = Math.max(1, Math.floor((viewportWidth - margin - gap) / (width + gap)));
     const rows = Math.max(1, Math.floor((viewportHeight - margin - gap) / (height + gap)) + 1);
@@ -230,8 +319,7 @@ export class HistogramWindows {
       const last = rects.at(-1) ?? { left: margin, top: margin };
       spot = { left: last.left + CASCADE_STEP, top: last.top + CASCADE_STEP };
     }
-    win.root.style.left = `${Math.max(0, Math.round(spot.left))}px`;
-    win.root.style.top = `${Math.max(0, Math.round(spot.top))}px`;
+    this._move(win, spot.left, spot.top);
   }
 
   _buildWindow(id, targets, chosen, allTargets) {
@@ -260,18 +348,41 @@ export class HistogramWindows {
 
     const imageField = select("Image", allTargets.map((entry) => ({ key: entry.id, label: entry.title })), chosen.id, "image");
     const scaleField = select("Scale", SCALE_OPTIONS, "linear", "scale");
-    const smoothingField = select("Smoothing", SMOOTHING_LEVELS, "off", "smoothing");
     const displayField = select("Display", DISPLAY_MODES, "counts", "display");
     const themeField = select("Theme", THEME_OPTIONS, "dark", "theme");
     const compareField = select("Compare", [{ key: "off", label: "Off" },
       ...allTargets.map((entry) => ({ key: entry.id, label: entry.title }))], "off", "compare");
+    // Channel: Gray (the API series) + the browser-computed colour channels.
+    // A grayscale image only offers Gray, so the option list is rebuilt per image.
+    const channelField = select("Channel", channelOptionsFor(chosen.info), "gray", "channel");
+
+    /**
+     * Smoothing is a SLIDER (item 13): 0 = off … 10, labelled only "Smoothing",
+     * with no number shown next to it. The window is the label of its own field.
+     */
+    const smoothingInput = el("input", {
+      type: "range",
+      class: "histo-slider",
+      id: `histo-smoothing-${id}`,
+      min: String(SMOOTHING_RANGE.min),
+      max: String(SMOOTHING_RANGE.max),
+      step: String(SMOOTHING_RANGE.step),
+      value: String(SMOOTHING_RANGE.value),
+      "aria-label": "Smoothing",
+    });
+    const smoothingField = el("label", { class: "histo-field histo-field-slider" }, [
+      el("span", { class: "histo-label", text: "Smoothing" }),
+      smoothingInput,
+    ]);
+    smoothingField.htmlFor = smoothingInput.id;
 
     const exportButton = el("button", { type: "button", class: "btn small histo-export", text: "Export PNG" });
     exportButton.prepend(icon("download", { size: 12 }));
     const controls = el("div", { class: "histo-controls" }, [
       imageField.label,
+      channelField.label,
       scaleField.label,
-      smoothingField.label,
+      smoothingField,
       displayField.label,
       themeField.label,
       compareField.label,
@@ -285,6 +396,10 @@ export class HistogramWindows {
     const statsHost = el("dl", { class: "histo-stats", "aria-label": "Statistics" });
     const status = el("p", { class: "histo-status", role: "status", text: "" });
 
+    const resizeGrip = el("span", {
+      class: "histo-resize", "aria-hidden": "true",
+      title: "Drag to resize this window",
+    });
     const root = el("section", {
       class: "histo-window", role: "dialog", "aria-modal": "false", "aria-labelledby": titleId,
       "aria-label": `Histogram window for ${chosen.title}`,
@@ -296,8 +411,9 @@ export class HistogramWindows {
         el("div", { class: "histo-main" }, [canvas, statsHost]),
         status,
       ]),
+      resizeGrip,
     ]);
-    // an explicit height keeps the tiling maths honest (the body scrolls)
+    // an explicit size keeps the tiling and clamping maths honest (the body scrolls)
     root.style.width = `${WINDOW_SIZE.width}px`;
     root.style.height = `${WINDOW_SIZE.height}px`;
 
@@ -311,15 +427,19 @@ export class HistogramWindows {
       title: root.querySelector(".histo-title"),
       fields: {
         image: imageField.node,
+        channel: channelField.node,
         scale: scaleField.node,
-        smoothing: smoothingField.node,
+        smoothing: smoothingInput,
         display: displayField.node,
         theme: themeField.node,
         compare: compareField.node,
       },
       targetId: chosen.id,
+      targetInfo: chosen.info ?? null,
       bins: null,
       compareBins: null,
+      histograms: null,     // browser-computed channel counts for this image
+      channelPending: null,
       busy: false,
     };
 
@@ -329,13 +449,19 @@ export class HistogramWindows {
     win.setImage = (targetId) => this._load(win, targetId);
     win.redraw = () => this._draw(win);
     win.options = () => this._options(win);
+    win.resizeTo = (width, height) => this.resize(win, width, height);
 
     closeButton.addEventListener("click", () => this.close(id));
     win.fields.image.addEventListener("change", () => this._load(win, win.fields.image.value));
     win.fields.compare.addEventListener("change", () => void this._loadCompare(win));
-    for (const key of ["scale", "smoothing", "display", "theme"]) {
+    win.fields.channel.addEventListener("change", () => void this._loadChannel(win));
+    for (const key of ["scale", "display", "theme"]) {
       win.fields[key].addEventListener("change", () => this._draw(win));
     }
+    // the slider redraws while dragging: it is pure browser maths, no request
+    smoothingInput.addEventListener("input", () => this._draw(win));
+    smoothingInput.addEventListener("change", () => this._draw(win));
+    this._resize(win, resizeGrip);
     exportButton.addEventListener("click", () => this._export(win));
     root.addEventListener("mousedown", () => this._raise(win));
     this._drag(win);
@@ -346,10 +472,22 @@ export class HistogramWindows {
     const flags = displayFlags(win.fields.display.value);
     return {
       scale: win.fields.scale.value === "log" ? "log" : "linear",
-      smoothing: win.fields.smoothing.value,
+      smoothing: Number(win.fields.smoothing.value) || 0,
       theme: win.fields.theme.value === "light" ? "light" : "dark",
+      channel: win.fields.channel.value || "gray",
       ...flags,
     };
+  }
+
+  /**
+   * The bins the window shows for its channel: the API's gray series for Gray,
+   * the browser's own counts for Red / Green / Blue, and null for the RGB
+   * overlay (which draws three coloured outlines instead of one filled series).
+   */
+  _binsFor(win, channel) {
+    if (channel === "gray" || channel == null) return win.bins ?? [];
+    if (channel === "rgb") return null;
+    return win.histograms?.[channel] ? Array.from(win.histograms[channel]) : [];
   }
 
   _draw(win) {
@@ -361,25 +499,37 @@ export class HistogramWindows {
     const compare = compareTarget && win.compareBins?.length
       ? { bins: win.compareBins, label: compareTarget.title, color: COMPARE_COLOR }
       : null;
+    // the RGB overlay draws its three channels; Gray/R/G/B draw one filled series
+    const series = seriesForChannel(options.channel, win.histograms);
+    const bins = this._binsFor(win, options.channel);
     drawHistogram(context, {
-      bins: win.bins ?? [],
+      bins: bins ?? [],
       ...WINDOW_CHART,
       ...options,
       title: `${target?.title ?? "image"} · ${describeOptions(options)}`,
       compare,
+      series,
     });
-    const stats = binStats(win.bins);
+    const stats = binStats(bins ?? win.bins);
     const rows = formatStats(stats);
     win.statsHost.replaceChildren(...rows.flatMap((row) => [
       el("dt", { class: "histo-stat-label", text: row.label }),
       el("dd", { class: "histo-stat-value", text: row.text }),
     ]));
-    const total = win.bins?.length ?? 0;
+    const total = bins?.length ?? 0;
+    const sampled = win.channelSample && win.channelSample.scale < 1
+      ? ` · channel counts sampled at ${win.channelSample.width}×${win.channelSample.height}`
+      : "";
     win.status.textContent = win.busy
       ? "Loading the 256 bins…"
-      : win.bins
-        ? `${total} bins · ${stats.count.toLocaleString()} pixels · every option recomputed here, no new requests`
-        : "No histogram yet.";
+      : win.channelPending
+        ? "Reading the image's channels…"
+        : bins || series.length
+          ? `${total || 256} bins · ${stats.count.toLocaleString()} pixels${sampled} · every option recomputed here, no new requests`
+          : "No histogram yet.";
+    if (series.length) {
+      win.status.textContent = `RGB overlay · ${stats.count.toLocaleString()} pixels${sampled} · computed in the browser, no new requests`;
+    }
     return rows;
   }
 
@@ -403,6 +553,7 @@ export class HistogramWindows {
     }
     win.targetId = targetId;
     if (win.title) win.title.textContent = `Histogram: ${target.title}`;
+    this._syncTargetControls(win, target);
     const cached = this.binsCache.get(targetId);
     if (cached) {
       win.bins = cached;
@@ -416,6 +567,7 @@ export class HistogramWindows {
       win.bins = histogram?.bins ?? [];
       this.binsCache.set(targetId, win.bins);
       win.busy = false;
+      if (win.fields.channel.value !== "gray") void this._loadChannel(win);
       await this._loadCompare(win);
       return { ok: true, bins: win.bins, cached: false };
     } catch (error) {
@@ -429,6 +581,99 @@ export class HistogramWindows {
         "bad", { timeout: 12000 });
       return { ok: false, error };
     }
+  }
+
+  /**
+   * The Channel dropdown: Gray needs nothing (the API's bins are already
+   * there); every other channel is computed here from the decoded image, so
+   * switching channels never causes a request.
+   */
+  async _loadChannel(win) {
+    const channel = win.fields.channel.value;
+    if (channel === "gray") {
+      win.channelPending = null;
+      this._draw(win);
+      return { ok: true, cached: true };
+    }
+    const cached = this.channelCache.get(win.targetId);
+    if (cached) {
+      win.histograms = cached;
+      win.channelPending = null;
+      this._draw(win);
+      return { ok: true, cached: true };
+    }
+    const pending = this._decodeChannels(win.targetId);
+    win.channelPending = pending;
+    this._draw(win);
+    const histograms = await pending;
+    win.channelPending = null;
+    if (win.targetId !== histograms?.imageId) {
+      // the user switched image while decoding: reload for the new one
+      return this._loadChannel(win);
+    }
+    win.histograms = histograms;
+    this._draw(win);
+    return histograms ? { ok: true, cached: false } : { ok: false };
+  }
+
+  /** Decode an image once (shared by every window) and count its channels. */
+  _decodeChannels(imageId) {
+    const key = String(imageId ?? "");
+    if (this.channelCache.has(key)) return Promise.resolve(this.channelCache.get(key));
+    if (this.channelPending.has(key)) return this.channelPending.get(key);
+    const job = (async () => {
+      const doc = this.doc;
+      const decode = doc.defaultView?.createImageBitmap ?? globalThis.createImageBitmap;
+      if (!doc || typeof decode !== "function" || !this.session) return null;
+      try {
+        const blob = await this.session.imageBlob(key);
+        const bitmap = await decode(blob);
+        try {
+          const width = Number(bitmap?.width) || 0;
+          const height = Number(bitmap?.height) || 0;
+          if (!width || !height) return null;
+          const target = previewSize(width, height, CHANNEL_SAMPLE_MAX);
+          const canvas = doc.createElement("canvas");
+          canvas.width = target.width;
+          canvas.height = target.height;
+          const context = canvas.getContext("2d", { willReadFrequently: true });
+          if (!context) return null;
+          context.drawImage(bitmap, 0, 0, target.width, target.height);
+          const pixels = context.getImageData?.(0, 0, target.width, target.height);
+          if (!pixels?.data) return null;
+          const histograms = channelHistograms(pixels.data);
+          histograms.imageId = key;
+          histograms.sample = { width: target.width, height: target.height, scale: target.scale };
+          this.channelCache.set(key, histograms);
+          return histograms;
+        } finally {
+          bitmap?.close?.();
+        }
+      } catch {
+        return null; // no pixels available: the window keeps its other options
+      }
+    })().finally(() => this.channelPending.delete(key));
+    this.channelPending.set(key, job);
+    return job;
+  }
+
+  /**
+   * Point the Image/Channel controls at the image a window is showing and
+   * recompute what the new image offers (a grayscale image has no Red/Green/
+   * Blue, so those options disappear instead of drawing empty charts).
+   */
+  _syncTargetControls(win, target) {
+    const info = target?.info ?? null;
+    win.targetInfo = info;
+    const options = channelOptionsFor(info);
+    const allowed = new Set(options.map((entry) => entry.key));
+    const current = win.fields.channel.value;
+    win.fields.channel.replaceChildren(...options.map((entry) =>
+      el("option", { value: entry.key, text: entry.label })));
+    win.fields.channel.value = allowed.has(current) ? current : "gray";
+    win.histograms = this.channelCache.get(win.targetId) ?? null;
+    win.channelSample = win.histograms?.sample ?? null;
+    if (win.fields.channel.value !== "gray" || win.histograms) void this._loadChannel(win);
   }
 
   /** The second image of the Compare switch (its own one-off fetch, cached). */
@@ -461,7 +706,7 @@ export class HistogramWindows {
 
   /** Export what the window shows, at 2× so it survives a slide or a report. */
   async _export(win) {
-    if (!win.bins?.length) {
+    if (!win.bins?.length && !win.histograms) {
       toast("This window has no histogram to export yet.", "warn");
       return { ok: false, reason: "no-histogram" };
     }
@@ -472,7 +717,7 @@ export class HistogramWindows {
     exportCanvas.width = WINDOW_CHART.width * EXPORT_SCALE;
     exportCanvas.height = WINDOW_CHART.height * EXPORT_SCALE;
     drawHistogram(exportCanvas.getContext("2d"), {
-      bins: win.bins,
+      bins: this._binsFor(win, options.channel) ?? [],
       width: exportCanvas.width,
       height: exportCanvas.height,
       ...options,
@@ -481,6 +726,7 @@ export class HistogramWindows {
       compare: compareTarget && win.compareBins?.length
         ? { bins: win.compareBins, label: compareTarget.title, color: COMPARE_COLOR }
         : null,
+      series: seriesForChannel(options.channel, win.histograms),
     });
     const blob = typeof exportCanvas.toBlob === "function"
       ? await new Promise((resolve) => exportCanvas.toBlob(resolve, "image/png"))
@@ -565,13 +811,118 @@ export class HistogramWindows {
     });
   }
 
+  /**
+   * Move a window, clamped so the WHOLE window stays on the page — including
+   * the bottom edge (the old clamp allowed it to hang 40 px below the fold).
+   */
   _move(win, left, top) {
-    const win_ = this.doc.defaultView ?? globalThis;
-    const viewportWidth = Number(win_.innerWidth) || 1280;
-    const viewportHeight = Number(win_.innerHeight) || 800;
-    const maxLeft = Math.max(0, viewportWidth - WINDOW_SIZE.width - 4);
-    const maxTop = Math.max(0, viewportHeight - 40);
+    const { width: viewportWidth, height: viewportHeight, margin } = this.viewport();
+    const { width, height } = this.sizeOf(win);
+    const maxLeft = Math.max(0, viewportWidth - width - margin);
+    const maxTop = Math.max(0, viewportHeight - height - margin);
     win.root.style.left = `${Math.round(Math.min(Math.max(0, left), maxLeft))}px`;
     win.root.style.top = `${Math.round(Math.min(Math.max(0, top), maxTop))}px`;
+  }
+
+  /** Keep a window's current position legal after the page or it changed size. */
+  reclamp(win) {
+    if (!win) return null;
+    this._move(win, Number.parseFloat(win.root.style.left) || 0, Number.parseFloat(win.root.style.top) || 0);
+    return this.rect(win);
+  }
+
+  /** Re-clamp every open window (called when the browser window is resized). */
+  reclampAll() {
+    for (const win of this.windows) this.reclamp(win);
+    return this.windows.length;
+  }
+
+  rect(win) {
+    const bounds = this.sizeOf(win);
+    return {
+      id: win?.id,
+      left: Number.parseFloat(win?.root?.style?.left) || 0,
+      top: Number.parseFloat(win?.root?.style?.top) || 0,
+      width: bounds.width,
+      height: bounds.height,
+    };
+  }
+
+  /**
+   * How large a window MAY be: between MIN_WINDOW and the page itself (so a
+   * small window can never force the window off the edges).
+   */
+  sizeBounds() {
+    const { width: viewportWidth, height: viewportHeight, margin } = this.viewport();
+    return {
+      minWidth: Math.min(MIN_WINDOW.width, Math.max(200, viewportWidth - margin * 2)),
+      maxWidth: Math.max(240, Math.min(MAX_WINDOW.width, viewportWidth - margin * 2)),
+      minHeight: Math.min(MIN_WINDOW.height, Math.max(160, viewportHeight - margin * 2)),
+      maxHeight: Math.max(200, Math.min(MAX_WINDOW.height, viewportHeight - margin * 2)),
+    };
+  }
+
+  /** Shrink a window (if needed) so it fits the page at all. */
+  fitSize(win) {
+    const bounds = this.sizeBounds();
+    const { width, height } = this.sizeOf(win);
+    const next = {
+      width: Math.max(bounds.minWidth, Math.min(bounds.maxWidth, width)),
+      height: Math.max(bounds.minHeight, Math.min(bounds.maxHeight, height)),
+    };
+    win.root.style.width = `${Math.round(next.width)}px`;
+    win.root.style.height = `${Math.round(next.height)}px`;
+    return this.sizeOf(win);
+  }
+
+  /** Resize a window to `width` × `height`, clamped, then re-clamped in place. */
+  resize(win, width, height) {
+    if (!win) return null;
+    const bounds = this.sizeBounds();
+    const next = {
+      width: Math.max(bounds.minWidth, Math.min(bounds.maxWidth, Number(width) || WINDOW_SIZE.width)),
+      height: Math.max(bounds.minHeight, Math.min(bounds.maxHeight, Number(height) || WINDOW_SIZE.height)),
+    };
+    win.root.style.width = `${Math.round(next.width)}px`;
+    win.root.style.height = `${Math.round(next.height)}px`;
+    this.reclamp(win);
+    return this.rect(win);
+  }
+
+  /** The bottom-right grip: drag it to resize (pointer, then keyboard). */
+  _resize(win, grip) {
+    const win_ = this.doc.defaultView ?? globalThis;
+    let start = null;
+    const onDown = (event) => {
+      this._raise(win);
+      const bounds = this.sizeOf(win);
+      start = { x: event.clientX, y: event.clientY, width: bounds.width, height: bounds.height };
+      if (typeof grip.setPointerCapture === "function") grip.setPointerCapture(event.pointerId);
+      event.preventDefault();
+      win_.addEventListener("mousemove", onMove);
+      win_.addEventListener("mouseup", onUp);
+    };
+    const onMove = (event) => {
+      if (!start) return;
+      this.resize(win, start.width + (event.clientX - start.x), start.height + (event.clientY - start.y));
+    };
+    const onUp = () => {
+      start = null;
+      win_.removeEventListener("mousemove", onMove);
+      win_.removeEventListener("mouseup", onUp);
+    };
+    grip.addEventListener("mousedown", onDown);
+    // keyboard resizing keeps the grip usable without a pointer (and testable)
+    grip.addEventListener("keydown", (event) => {
+      const step = event.shiftKey ? MOVE_STEP_BIG : MOVE_STEP;
+      const bounds = this.sizeOf(win);
+      const moves = {
+        ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step],
+      };
+      const delta = moves[event.key];
+      if (!delta) return;
+      event.preventDefault();
+      this.resize(win, bounds.width + delta[0], bounds.height + delta[1]);
+    });
   }
 }

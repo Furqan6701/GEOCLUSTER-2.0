@@ -1977,6 +1977,10 @@ if (!bootFailed) {
     Object.defineProperty(window, "innerWidth", { value: 1600, configurable: true });
     Object.defineProperty(window, "innerHeight", { value: 900, configurable: true });
     const sectionText = () => section.textContent;
+    const chooseOption = (node, value) => {
+      node.value = value;
+      node.dispatchEvent(new window.Event("change", { bubbles: true }));
+    };
 
     // ---- the panel itself is now a single button, with no chart or hints
     check(section.querySelectorAll("canvas").length === 0,
@@ -1996,9 +2000,75 @@ if (!bootFailed) {
     check(histButtons.length === 1, "there is exactly one Histogram button",
       String(histButtons.length));
 
-    // ---- pressing it opens a floating window
-    const requestsBefore = requests.length;
-    const histogramsBeforeWindow = requests.filter((entry) => /\/histogram$/.test(entry.url)).length;
+    // ---- item 13: the sidebar button follows the ACTIVE viewport
+    {
+      const viewers = gh.viewers;
+      viewers.result.setActive(true);          // pretend the user clicked Result
+      check(state().activeRole === "result", "clicking a viewport marks it active",
+        String(state().activeRole));
+      check(viewers.result.active === true && viewers.original.active === false,
+        "only the viewport the user is in is active",
+        `${viewers.original.active}/${viewers.result.active}`);
+      check(viewers.result.activeBadge.hidden === false &&
+        viewers.result.activeBadge.textContent.trim() === "Active" &&
+        viewers.original.activeBadge.hidden === true,
+        "the active viewport carries an 'Active' mark and the other does not",
+        `${viewers.original.activeBadge.hidden}/${viewers.result.activeBadge.hidden}`);
+      const forActive = analysis.actions.openHistogram();
+      const activeWindow = await until(() => (forActive?.bins?.length === 256 ? forActive : null),
+        "a window opens for the active viewport's image");
+      check(activeWindow.targetId === state().result.id,
+        "the sidebar button opens the ACTIVE viewport's image",
+        `${activeWindow.targetId} vs ${state().result.id}`);
+      // …and pressing it again shows the OTHER viewport, so both are two clicks
+      const forOther = analysis.actions.openHistogram();
+      check(forOther != null && forOther !== activeWindow,
+        "pressing it again opens a second window, not the same one");
+      check(forOther?.targetId === state().original.id,
+        "…for the OTHER viewport's image",
+        `${forOther?.targetId} vs ${state().original.id}`);
+      // that image may already have left the session (the API evicts old ones):
+      // the window must say so in plain words instead of hanging on "loading"
+      await until(() => forOther?.bins != null || forOther?.status?.textContent?.length > 0,
+        "the second window settles");
+      if (forOther?.bins == null) {
+        check(/could not read|no longer|loading/i.test(forOther.status.textContent),
+          "an image the session no longer holds is explained in the window",
+          forOther.status.textContent);
+      }
+      check(hist.count === 2, "both viewports are covered by two clicks", String(hist.count));
+      hist.closeAll();
+      check(hist.count === 0, "closing the windows empties the layer", String(hist.count));
+    }
+
+    // ---- item 13: each viewport footer has its own Histogram button
+    {
+      const viewers = gh.viewers;
+      const footerButton = (viewer) =>
+        viewer.node.querySelector(".viewer-foot button[title^='Open a histogram']");
+      const originalButton = footerButton(viewers.original);
+      const resultButton = footerButton(viewers.result);
+      check(originalButton != null && resultButton != null,
+        "both viewport footers carry a small Histogram button");
+      check(originalButton !== resultButton, "each footer owns its own button");
+      resultButton.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      const fromResult = await until(() => hist.windows.at(-1) ?? null,
+        "the Result footer button opens a window");
+      check(fromResult?.targetId === state().result.id,
+        "the Result footer button opens the Result image",
+        `${fromResult?.targetId} vs ${state().result.id}`);
+      originalButton.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      const fromOriginal = await until(() => (hist.count === 2 ? hist.windows.at(-1) : null),
+        "the Original footer button opens its own window");
+      check(fromOriginal?.targetId === state().original.id,
+        "the Original footer button opens the Original image",
+        `${fromOriginal?.targetId} vs ${state().original.id}`);
+      hist.closeAll();
+    }
+
+    // ---- pressing it opens a floating window; let any in-flight request from
+    // the footer windows land first, so the counts below are honest
+    await new Promise((resolve) => setTimeout(resolve, 20));
     const opened = analysis.actions.openHistogram();
     const win = await until(() => hist.windows.at(-1) ?? null, "the Histogram button opens a window");
     check(opened === win && win != null, "the button returned the window it opened");
@@ -2023,10 +2093,141 @@ if (!bootFailed) {
     check(win.canvas.width === 560 && win.canvas.height === 260,
       "the chart is large", `${win.canvas.width}×${win.canvas.height}`);
 
-    // one request for the bins, and the statistics come from those numbers
-    check(requests.filter((entry) => /\/histogram$/.test(entry.url)).length === histogramsBeforeWindow + 1,
-      "the window fetched exactly one histogram of its own",
-      String(requests.filter((entry) => /\/histogram$/.test(entry.url)).length - histogramsBeforeWindow));
+    // ---- item 13: Smoothing is a slider (0…10), labelled only "Smoothing"
+    {
+      const slider = win.fields.smoothing;
+      check(slider.type === "range", "Smoothing is a slider, not a dropdown", slider.type);
+      check(slider.min === "0" && slider.max === "10" && slider.step === "1",
+        "the slider runs 0…10 in whole steps", `${slider.min}…${slider.max}/${slider.step}`);
+      const label = slider.closest(".histo-field")?.querySelector(".histo-label")?.textContent;
+      check(label === "Smoothing", "its label is exactly 'Smoothing'", String(label));
+      check((slider.closest(".histo-field")?.textContent ?? "").trim() === "Smoothing",
+        "no value is printed next to the label",
+        JSON.stringify(slider.closest(".histo-field")?.textContent));
+      check(win.fields.smoothing.value === "0", "it starts at 0 (off)", win.fields.smoothing.value);
+      const plainTexts = (win.canvas.__texts ?? []).length;
+      win.fields.smoothing.value = "6";
+      win.fields.smoothing.dispatchEvent(new window.Event("input", { bubbles: true }));
+      check(/smoothing 6/.test((win.canvas.__texts ?? []).join(" | ")),
+        "moving it redraws with the new window",
+        (win.canvas.__texts ?? []).join(" | ").slice(0, 160));
+      check((win.canvas.__texts ?? []).length >= plainTexts, "the chart redrew in place");
+      win.fields.smoothing.value = "0";
+      win.fields.smoothing.dispatchEvent(new window.Event("input", { bubbles: true }));
+    }
+
+    // ---- item 13: the Channel dropdown follows the image, no API involved
+    {
+      const channel = win.fields.channel;
+      const optionsOf = () => [...channel.querySelectorAll("option")].map((node) => node.value);
+      const field = channel.closest(".histo-field");
+      check(channel.tagName === "SELECT", "the window has a Channel dropdown");
+      check(field?.querySelector(".histo-label")?.textContent === "Channel",
+        "it is labelled Channel", String(field?.querySelector(".histo-label")?.textContent));
+      check(channel.id === field?.htmlFor, "the label is tied to the dropdown", channel.id);
+      check(win.targetInfo?.channels === 1, "this window shows the grayscale result",
+        String(win.targetInfo?.channels));
+      check(optionsOf().join("|") === "gray",
+        "a grayscale image only offers Gray", optionsOf().join("|"));
+      check(channel.value === "gray", "Gray is the default channel", channel.value);
+
+      // …and a colour image offers the browser-computed channels too
+      const colourId = state().original.id;
+      check(state().original.info?.channels === 3, "the original is a colour image",
+        String(state().original.info?.channels));
+      const histogramCalls = () => requests.filter((entry) => /\/histogram$/.test(entry.url)).length;
+      const beforeColour = histogramCalls();
+      chooseOption(win.fields.image, colourId);
+      check(win.targetId === colourId, "the window moved to the colour image", win.targetId);
+      check(optionsOf().join("|") === "gray|red|green|blue|rgb",
+        "a colour image offers Gray, Red, Green, Blue and RGB overlay", optionsOf().join("|"));
+      check(channel.value === "gray", "…and Gray is still the channel it starts on", channel.value);
+
+      // switching channel is pure browser maths: no request, no session round trip.
+      // the image switch itself may still be in flight, so let it settle first
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      const histogramCallsAfterImage = histogramCalls();
+      const requestsBeforeChannel = requests.length;
+      chooseOption(channel, "red");
+      check(channel.value === "red", "the channel switched");
+      check(/(reading the image's channels|red channel)/i.test(
+        `${win.status.textContent} ${(win.canvas.__texts ?? []).join(" ")}`),
+        "the window reacts to the colour channel",
+        `${win.status.textContent} / ${(win.canvas.__texts ?? []).join(" | ").slice(0, 120)}`);
+      chooseOption(channel, "rgb");
+      check(/rgb|reading the image's channels/i.test(
+        `${win.status.textContent} ${(win.canvas.__texts ?? []).join(" ")}`),
+        "the RGB overlay is offered too", win.status.textContent);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      check(requests.length === requestsBeforeChannel &&
+        histogramCalls() === histogramCallsAfterImage,
+        "switching channel sent no request of its own",
+        `${requestsBeforeChannel} → ${requests.length}, histograms ${histogramCallsAfterImage} → ${histogramCalls()}`);
+      // going back to a grayscale image drops a colour channel: Gray is all it has
+      chooseOption(win.fields.image, state().result.id);
+      await until(() => win.bins?.length === 256, "switching back restores the grayscale bins");
+      check(channel.value === "gray" && optionsOf().join("|") === "gray",
+        "a colour channel falls back to Gray when the new image is grayscale",
+        `${channel.value} / ${optionsOf().join("|")}`);
+      check(win.targetId === state().result.id, "the window is back on the result image");
+    }
+
+    // ---- item 13: windows are resizable and always clamped inside the page
+    {
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      const before = hist.rect(win);
+      check(before.width === 560 && before.height === 420,
+        "a new window opens at its default size", `${before.width}×${before.height}`);
+      win.resizeTo(before.width + 120, before.height + 90);
+      const grown = hist.rect(win);
+      check(grown.width === before.width + 120 && grown.height === before.height + 90,
+        "dragging the grip grows the window", JSON.stringify(grown));
+      win.resizeTo(40, 30);
+      const shrunk = hist.rect(win);
+      check(shrunk.width >= 380 && shrunk.height >= 240,
+        "a window cannot be shrunk below its minimum",
+        `${shrunk.width}×${shrunk.height}`);
+      win.resizeTo(9999, 9999);
+      const capped = hist.rect(win);
+      check(capped.width <= viewportWidth - 32 && capped.height <= viewportHeight - 32,
+        "a window can never be larger than the page",
+        `${capped.width}×${capped.height} vs ${viewportWidth}×${viewportHeight}`);
+      // the bottom-right corner always stays on the page
+      win.bar.dispatchEvent(new window.KeyboardEvent("keydown", { key: "ArrowDown", shiftKey: true, bubbles: true }));
+      win.bar.dispatchEvent(new window.KeyboardEvent("keydown", { key: "ArrowDown", shiftKey: true, bubbles: true }));
+      win.bar.dispatchEvent(new window.KeyboardEvent("keydown", { key: "ArrowRight", shiftKey: true, bubbles: true }));
+      win.bar.dispatchEvent(new window.KeyboardEvent("keydown", { key: "ArrowRight", shiftKey: true, bubbles: true }));
+      const corner = hist.rect(win);
+      check(corner.left + corner.width <= viewportWidth && corner.top + corner.height <= viewportHeight,
+        "the window never hangs past the bottom or side edges",
+        `${JSON.stringify(corner)} in ${viewportWidth}×${viewportHeight}`);
+      const grip = win.root.querySelector(".histo-resize");
+      check(grip != null, "the window has a resize grip");
+      check(/resize/i.test(grip.getAttribute("title") ?? ""), "the grip says what it does",
+        String(grip.getAttribute("title")));
+      // back to a normal size, then the grip's own keyboard path
+      win.resizeTo(560, 420);
+      const restored = hist.rect(win);
+      check(restored.width === 560 && restored.height === 420,
+        "shrinking back restores the size", `${restored.width}×${restored.height}`);
+      grip.dispatchEvent(new window.KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+      check(hist.rect(win).height === 436,
+        "the grip resizes from the keyboard too (16 px)", String(hist.rect(win).height));
+      grip.dispatchEvent(new window.KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
+      check(hist.rect(win).width === 544, "…and sideways (16 px)", String(hist.rect(win).width));
+      win.resizeTo(560, 420);
+      check(hist.rect(win).width === 560 && hist.rect(win).height === 420,
+        "the window is back to its normal size for the checks that follow",
+        `${hist.rect(win).width}×${hist.rect(win).height}`);
+    }
+
+    // the bins were already fetched for this image, so this window reuses them:
+    // the cache exists so a second window never asks the API twice
+    const histogramsFor = (id) => requests.filter((entry) => entry.url.endsWith(`/images/${id}/histogram`)).length;
+    check(histogramsFor(state().result.id) === 1,
+      "the result image's histogram was fetched once, however many windows show it",
+      String(histogramsFor(state().result.id)));
     check(win.bins?.length === 256, "the window holds the 256 bins", String(win.bins?.length));
     const texts = () => (win.canvas.__texts ?? []).join(" | ");
     check(/linear scale/.test(texts()), "the chart states its scale", texts().slice(0, 120));
@@ -2039,13 +2240,11 @@ if (!bootFailed) {
 
     // ---- every option is a labelled control and recomputes in the browser
     const optionNames = [...win.root.querySelectorAll(".histo-label")].map((node) => node.textContent);
-    check(optionNames.join("|") === "Image|Scale|Smoothing|Display|Theme|Compare",
-      "the options are labelled Image / Scale / Smoothing / Display / Theme / Compare",
+    check(optionNames.join("|") === "Image|Channel|Scale|Smoothing|Display|Theme|Compare",
+      "the options are labelled Image / Channel / Scale / Smoothing / Display / Theme / Compare",
       optionNames.join("|"));
     const optionsOf = (key) => [...win.fields[key].querySelectorAll("option")].map((node) => node.textContent);
     check(optionsOf("scale").join("|") === "Linear|Log", "Scale offers Linear and Log", optionsOf("scale").join("|"));
-    check(optionsOf("smoothing").join("|") === "Off|Low|High",
-      "Smoothing offers Off, Low and High", optionsOf("smoothing").join("|"));
     check(optionsOf("display").join("|") === "Counts|Density|Cumulative",
       "Display offers Counts, Density and Cumulative", optionsOf("display").join("|"));
     check(optionsOf("theme").join("|") === "Dark|Light", "Theme offers Dark and Light", optionsOf("theme").join("|"));
@@ -2057,9 +2256,12 @@ if (!bootFailed) {
     const requestsBeforeOptions = requests.length;
     setSelect(win.fields.scale, "log");
     check(/log scale/.test(texts()), "Log redraws the chart", texts().slice(0, 140));
-    setSelect(win.fields.smoothing, "high");
-    check(/high smoothing/.test(texts()), "High smoothing redraws the chart", texts().slice(0, 160));
-    setSelect(win.fields.smoothing, "off");
+    win.fields.smoothing.value = "8";
+    win.fields.smoothing.dispatchEvent(new window.Event("input", { bubbles: true }));
+    check(/smoothing 8/.test(texts()),
+      "the smoothing slider redraws the chart", texts().slice(0, 160));
+    win.fields.smoothing.value = "0";
+    win.fields.smoothing.dispatchEvent(new window.Event("input", { bubbles: true }));
     setSelect(win.fields.display, "cumulative");
     check(/cumulative/.test(texts()) && /pixels ≤ intensity/.test(texts()),
       "Cumulative relabels the y axis", texts().slice(0, 200));
@@ -2117,9 +2319,13 @@ if (!bootFailed) {
     await until(() => toasts.some((text) => /close one first/.test(text)),
       "the refusal is explained", { timeout: 8000 });
 
-    // ---- each window is independent
+    // ---- each window is independent. One of the four may show an image the
+    // API has already evicted (the session keeps its own cap), so pick a window
+    // that really drew a chart for the compare checks below.
     const first = hist.windows[0];
-    const second = hist.windows[1];
+    const second = hist.windows.find((entry) => entry !== first && entry.bins?.length === 256)
+      ?? hist.windows[1];
+    check(second != null && second !== first, "two windows are open for the checks");
     setSelect(second.fields.scale, "log");
     setSelect(second.fields.theme, "light");
     check(/log scale/.test((second.canvas.__texts ?? []).join(" | ")) &&
@@ -2195,7 +2401,6 @@ if (!bootFailed) {
     await until(() => hist.count === 1, "the histogram command opens a window");
     check(hist.count === 1, "the histogram command opened exactly one window", String(hist.count));
     hist.closeAll();
-    void requestsBefore;
   }
 
   // ------------------------------------------- item 10: the Distance section
@@ -2331,11 +2536,45 @@ if (!bootFailed) {
     check(unitSelect.value === "px", "an image without ground metadata goes back to pixels",
       unitSelect.value);
 
+    // ---- item 13: the footer Distance button is a real toggle and is disabled
+    // with nothing to measure — it must never look "on" on an empty pane
+    {
+      const viewer = gh.viewers.result;
+      check(viewer.distanceButton.getAttribute("aria-pressed") === "false",
+        "the Distance button starts unpressed",
+        String(viewer.distanceButton.getAttribute("aria-pressed")));
+      check(viewer.distanceButton.disabled === (viewer.hasImage === false),
+        "…and is enabled exactly when the viewport has an image",
+        `disabled=${viewer.distanceButton.disabled} hasImage=${viewer.hasImage}`);
+      check(!viewer.canvas.classList.contains("distance-mode"),
+        "with nothing measuring, the measuring look is off (no leftover mode class)");
+      if (viewer.hasImage) {
+        viewer.toggleDistance(true);
+        check(viewer.distanceButton.getAttribute("aria-pressed") === "true" &&
+          /Measuring/.test(viewer.distanceButton.title),
+          "turning it on presses the button and changes its tooltip");
+        check(/Distance ●/.test(viewer.distanceButton.textContent),
+          "the pressed button is marked with a dot, not a colour that outlives the mode",
+          viewer.distanceButton.textContent.trim());
+        check(viewer.canvas.classList.contains("distance-mode"),
+          "the crosshair mode class is only present while measuring");
+        viewer.toggleDistance(false);
+        check(viewer.distanceButton.getAttribute("aria-pressed") === "false" &&
+          viewer.distanceButton.textContent.trim() === "Distance" &&
+          !/Measuring/.test(viewer.distanceButton.title),
+          "switching it off clears every trace of the mode",
+          `${viewer.distanceButton.getAttribute("aria-pressed")} / ${viewer.distanceButton.textContent.trim()} / ${viewer.distanceButton.title}`);
+      }
+    }
+
     // ---- Esc in the viewer empties the line as well (the real two-click path)
     {
       const viewer = gh.viewers.original;
       const canvasRect2 = viewer.canvas.getBoundingClientRect();
       viewer.toggleDistance(true);
+      check(viewer.distanceButton.getAttribute("aria-pressed") === "true" &&
+        gh.toolbar?.measure?.isPressed?.() !== false,
+        "the toolbar Measure toggle follows the viewport's Distance button");
       const clickAt = (x, y) => viewer.canvas.dispatchEvent(new window.MouseEvent("pointerdown", {
         bubbles: true,
         clientX: canvasRect2.left + x, clientY: canvasRect2.top + y,
@@ -2349,6 +2588,10 @@ if (!bootFailed) {
       check(resultLine.textContent === "", "Esc in the viewer empties the line too",
         resultLine.textContent);
       viewer.toggleDistance(false);
+      check(viewer.distanceButton.getAttribute("aria-pressed") === "false" &&
+        viewer.distanceButton.disabled === false,
+        "the button is unpressed again but still usable with an image loaded",
+        `${viewer.distanceButton.getAttribute("aria-pressed")} / disabled=${viewer.distanceButton.disabled}`);
     }
 
     original.info = infoBefore;
@@ -2511,6 +2754,64 @@ if (!bootFailed) {
     || toolbarNode.scrollWidth <= toolbarNode.clientWidth,
     "the toolbar fits or compacts itself",
     `compact=${toolbarNode.classList.contains("tb-compact")} scroll=${toolbarNode.scrollWidth} client=${toolbarNode.clientWidth}`);
+
+  // ---- item 13: Export and Compress are two different, labelled actions
+  {
+    const exportButton = document.getElementById("tb-export");
+    const compressButton = document.getElementById("tb-compress");
+    const drawingOf = (node) => [...node.querySelectorAll("path")].map((path) => path.getAttribute("d")).join("|");
+    check(exportButton.querySelector("svg") != null && compressButton.querySelector("svg") != null,
+      "both toolbar buttons carry an icon");
+    check(drawingOf(exportButton).length > 0 && drawingOf(compressButton).length > 0 &&
+      drawingOf(exportButton) !== drawingOf(compressButton),
+      "the download and archive icons are two different drawings",
+      `${drawingOf(exportButton)} vs ${drawingOf(compressButton)}`);
+    check(/export/i.test(exportButton.title) && /compress/i.test(compressButton.title),
+      "the hover labels still say what each one does",
+      `${exportButton.title} / ${compressButton.title}`);
+    check(exportButton.querySelector(".tb-label")?.textContent === "Export" &&
+      compressButton.querySelector(".tb-label")?.textContent === "Compress",
+      "each button has its word next to the icon",
+      `${exportButton.querySelector(".tb-label")?.textContent} / ${compressButton.querySelector(".tb-label")?.textContent}`);
+
+    // the ≥1600 px rule lives in the stylesheet. jsdom never loads external CSS
+    // (so getComputedStyle sees nothing here), which is why the file itself is
+    // read and the class logic behind it is exercised below.
+    const css = await readFile(path.join(WEB, "css", "styles.css"), "utf8");
+    const compactRule = css.indexOf(".toolbar.tb-compact .tb-label { display: none; }");
+    const wideRule = css.indexOf(".toolbar.tb-wide:not(.tb-tight) .tb-label { display: inline; }");
+    check(compactRule >= 0, "the stylesheet hides the labels in compact mode");
+    check(wideRule >= 0, "…and brings them back for a wide toolbar (item 13)");
+    check(wideRule > compactRule, "the wide rule is written after the compact one",
+      `${compactRule} → ${wideRule}`);
+    // :not(.tb-tight) also raises its specificity above the compact rule, so the
+    // order is belt-and-braces rather than the mechanism
+    check(css.includes(".toolbar.tb-wide:not(.tb-tight) .tb-btn { padding: 0 7px; }"),
+      "a wide toolbar keeps roomy padding around the words");
+
+    // …and the class logic behind it. jsdom has no layout, so the measurements
+    // are stubbed: the row needs 2000 px with its words and 1200 are available.
+    const measure = (scroll, client, width) => {
+      Object.defineProperty(toolbarNode, "scrollWidth", { value: scroll, configurable: true });
+      Object.defineProperty(toolbarNode, "clientWidth", { value: client, configurable: true });
+      Object.defineProperty(window, "innerWidth", { value: width, configurable: true });
+      window.dispatchEvent(new window.Event("resize"));
+    };
+    measure(2000, 1200, 1599);
+    await until(() => toolbarNode.classList.contains("tb-compact"), "an overflowing row compacts itself");
+    check(!toolbarNode.classList.contains("tb-wide"),
+      "below 1600 px an overflowing row is icons only", toolbarNode.className);
+    measure(0, 1200, 1600);
+    await until(() => !toolbarNode.classList.contains("tb-compact"), "a row with room un-compacts");
+    check(toolbarNode.classList.contains("tb-wide") && !toolbarNode.classList.contains("tb-tight"),
+      "at 1600 px the words are shown", toolbarNode.className);
+    // back to the real measurements (jsdom reports 0 for both)
+    delete toolbarNode.scrollWidth;
+    delete toolbarNode.clientWidth;
+    window.dispatchEvent(new window.Event("resize"));
+    await until(() => !toolbarNode.classList.contains("tb-compact") &&
+      !toolbarNode.classList.contains("tb-tight"), "the toolbar recovers after the stubs are gone");
+  }
 
   // the result viewport hint disappears once something is shown
   check(typeof emptyResult.loadBlob === "function", "the result viewport is a live viewer");

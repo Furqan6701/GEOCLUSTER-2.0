@@ -66,6 +66,13 @@ session used and fails if any of them appears in a toast.
 
 ### Distance (item 10)
 
+The footer **Distance** button is a real toggle: `aria-pressed` is the single
+source of its active look (the `.primary` class is gone, so nothing can leave it
+highlighted), the label gains a ● and the tooltip changes while measuring, and
+`_syncFooterState()` disables it (and the footer **Histogram** button) whenever
+the viewport has no image — an "active looking" tool on an empty pane was the
+reported bug.
+
 * The sidebar's "Measure on the active viewport" button is gone (the toolbar
   Measure button and each viewport's own Distance button remain), together with
   every explanatory line — no "Client-only", no "the API has no distance
@@ -278,6 +285,43 @@ Size (px) and Position, and is drawn north-up — the Rotation control and
   no longer a sidebar button. The entry is disabled with the reason "run
   K-Means first — the label map is one of its outputs" until a K-Means run
   exists, instead of toasting after the click.
+
+### Histogram windows: viewport targeting, channels, resizing (item 13)
+
+The sidebar **Histogram** button opens the window for the **active viewport's**
+image (`state.activeRole`, mirroring the `viewer:active` event) and falls back
+to the other viewport when that image already has a window — so Original and
+Result are two presses, not a dropdown hunt. `hasWindowFor(id)` is the one
+predicate behind that rule; the `Image` dropdown stays for the finer states.
+The active viewport is marked by an **Active** badge in its header.
+
+Each viewport footer has its own **Histogram** button (after **Distance**),
+disabled until that viewport holds an image, which opens a window for *its*
+image regardless of which pane is active.
+
+* **Smoothing** is a slider 0…10 (`SMOOTHING_RANGE`, `SMOOTHING_STEPS[i]` = the
+  moving-average window: 0, 3, 5 … 21). Its label is the single word
+  "Smoothing"; no value text is printed. The old Off/Low/High dropdown and its
+  raw-window mapping are gone — `smoothingLevel(v)` is a plain round+clamp.
+* **Channel** (Gray/Red/Green/Blue/RGB overlay) is computed **in the browser**
+  from the decoded image, so there is no API change and switching channel never
+  sends a request: `session.imageBlob` → `createImageBitmap` → one canvas pass
+  at up to `CHANNEL_SAMPLE_MAX` (2048) px → `channelHistograms()` counts all four
+  series in one RGBA pass, skipping fully transparent pixels so an alpha image
+  agrees with the API. Gray is the API's own 256-bin series;
+  `channelKeysFor(info)` trusts the API's `info.channels`, so a grayscale image
+  offers Gray only. The shared `toGray()` lives in `js/color.js` (the OpenCV
+  weights the API uses) — there is exactly one copy.
+* Windows are **resizable** (bottom-right grip, pointer drag or arrow keys,
+  Shift = big step) and always **clamped inside the page**: `sizeBounds()` caps
+  the size to the viewport, `fitSize()`/`reclamp()`/`reclampAll()` re-fit on a
+  window resize, and `_move()` keeps the whole window inside all four edges.
+* The toolbar's **Export** (download) and **Compress** (archive) icons stay
+  distinct, and from **1600 px** (`WIDE_TOOLBAR_MIN`) the words come back next to
+  them: `fitToolbar()` sets `.tb-wide`/`.tb-compact`/`.tb-tight`, where
+  `.tb-wide:not(.tb-tight) .tb-label { display: inline }` outranks the compact
+  rule (higher specificity, so no order dependency). `.tb-tight` is the escape
+  hatch for a row that still cannot fit, so the toolbar never wraps.
 
 ### Clusters editor layout and class names
 
@@ -588,10 +632,10 @@ message. Raw JSON is never displayed.
 
 | Command | What it does |
 | --- | --- |
-| `node --test "web/tests/*.test.mjs"` | 72 logic tests: config resolution, error mapping, API client contract (URLs, bodies, multipart, session recovery), chat command mapping/execution, the satellite request shapes, the filter preview maths (reflect-101 box average, threshold/brightness clipping, the 512 px preview cap), the slider snapping/help texts, the grouped point-operation help list and the history `dropEntry` replacement rule. No browser needed. |
+| `node --test "web/tests/*.test.mjs"` | 144 logic tests: config resolution, error mapping, API client contract (URLs, bodies, multipart, session recovery), chat command mapping/execution, the satellite request shapes, the filter preview maths (reflect-101 box average, threshold/brightness clipping, the 512 px preview cap), the slider snapping/help texts, the grouped point-operation help list, the history `dropEntry` replacement rule, the linked classification ranges (item 11) and the histogram maths of item 13 (the OpenCV gray weights, channel counting with alpha, the 0…10 smoothing slider, the channel→series mapping). No browser needed. |
 | `python web/tests/smoke_test.py` | Serves `web/` on 5173 (reuses a running server for the same root), checks assets + content types, that every relative module import resolves, that no key material exists under `web/`, that no `innerHTML` is used, the workstation layout contract (image workspace owns the flexible track, no `object-fit: cover`, technical corner radii), and that the API's CORS allows the frontend origin. |
 | `python web/tests/integration_check.py` | Live contract check against a running API: the exact call sequence the browser makes (session → upload → 6 filters → kmeans k=5 → classify → histogram → stats → GCH2 round trip → satellite validation and error paths → chat commands → 404/415). The three checks that need real Copernicus credentials report SKIP when the server has no `api/.env` instead of failing. Requires `uvicorn main:app --port 8000`. |
-| `node web/tests/boot_test.mjs --jsdom <dir>` | Boot test: loads `index.html` in jsdom, imports `js/app.js` and drives the UI through DOM events against the live API — 683 assertions covering the shell (menu bar, toolbar, status bar, dock collapse), viewport behaviour (pan, wheel zoom, pixel readout, distance measurement, sync mirroring), upload, the six filters, the Source panel's place/corner modes, the Filters panel's popovers and slider sessions (preview without requests, one request per release, replace-not-stack, Escape, arrow-key commits, one slider at a time), the rendered K-Means range table (item 11: live linked ranges, clamped commits, locked ends, the browser-side preview with zero requests/history entries, the boundary bar, "Generate map" = one undo step), the File menu's four image actions (item 12: exact compress tooltip, label-map entry, GCH2 compress → decompress through the menu and the toolbar), histogram/stats, chat router commands, session-expiry recovery, and a clean browser console. jsdom is optional (not a dependency of the app); without it the test skips. |
+| `node web/tests/boot_test.mjs --jsdom <dir>` | Boot test: loads `index.html` in jsdom, imports `js/app.js` and drives the UI through DOM events against the live API — 753 assertions covering the shell (menu bar, toolbar, status bar, dock collapse), viewport behaviour (pan, wheel zoom, pixel readout, distance measurement, sync mirroring), upload, the six filters, the Source panel's place/corner modes, the Filters panel's popovers and slider sessions (preview without requests, one request per release, replace-not-stack, Escape, arrow-key commits, one slider at a time), the rendered K-Means range table (item 11: live linked ranges, clamped commits, locked ends, the browser-side preview with zero requests/history entries, the boundary bar, "Generate map" = one undo step), the File menu's four image actions (item 12: exact compress tooltip, label-map entry, GCH2 compress → decompress through the menu and the toolbar), histogram windows (item 13: the active-viewport rule with its Active badge, the per-footer Histogram buttons, the smoothing slider, the Channel dropdown's per-image option list, the resize/min/max clamps on all four edges), histogram/stats, chat router commands, session-expiry recovery, and a clean browser console. jsdom is optional (not a dependency of the app); without it the test skips. |
 
 The boot test runs in both serving modes: the default (page on localhost →
 direct API calls) and hosted (`--page-host 5173-demo.e2b.app` → everything

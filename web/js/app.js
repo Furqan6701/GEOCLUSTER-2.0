@@ -46,16 +46,32 @@ const gate = createActionGate({ state, bus });
 const ctx = { api, session, state, bus, apiBase, gate };
 
 // ------------------------------------------------------------------- viewers
+/**
+ * Open a histogram window for ONE viewport's image (the small Histogram button
+ * in each footer — item 13). The manager owns the window; this only resolves
+ * "which image is in that viewport".
+ */
+function openHistogramFor(role) {
+  const entry = role === "result" ? state.result : state.original;
+  if (!entry?.id) {
+    toast(`The ${role} viewport has no image yet.`, "warn");
+    return null;
+  }
+  return histograms?.open({ targetId: entry.id }) ?? null;
+}
+
 const originalViewer = new Viewer(document.getElementById("viewer-original"), {
   title: "Original",
   role: "original",
   bus,
+  onHistogram: () => openHistogramFor("original"),
 });
 const resultViewer = new Viewer(document.getElementById("viewer-result"), {
   title: "Result",
   role: "result",
   bus,
   placeholder: "Run a filter or K-Means to see the result here",
+  onHistogram: () => openHistogramFor("result"),
 });
 // Panels that paint a live preview (the classification editor) draw from the
 // bitmap a viewport already holds instead of asking the server for it again.
@@ -436,12 +452,15 @@ bus.on("histogram:request", () => {
 
 // ------------------------------------------------------------- active viewer
 let activeRole = "original";
+// the histogram (and anything else that acts "on the active viewport") reads it
+state.activeRole = activeRole;
 originalViewer.setActive(true);
 
 bus.on("viewer:active", ({ role }) => {
   if (role === activeRole) return;
   if (role === "map") return; // the map is a modal now, not a third viewport
   activeRole = role;
+  state.activeRole = role;
   originalViewer.setActive(role === "original");
   resultViewer.setActive(role === "result");
   updateStatusBar();
@@ -610,6 +629,8 @@ for (const [id, toggle] of [["tb-pan", panToggle], ["tb-pixel", pixelToggle], ["
   byId(id).replaceWith(toggle.node);
   toggle.node.id = id;
 }
+// measuring needs something to measure: the same rule as the footer buttons
+gate.register(measureToggle.node, { requiresImage: true, label: "Measure" });
 
 // the viewer's own Distance button keeps the toolbar tool in step
 bus.on("viewer:distance-mode", ({ role, enabled }) => {
@@ -621,14 +642,26 @@ bus.on("viewer:distance-mode", ({ role, enabled }) => {
  * The toolbar must never wrap or overlap. Labels are dropped when the row
  * would overflow (narrow windows, long session chips, extra zoom levels),
  * which is measured on every resize rather than guessed from a breakpoint.
+ *
+ * One deliberate exception (item 13): from 1600 px the words next to the icons
+ * come back — Export (download) and Compress (archive) are otherwise two small
+ * glyphs that are easy to confuse. `.tb-tight` is the escape hatch: if the row
+ * would still overflow with its labels, they go again rather than wrap.
  */
 const toolbarNode = byId("toolbar");
+export const WIDE_TOOLBAR_MIN = 1600;
 
 function fitToolbar() {
   if (!toolbarNode) return;
-  toolbarNode.classList.remove("tb-compact");
+  toolbarNode.classList.remove("tb-compact", "tb-tight");
+  toolbarNode.classList.toggle("tb-wide", window.innerWidth >= WIDE_TOOLBAR_MIN);
   // measured after a reflow so scrollWidth reflects the un-compacted state
-  if (toolbarNode.scrollWidth > toolbarNode.clientWidth) toolbarNode.classList.add("tb-compact");
+  if (toolbarNode.scrollWidth > toolbarNode.clientWidth) {
+    toolbarNode.classList.add("tb-compact");
+    // …and again with .tb-compact applied: on a wide window the labels are back
+    // by CSS, so this second reading is what actually decides for them
+    if (toolbarNode.scrollWidth > toolbarNode.clientWidth) toolbarNode.classList.add("tb-tight");
+  }
 }
 
 window.addEventListener("resize", () => requestAnimationFrame(fitToolbar));

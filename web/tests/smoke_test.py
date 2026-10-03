@@ -206,6 +206,22 @@ def check_workstation_layout() -> None:
     check(image_ws is not None and "grid-template-columns" in (image_ws.group(1) if image_ws else ""),
           "the image workspace is a grid of viewports")
 
+    # item 13: Export (download) and Compress (archive) are two labelled actions
+    ui_js = _js_text("js/ui.js")
+    check("download:" in ui_js and "archive:" in ui_js,
+          "the toolbar carries two distinct icons (download and archive)")
+    for label in ["Export", "Compress"]:
+        check(f'<span class="tb-label">{label}</span>' in index,
+              f"the {label} button has its word next to the icon")
+    check(".toolbar.tb-compact .tb-label { display: none; }" in css,
+          "a compacted toolbar drops the words")
+    check(".toolbar.tb-wide:not(.tb-tight) .tb-label { display: inline; }" in css,
+          "from 1600 px they come back — the item 13 rule")
+    app_js = _js_text("js/app.js")
+    check("WIDE_TOOLBAR_MIN = 1600" in app_js and '"tb-wide"' in app_js and '"tb-tight"' in app_js,
+          "app.js decides wide/tight from the window width AND a real measurement, "
+          "so the row can never overflow")
+
     canvas_wrap = re.search(r"\.viewer-canvas-wrap\s*\{([^}]*)\}", css)
     check(canvas_wrap is not None and "var(--bg-canvas)" in canvas_wrap.group(1),
           "the viewport uses the dark image-processing background")
@@ -521,9 +537,13 @@ def check_workstation_layout() -> None:
     check("fetch(" not in hist_js and "ApiClient" not in hist_js and "await " not in hist_js,
           "the histogram module is pure maths — no request, no await (options recompute in the browser)")
     histo_js = _js_text("js/histowindow.js")
-    for control in ["scale", "smoothing", "display", "theme", "compare"]:
-        check(f'sel("{{key: "off"' in histo_js or f'"{control}"' in histo_js,
+    for control in ["image", "channel", "scale", "smoothing", "display", "theme", "compare"]:
+        check(f"{control}:" in histo_js,
               f"the histogram window exposes the {control} control")
+    check('type: "range"' in histo_js and "SMOOTHING_RANGE" in histo_js,
+          "Smoothing is a slider (0 = off … 10), not a dropdown")
+    check("channelHistograms" in histo_js and "channelOptionsFor" in histo_js,
+          "the Channel dropdown is computed from the decoded image, in the browser")
     check("exportPng" in histo_js and "histogramFileName" in histo_js,
           "the histogram can be exported as a PNG from its window")
     measure_js = _js_text("js/measure.js")
@@ -630,10 +650,25 @@ def check_histogram_windows() -> None:
     for token in ["SCALE_OPTIONS", "SMOOTHING_LEVELS", "DISPLAY_MODES", "THEME_OPTIONS",
                   "binStats", "formatStats", "displayFlags", "smoothingWindow", "COMPARE_COLOR"]:
         check(token in hist_js, f"histogram.js provides {token}")
-    check("compare" in hist_js, "drawHistogram can overlay a second series")
-    check("Off" in hist_js and "Low" in hist_js and "High" in hist_js and
-          "Counts" in hist_js and "Density" in hist_js and "Cumulative" in hist_js,
-          "the option labels are the words the panel shows, not raw numbers")
+    check("compare" in hist_js and "series" in hist_js,
+          "drawHistogram can overlay a compared image and the RGB channels")
+    check("Counts" in hist_js and "Density" in hist_js and "Cumulative" in hist_js,
+          "the display option labels are words, not raw numbers")
+    for channel in ['{ key: "gray", label: "Gray"', '{ key: "red", label: "Red"',
+                    '{ key: "green", label: "Green"', '{ key: "blue", label: "Blue"',
+                    '{ key: "rgb", label: "RGB overlay"']:
+        check(channel in hist_js, f"the Channel dropdown offers {channel!r}")
+    check("SMOOTHING_RANGE = Object.freeze({ min: 0, max: 10, step: 1, value: 0 })" in hist_js,
+          "the smoothing slider runs 0 = off … 10")
+    check('label: index === 0 ? "Off" : String(index)' in hist_js,
+          "the slider's only label is Off at 0 and the number itself after that")
+    check('"Low"' not in hist_js and '"High"' not in hist_js,
+          "the old Off/Low/High smoothing words are gone")
+    color_js = _js_text("js/color.js")
+    check("export function toGray" in color_js,
+          "the OpenCV-matching luminance helper lives in one module (js/color.js)")
+    check("color.js" in hist_js or "toGray" in hist_js,
+          "the histogram uses that same helper")
 
     histo_js = _js_text("js/histowindow.js")
     for token in ["class HistogramWindows", "histogramTargets", "targetTitle", "clipTitle",
@@ -651,9 +686,19 @@ def check_histogram_windows() -> None:
                  "stat-strip", "No statistics yet"]:
         check(gone not in analysis_js, f"the panel no longer has {gone}")
 
+    for token in ["hasWindowFor", "viewportPair", "openFromPanel", "MIN_WINDOW", "MAX_WINDOW",
+                  "fitSize", "reclampAll", "CHANNEL_SAMPLE_MAX", "onHistogram"]:
+        check(token in histo_js or token in _js_text("js/viewer.js") or token in _js_text("js/app.js"),
+              f"item 13: the histogram windows implement {token}")
+
     for rule in [".histo-layer", ".histo-window", ".histo-bar", ".histo-canvas", ".histo-stats",
-                 ".histo-status", ".histo-controls"]:
+                 ".histo-status", ".histo-controls", ".histo-resize", ".histo-slider",
+                 ".viewer-active-badge"]:
         check(rule in css, f"styles.css styles {rule}")
+    check("box-sizing: border-box" in css.split(".histo-window")[1][:200],
+          "the histogram windows are sized border-box so the clamps are honest")
+    check('.viewer-foot .btn[aria-pressed="true"]' in css,
+          "a footer toggle is marked active by aria-pressed alone (the Distance fix)")
     check("background-color: #10131a" in css and "background-color: #141824" in css,
           "the floating windows are opaque")
     check("position: fixed" in css.split(".histo-layer")[1][:200],

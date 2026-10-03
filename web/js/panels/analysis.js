@@ -26,18 +26,25 @@ export function createAnalysisPanel(ctx) {
   const { bus, state } = ctx;
 
   const histogramButton = button("Histogram", openHistogram, {
-    variant: "primary", size: "small", title: "Open a floating histogram window (up to four at once)",
+    variant: "primary",
+    size: "small",
+    title: "Histogram of the ACTIVE viewport — press again for the other one",
   });
   histogramButton.prepend(icon("chart", { size: 12 }));
 
-  /** Open one more window for the working image. */
+  /**
+   * The ACTIVE viewport's image (item 13). If that image already has a window
+   * open, the other viewport's image opens instead, so Original vs Result is
+   * two presses of this one button. Every viewport footer also has its own
+   * small Histogram button for that viewport's image.
+   */
   function openHistogram() {
     const active = activeImage(state);
     if (!active) {
       toast("Load or fetch an image first.", "warn");
       return null;
     }
-    return ctx.histograms ? ctx.histograms.open({ targetId: active.id }) : null;
+    return ctx.histograms ? ctx.histograms.openFromPanel() : null;
   }
 
   // ------------------------------------------------------------- distance

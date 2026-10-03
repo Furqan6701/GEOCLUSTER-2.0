@@ -10,7 +10,105 @@
  * export canvas, so the exported PNG always matches what is on screen.
  */
 
+import { toGray } from "./color.js";
+
 export const SCALES = ["linear", "log"];
+
+/**
+ * Channels the browser can histogram (item 13). "Gray" is the API's own
+ * 256-bin series; the colour channels are computed here from the decoded image
+ * and never need an endpoint of their own.
+ */
+export const CHANNEL_OPTIONS = Object.freeze([
+  { key: "gray", label: "Gray", color: null },
+  { key: "red", label: "Red", color: "#ff5f56" },
+  { key: "green", label: "Green", color: "#5fd36a" },
+  { key: "blue", label: "Blue", color: "#4aa8ff" },
+  { key: "rgb", label: "RGB overlay", color: null },
+]);
+
+export const CHANNEL_KEYS = Object.freeze(CHANNEL_OPTIONS.map((entry) => entry.key));
+
+/** The label of a channel key (unknown keys read as Gray). */
+export function channelLabel(key) {
+  return CHANNEL_OPTIONS.find((entry) => entry.key === key)?.label ?? "Gray";
+}
+
+/**
+ * A grayscale image offers Gray only; a colour image offers every channel.
+ * `info.channels` is the API's own field (1 for a 2-D grayscale array, 3 or 4
+ * for colour — see api/sessions.py), so nothing has to be guessed.
+ */
+export function channelKeysFor(info) {
+  const channels = Number(info?.channels);
+  if (!Number.isFinite(channels)) return [...CHANNEL_KEYS];
+  return channels >= 3 ? [...CHANNEL_KEYS] : ["gray"];
+}
+
+export function channelOptionsFor(info) {
+  const keys = channelKeysFor(info);
+  return CHANNEL_OPTIONS.filter((entry) => keys.includes(entry.key));
+}
+
+/** True when the image has more than one channel (i.e. Red/Green/Blue exist). */
+export function isColorImage(info) {
+  return channelKeysFor(info).length > 1;
+}
+
+/** The smoothing slider: 0 = off, 1…10 = `SMOOTHING_STEPS[i]` bins of average. */
+export const SMOOTHING_RANGE = Object.freeze({ min: 0, max: 10, step: 1, value: 0 });
+/** Slider value → moving-average window (odd, so it stays centred). */
+export const SMOOTHING_STEPS = Object.freeze(
+  Array.from({ length: SMOOTHING_RANGE.max + 1 }, (_value, index) => (index === 0 ? 0 : index * 2 + 1)),
+);
+
+/**
+ * Count pixels into 256 bins per channel, in ONE pass over the decoded RGBA
+ * data. Fully transparent pixels are skipped (their colour is undefined), which
+ * is also what makes this agree with the API for images with an alpha channel
+ * (it drops alpha before converting).
+ */
+export function channelHistograms(data, { document: _unused = null } = {}) {
+  const empty = () => new Uint32Array(256);
+  const out = { gray: empty(), red: empty(), green: empty(), blue: empty(), count: 0 };
+  if (!data?.length) return out;
+  for (let index = 0; index + 3 < data.length; index += 4) {
+    const alpha = data[index + 3];
+    if (alpha === 0) continue;
+    const red = data[index];
+    const green = data[index + 1];
+    const blue = data[index + 2];
+    out.red[red] += 1;
+    out.green[green] += 1;
+    out.blue[blue] += 1;
+    out.gray[toGray(red, green, blue)] += 1;
+    out.count += 1;
+  }
+  return out;
+}
+
+/**
+ * The bins a channel shows: the API's gray series for "gray", the browser's own
+ * numbers for every colour channel.
+ */
+export function binsForChannel(channel, { apiBins = null, histograms = null } = {}) {
+  if (channel === "gray" || channel == null) return apiBins ?? [];
+  if (!histograms) return [];
+  if (channel === "rgb") return null; // three series, see seriesForChannel
+  const bins = histograms[channel];
+  return bins ? Array.from(bins) : [];
+}
+
+/** The extra coloured series a channel adds on top of the filled bars. */
+export function seriesForChannel(channel, histograms) {
+  if (channel !== "rgb" || !histograms) return [];
+  return ["red", "green", "blue"].map((key) => ({
+    key,
+    bins: histograms[key] ? Array.from(histograms[key]) : [],
+    label: channelLabel(key),
+    color: CHANNEL_OPTIONS.find((entry) => entry.key === key)?.color ?? COMPARE_COLOR,
+  }));
+}
 
 /** Clearly labelled controls instead of raw numbers (item 9). */
 export const SCALE_OPTIONS = Object.freeze([
@@ -18,12 +116,13 @@ export const SCALE_OPTIONS = Object.freeze([
   { key: "log", label: "Log" },
 ]);
 
-/** Off / Low / High smoothing, with the moving-average window each means. */
-export const SMOOTHING_LEVELS = Object.freeze([
-  { key: "off", label: "Off", window: 0 },
-  { key: "low", label: "Low", window: 5 },
-  { key: "high", label: "High", window: 11 },
-]);
+/**
+ * Legacy label lookup kept for the histogram window's captions: the Smoothing
+ * control is a slider now (0 = off … 10), described as "smoothing n".
+ */
+export const SMOOTHING_LEVELS = Object.freeze(
+  SMOOTHING_STEPS.map((window, index) => ({ key: String(index), label: index === 0 ? "Off" : String(index), window })),
+);
 
 export const DISPLAY_MODES = Object.freeze([
   { key: "counts", label: "Counts" },
@@ -42,21 +141,26 @@ export const COMPARE_COLOR = "#ffb454";
 /** Keep the very old numeric window list working. */
 export const SMOOTHING_WINDOWS = [0, 3, 5, 9];
 
-/** Label of a smoothing level (or of a raw window number). */
-export function smoothingLabel(value) {
-  if (typeof value === "string") {
-    return SMOOTHING_LEVELS.find((entry) => entry.key === value)?.label ?? "Off";
-  }
-  const window = Math.max(0, Math.round(Number(value) || 0));
-  return window < 3 ? "Off" : window <= 5 ? "Low" : "High";
+/**
+ * The slider value a smoothing setting stands for, clamped to 0…10. The window
+ * list above (raw windows such as 3, 5, 9) is still understood so old callers
+ * and saved options keep working.
+ */
+export function smoothingLevel(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return 0;
+  return Math.max(SMOOTHING_RANGE.min, Math.min(SMOOTHING_RANGE.max, Math.round(number)));
 }
 
-/** The moving-average window a smoothing level (key or number) stands for. */
+/** The moving-average window a slider value stands for (0, 3, 5, 7 … 21). */
 export function smoothingWindow(value) {
-  if (typeof value === "string") {
-    return SMOOTHING_LEVELS.find((entry) => entry.key === value)?.window ?? 0;
-  }
-  return Math.max(0, Math.round(Number(value) || 0));
+  return SMOOTHING_STEPS[smoothingLevel(value)] ?? 0;
+}
+
+/** "off" / "smoothing 4" — the phrase a caption uses. */
+export function smoothingLabel(value) {
+  const level = smoothingLevel(value);
+  return level === 0 ? "Off" : `Smoothing ${level}`;
 }
 
 /** The display mode of a set of display flags (cumulative wins over density). */
@@ -190,13 +294,18 @@ export function prepareBins(bins, { scale = "linear", smoothing = 0, cumulative 
   };
 }
 
-/** "log scale · smoothed 5 · cumulative · density" — used in captions and the PNG. */
-export function describeOptions({ scale = "linear", smoothing = 0, cumulative = false, density = false } = {}) {
+/**
+ * "linear scale · smoothing 4 · cumulative · density" — used in captions and the
+ * PNG. A channel other than Gray is named too, so an exported chart always says
+ * which channel it shows.
+ */
+export function describeOptions({ scale = "linear", smoothing = 0, cumulative = false, density = false, channel = "gray" } = {}) {
   const parts = [scale === "log" ? "log scale" : "linear scale"];
-  const window = smoothingWindow(smoothing);
-  if (window >= 3) parts.push(`${smoothingLabel(smoothing).toLowerCase()} smoothing`);
+  const level = smoothingLevel(smoothing);
+  if (level > 0) parts.push(`smoothing ${level}`);
   if (cumulative) parts.push("cumulative");
   if (density) parts.push("density");
+  if (channel && channel !== "gray") parts.push(`${channelLabel(channel).toLowerCase()} channel`);
   return parts.join(" · ");
 }
 
@@ -221,8 +330,10 @@ export function drawHistogram(ctx, {
   density = false,
   title = "",
   fontSize = 10,
-  /** Optional second series: { bins, label, color } drawn as an outline. */
+  /** Optional second image: { bins, label, color } drawn as an outline. */
   compare = null,
+  /** Optional extra series (the RGB overlay): [{ bins, label, color }, …]. */
+  series = null,
 } = {}) {
   const palette = THEMES[theme] ?? THEMES.dark;
   ctx.clearRect(0, 0, width, height);
@@ -289,30 +400,40 @@ export function drawHistogram(ctx, {
       Math.max(barWidth, 0.8), barHeight);
   });
 
-  // optional second image, same options, drawn as an outline in its own colour
-  if (compare?.bins?.length) {
-    const other = prepareBins(compare.bins, { scale, smoothing, cumulative, density });
-    const otherMax = Math.max(other.max, max);
-    const step = plotWidth / Math.max(other.values.length, 1);
+  // optional extra outlines (a compared image, or R/G/B), same options, each in
+  // its own colour
+  const outlines = [
+    ...(compare?.bins?.length ? [compare] : []),
+    ...(series ?? []).filter((entry) => entry?.bins?.length),
+  ];
+  if (outlines.length) {
+    const prepared = outlines.map((entry) => ({
+      ...entry,
+      values: prepareBins(entry.bins, { scale, smoothing, cumulative, density }).values,
+    }));
+    const otherMax = Math.max(max, ...prepared.map((entry) => Math.max(...entry.values, 1)));
     ctx.save();
-    ctx.strokeStyle = compare.color ?? COMPARE_COLOR;
     ctx.lineWidth = Math.max(1.5, fontSize / 8);
-    ctx.beginPath();
-    other.values.forEach((value, index) => {
-      const x = plotLeft + index * step + step / 2;
-      const y = plotBottom - (value / otherMax) * plotHeight;
-      if (index === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    });
-    ctx.stroke();
-    // a two-row legend so the outline explains itself on screen and in the PNG
+    for (const entry of prepared) {
+      const step = plotWidth / Math.max(entry.values.length, 1);
+      ctx.strokeStyle = entry.color ?? COMPARE_COLOR;
+      ctx.beginPath();
+      entry.values.forEach((value, index) => {
+        const x = plotLeft + index * step + step / 2;
+        const y = plotBottom - (value / otherMax) * plotHeight;
+        if (index === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+    }
+    // a legend so the outlines explain themselves on screen and in the PNG
     const legendFont = Math.max(8, Math.round(fontSize * 0.95));
     ctx.font = `${legendFont}px system-ui, sans-serif`;
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
     const rows = [
       { color: palette.bar, label: title || "this image" },
-      { color: compare.color ?? COMPARE_COLOR, label: compare.label ?? "compared image" },
+      ...prepared.map((entry) => ({ color: entry.color ?? COMPARE_COLOR, label: entry.label ?? "series" })),
     ];
     const widest = Math.max(...rows.map((row) => ctx.measureText(String(row.label)).width));
     const boxWidth = Math.round(widest + legendFont * 2.4);

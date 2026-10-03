@@ -25,7 +25,7 @@ const MIN_SCALE = 0.02;
 const MAX_SCALE = 32;
 
 export class Viewer {
-  constructor(root, { title = "Viewer", role = "viewer", bus = null, placeholder = "", footerExtras = [] } = {}) {
+  constructor(root, { title = "Viewer", role = "viewer", bus = null, placeholder = "", footerExtras = [], onHistogram = null } = {}) {
     this.root = root;
     this.title = title;
     this.placeholder = placeholder || `No image loaded — ${title} viewport`;
@@ -47,6 +47,8 @@ export class Viewer {
     this.mirror = null;          // partner viewer when synchronised
     this.syncEnabled = false;
     this.active = false;
+    /** Opens the histogram window for THIS viewport's image (item 13). */
+    this.onHistogram = typeof onHistogram === "function" ? onHistogram : null;
     this._drag = null;
     this._pixelData = null;
     this._pixelCanvas = null;
@@ -72,6 +74,13 @@ export class Viewer {
     this.nameLabel = el("span", { class: "viewer-name", text: "no image" });
     this.metaLabel = el("span", { class: "meta", text: "—" });
     this.modeBadge = el("span", { class: "badge viewer-mode", text: "Pixel" });
+    // which viewport the sidebar/panel actions would act on (item 13)
+    this.activeBadge = el("span", {
+      class: "badge viewer-active-badge",
+      text: "Active",
+      hidden: true,
+      title: "This is the active viewport — panel and menu actions use it",
+    });
     this.zoomLabel = el("span", { class: "zoom-label", text: "—" });
     this.previewBadge = el("span", { class: "badge viewer-preview", text: "preview", hidden: true });
     this.readout = el("span", { class: "readout", text: "x: —, y: —, value: —" });
@@ -85,10 +94,21 @@ export class Viewer {
       title: "Measure a pixel distance (Esc to clear)",
     });
     this.distanceButton.prepend(icon("measure", { size: 11 }));
+    // It is a TOGGLE: aria-pressed is the single source of its "active" look,
+    // and it is disabled while this viewport has no image to measure.
+    this.distanceButton.setAttribute("aria-pressed", "false");
+    this.distanceButton.disabled = true;
+    this.histogramButton = button("Histogram", () => this.onHistogram?.(this), {
+      size: "small",
+      title: "Open a histogram window for THIS viewport's image",
+    });
+    this.histogramButton.prepend(icon("chart", { size: 11 }));
+    this.histogramButton.disabled = true;
 
     const viewer = el("div", { class: "viewer" }, [
       el("div", { class: "viewer-head" }, [
         el("h2", { text: this.title }),
+        this.activeBadge,
         this.nameLabel,
         this.modeBadge,
         this.previewBadge,
@@ -101,6 +121,7 @@ export class Viewer {
         this.oneToOneButton,
         this.zoomInButton,
         this.distanceButton,
+        this.histogramButton,
         ...this.footerExtras,
         this.zoomLabel,
         this.readout,
@@ -128,7 +149,20 @@ export class Viewer {
     if (next === this.active) return;
     this.active = next;
     this.node.classList.toggle("active", next);
+    this.activeBadge.hidden = !next;      // the marker the user asked to see
     if (next) this.bus?.emit("viewer:active", { role: this.role, viewer: this });
+  }
+
+  /**
+   * Footer buttons that need pixels are disabled until this viewport has an
+   * image — an "active looking" tool on an empty pane is exactly the bug this
+   * prevents (the Distance button in particular).
+   */
+  _syncFooterState() {
+    const hasImage = this.hasImage;
+    this.distanceButton.disabled = !hasImage;
+    this.histogramButton.disabled = !hasImage || !this.onHistogram;
+    if (!hasImage && this.distanceMode) this.toggleDistance(false);
   }
 
   // ------------------------------------------------------------------- tools
@@ -193,6 +227,7 @@ export class Viewer {
     // a committed image always supersedes an uncommitted preview
     this.previewCanvas = null;
     this.previewBadge.hidden = true;
+    this._syncFooterState();
     this.fit();
     this.render();
   }
@@ -211,6 +246,7 @@ export class Viewer {
     this._pixelCanvas = null;
     this.previewCanvas = null;
     this.previewBadge.hidden = true;
+    this._syncFooterState();
     this.render();
   }
 
@@ -388,9 +424,15 @@ export class Viewer {
     this.distanceMode = next;
     this.points = [];
     this.canvas.classList.toggle("distance-mode", next);
-    this.distanceButton.classList.toggle("primary", next);
+    // ONE source of the active look: aria-pressed (styled in styles.css). The
+    // generic .primary class is gone, so nothing can light the button up
+    // unless it is really measuring.
+    this.distanceButton.setAttribute("aria-pressed", next ? "true" : "false");
     this.distanceButton.textContent = next ? "Distance ●" : "Distance";
     this.distanceButton.prepend(icon("measure", { size: 11 }));
+    this.distanceButton.title = next
+      ? "Measuring — click two points (Esc clears)"
+      : "Measure a pixel distance (Esc to clear)";
     this._updateModeBadge();
     this.bus?.emit("viewer:distance-mode", { role: this.role, enabled: next });
     this.render();

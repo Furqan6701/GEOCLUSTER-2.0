@@ -213,17 +213,46 @@ pointer behaviour, and layout at the two widths the user asked about.
 37. **[both]** Open **four** windows: each new one appears beside the previous
     one without covering it; a fifth press says to close one first. Each window
     is titled `Histogram: sample.jpg#…` for its own image.
-38. **[both]** Switch **Scale** (Linear/Log), **Smoothing** (Off/Low/High),
-    **Display** (Counts/Density/Cumulative) and **Theme** (Dark/Light) in one
-    window: the chart redraws instantly, the five statistics (Min, Max, Mean,
-    Std dev, Pixels) stay beside it, and the Network tab shows **no new
-    request**. A second window keeps its own options.
+38. **[both]** Switch **Scale** (Linear/Log), the **Smoothing slider** (0 = off
+    … 10; it is labelled only "Smoothing" and prints no number), **Display**
+    (Counts/Density/Cumulative) and **Theme** (Dark/Light) in one window: the
+    chart redraws while you drag, the five statistics (Min, Max, Mean, Std dev,
+    Pixels) stay beside it, and the Network tab shows **no new request**. A
+    second window keeps its own options.
+38a. **[both]** Colour image open (a JPEG/PNG upload or a K-Means display):
+    the **Channel** dropdown offers **Gray (default) · Red · Green · Blue · RGB
+    overlay**. Pick **Red** — the outline is red immediately, still with no
+    request (the counts are computed here, from the decoded image). Pick **RGB
+    overlay**: three coloured outlines with a three-row legend. Open a grayscale
+    image (e.g. after **Grayscale**, or a label map) and **Gray is the only
+    entry** in the dropdown.
 39. **[both]** Change the **Image** dropdown to Result and then to an earlier
     undo state: the window redraws for that image and its title follows.
 40. **[both]** Optional **Compare**: pick another image and a second outline is
     drawn in orange with a two-row legend; switch it off again.
 41. **[both]** **Export PNG**: the downloaded `histogram-<image>.png` is
     1120×520 (2× the window), keeps the options and the title line.
+41a. **[both]** The **active viewport is marked**: click the Original pane, then
+    the Result pane — the **Active** badge sits on whichever you touched last,
+    and the sidebar **Histogram** button follows it. Press that button twice:
+    the first press shows the active viewport's image, the second shows the
+    other viewport's image (so both are two clicks).
+41b. **[both]** Each viewport footer carries its own small **Histogram** button
+    next to **Distance**: the Result footer's button opens a window for the
+    Result image even while the Original pane is the active one. Both footer
+    buttons are greyed out while their own viewport is empty.
+41c. **[both]** Drag the window's bottom-right **grip** to resize it (the chart
+    redraws at the new size), and grow it towards every edge — the window never
+    runs past the bottom or the sides of the page. Shrink the browser window:
+    the open histogram windows are pulled back inside the page with it.
+41d. **[both]** At a browser width of **1600 px or more** the toolbar's
+    **Export** (download arrow) and **Compress** (archive box) buttons show
+    their words next to the icons; narrow the window and the words go, leaving
+    the two clearly different icons with their tooltips.
+41e. **[both]** The footer **Distance** button looks pressed **only while
+    measuring** (its label gains a ● and its tooltip changes); Esc or a second
+    press clears the highlight. On an empty viewport the button is greyed out
+    instead of looking available.
 42. **[both]** Distance: with a plain upload the unit is **pixels** and the
     pixel-size field is hidden. Measure on a viewport (toolbar **Measure** or
     the viewport's **Distance** button, two clicks): the panel shows ONE line
@@ -282,5 +311,12 @@ pointer behaviour, and layout at the two widths the user asked about.
   exact exported canvas width) must be eyeballed once in a browser.
 * Dragging a floating histogram window with a real pointer (mousemove/mouseup
   are synthesised in the boot test), and window stacking with several open.
+* The colour channels of the histogram on a REAL image: jsdom has no drawable
+  pixels (its `createImageBitmap` stub has none), so the browser-side decode
+  behind Red/Green/Blue/RGB overlay was verified by the pure-function tests and
+  by the boot test's DOM contract, not by counting real pixels.
+* The pixel-level look of the resized histogram window (grip drag) and the
+  toolbar's labels at an actual 1600 px window width (jsdom has no layout, so
+  those numbers were stubbed).
 * Scrollbars/overflow of the histogram window body when a desktop font renders
   wider than jsdom's stub.

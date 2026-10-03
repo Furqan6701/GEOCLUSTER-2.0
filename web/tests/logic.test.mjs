@@ -56,7 +56,18 @@ import {
   SCALES,
   SCALE_OPTIONS,
   SMOOTHING_LEVELS,
+  SMOOTHING_RANGE,
+  SMOOTHING_STEPS,
   SMOOTHING_WINDOWS,
+  CHANNEL_KEYS,
+  CHANNEL_OPTIONS,
+  binsForChannel,
+  channelHistograms,
+  channelKeysFor,
+  channelLabel,
+  channelOptionsFor,
+  isColorImage,
+  seriesForChannel,
   THEME_OPTIONS,
   THEMES,
   axisLabels,
@@ -1243,10 +1254,11 @@ test("prepareBins applies smoothing → cumulative → density → scale in that
   assert.ok(Math.abs(log.values[11] - Math.log10(129)) < 1e-9, "log scale is log10(count + 1)");
   assert.equal(log.max, Math.log10(129));
 
-  const all = prepareBins(BINS_SPIKE, { scale: "log", smoothing: 5, cumulative: true, density: true });
-  assert.equal(all.label, "log scale · low smoothing · cumulative · density");
-  assert.equal(prepareBins(BINS_SPIKE, { smoothing: "high" }).label, "linear scale · high smoothing",
-    "a smoothing LEVEL key works like the raw window");
+  const all = prepareBins(BINS_SPIKE, { scale: "log", smoothing: 4, cumulative: true, density: true });
+  assert.equal(all.label, "log scale · smoothing 4 · cumulative · density");
+  assert.equal(prepareBins(BINS_SPIKE, { smoothing: "3" }).label, "linear scale · smoothing 3",
+    "the slider value as a string works too");
+  assert.equal(prepareBins(BINS_SPIKE, { smoothing: 0 }).label, "linear scale", "0 is off");
   assert.ok(all.values.every((value) => value >= 0), "log of a share is never negative");
 
   assert.deepEqual(prepareBins([]), { values: [], max: 1, total: 0, label: "no data" });
@@ -1255,8 +1267,11 @@ test("prepareBins applies smoothing → cumulative → density → scale in that
 test("describeOptions and axisLabels describe the current view", () => {
   assert.equal(describeOptions(), "linear scale");
   assert.equal(describeOptions({ scale: "log" }), "log scale");
-  assert.equal(describeOptions({ scale: "linear", smoothing: 9, cumulative: true }), "linear scale · high smoothing · cumulative");
-  assert.equal(describeOptions({ smoothing: "low" }), "linear scale · low smoothing");
+  assert.equal(describeOptions({ scale: "linear", smoothing: 9, cumulative: true }),
+    "linear scale · smoothing 9 · cumulative");
+  assert.equal(describeOptions({ smoothing: 5 }), "linear scale · smoothing 5");
+  assert.equal(describeOptions({ channel: "rgb" }), "linear scale · rgb overlay channel",
+    "the caption names a non-gray channel");
   assert.equal(axisLabels().y, "pixels");
   assert.equal(axisLabels({ cumulative: true }).y, "pixels ≤ intensity");
   assert.equal(axisLabels({ density: true }).y, "share of pixels");
@@ -1907,13 +1922,15 @@ test("an invisible or empty legend reserves no space at all", () => {
 
 test("the histogram options are labelled Off/Low/High, Counts/Density/Cumulative", () => {
   assert.deepEqual(SCALE_OPTIONS.map((entry) => entry.label), ["Linear", "Log"]);
-  assert.deepEqual(SMOOTHING_LEVELS.map((entry) => entry.label), ["Off", "Low", "High"]);
-  assert.deepEqual(SMOOTHING_LEVELS.map((entry) => entry.window), [0, 5, 11]);
+  assert.deepEqual(SMOOTHING_LEVELS.map((entry) => entry.label),
+    ["Off", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"],
+    "the slider's steps are labelled by their own number");
+  assert.deepEqual(SMOOTHING_LEVELS.map((entry) => entry.window), SMOOTHING_STEPS);
   assert.deepEqual(DISPLAY_MODES.map((entry) => entry.label), ["Counts", "Density", "Cumulative"]);
   assert.deepEqual(THEME_OPTIONS.map((entry) => entry.label), ["Dark", "Light"]);
-  assert.equal(smoothingWindow("off"), 0);
-  assert.equal(smoothingWindow("high"), 11);
-  assert.equal(smoothingLabel("low"), "Low");
+  assert.equal(smoothingWindow("0"), 0, "0 is off");
+  assert.equal(smoothingWindow("4"), 9, "slider 4 averages 9 bins");
+  assert.equal(smoothingLabel("3"), "Smoothing 3");
   assert.equal(displayModeOf({ cumulative: true, density: true }), "cumulative");
   assert.deepEqual(displayFlags("density"), { cumulative: false, density: true });
   assert.deepEqual(displayFlags("counts"), { cumulative: false, density: false });
@@ -2259,4 +2276,99 @@ test("cloneEntries never shares entry objects with the caller", () => {
   copy[0].max = 10;
   assert.equal(ranges[0].max, 80);
   assert.deepEqual(cloneEntries(null), []);
+});
+
+// ═══════════════ item 13: histogram channels, smoothing slider, windows ══════
+
+/** RGBA bytes for a list of [r, g, b, a] pixels. */
+const rgba = (pixels) => Uint8ClampedArray.from(pixels.flat());
+
+test("the channel list follows the image: Gray only for grayscale, five for colour", () => {
+  assert.deepEqual(CHANNEL_KEYS, ["gray", "red", "green", "blue", "rgb"]);
+  assert.deepEqual(CHANNEL_OPTIONS.map((entry) => entry.label),
+    ["Gray", "Red", "Green", "Blue", "RGB overlay"]);
+  assert.equal(CHANNEL_OPTIONS[0].key, "gray", "Gray is the default (and listed first)");
+
+  assert.deepEqual(channelKeysFor({ channels: 1 }), ["gray"], "a grayscale image offers Gray only");
+  assert.deepEqual(channelKeysFor({ channels: 3 }), [...CHANNEL_KEYS], "a colour image offers every channel");
+  assert.deepEqual(channelKeysFor({ channels: 4 }), [...CHANNEL_KEYS], "…including BGRA");
+  assert.equal(isColorImage({ channels: 1 }), false);
+  assert.equal(isColorImage({ channels: 3 }), true);
+  assert.deepEqual(channelOptionsFor({ channels: 1 }).map((entry) => entry.key), ["gray"]);
+  // an image whose channel count is unknown keeps every option rather than lying
+  assert.deepEqual(channelKeysFor({}), [...CHANNEL_KEYS]);
+  assert.equal(channelLabel("rgb"), "RGB overlay");
+  assert.equal(channelLabel("nonsense"), "Gray");
+});
+
+test("channelHistograms counts R, G, B and the OpenCV gray of every pixel", () => {
+  const histograms = channelHistograms(rgba([
+    [0, 0, 0, 255],
+    [255, 0, 0, 255],
+    [0, 255, 0, 255],
+    [0, 0, 255, 255],
+    [255, 255, 255, 128],
+  ]));
+  assert.equal(histograms.count, 5, "five visible pixels");
+  assert.equal(histograms.red[0], 3, "three pixels have red = 0");
+  assert.equal(histograms.red[255], 2);
+  assert.equal(histograms.green[255], 2);
+  assert.equal(histograms.blue[255], 2);
+  // gray uses the same weights the API's BGR2GRAY does
+  assert.equal(histograms.gray[toGray(255, 0, 0)], 1);
+  assert.equal(histograms.gray[toGray(0, 255, 0)], 1);
+  assert.equal(histograms.gray[toGray(0, 0, 255)], 1);
+  assert.equal(histograms.gray[0], 1);
+  assert.equal(histograms.gray[255], 1);
+  assert.equal(histograms.gray.reduce((sum, value) => sum + value, 0), 5, "every pixel is counted once");
+  assert.equal(histograms.red.reduce((sum, value) => sum + value, 0), 5);
+});
+
+test("fully transparent pixels are skipped, so alpha images match the API", () => {
+  const histograms = channelHistograms(rgba([
+    [10, 20, 30, 255],
+    [200, 210, 220, 0],   // invisible: its colour is undefined
+  ]));
+  assert.equal(histograms.count, 1);
+  assert.equal(histograms.red[10], 1);
+  assert.equal(histograms.red[200], 0);
+  assert.equal(histograms.gray.reduce((sum, value) => sum + value, 0), 1);
+  assert.equal(channelHistograms(new Uint8ClampedArray(0)).count, 0, "no pixels is not an error");
+  assert.equal(channelHistograms(null).count, 0);
+  assert.deepEqual(channelHistograms(null).gray, new Uint32Array(256));
+});
+
+test("binsForChannel and seriesForChannel pick the right series", () => {
+  const api = [1, 2, 3];
+  const histograms = channelHistograms(rgba([[255, 0, 0, 255]]));
+  assert.deepEqual(binsForChannel("gray", { apiBins: api }), api, "Gray is the API's own series");
+  assert.deepEqual(binsForChannel(null, { apiBins: api }), api);
+  const red = binsForChannel("red", { apiBins: api, histograms });
+  assert.equal(red[255], 1, "Red comes from the browser's count");
+  assert.deepEqual(binsForChannel("red", { apiBins: api }), [],
+    "without a decode the colour channel is empty, never the gray numbers");
+  assert.equal(binsForChannel("rgb", { apiBins: api, histograms }), null,
+    "the RGB overlay draws three series instead of one");
+  assert.deepEqual(seriesForChannel("gray", histograms), []);
+  const rgb = seriesForChannel("rgb", histograms);
+  assert.deepEqual(rgb.map((entry) => entry.label), ["Red", "Green", "Blue"]);
+  assert.deepEqual(rgb.map((entry) => entry.key), ["red", "green", "blue"]);
+  assert.ok(rgb.every((entry) => /^#/.test(entry.color) && Array.isArray(entry.bins)));
+  assert.deepEqual(seriesForChannel("rgb", null), []);
+});
+
+test("the smoothing slider maps 0…10 onto the window it averages", () => {
+  assert.deepEqual(SMOOTHING_RANGE, { min: 0, max: 10, step: 1, value: 0 });
+  assert.equal(SMOOTHING_STEPS.length, 11);
+  assert.deepEqual([...SMOOTHING_STEPS], [0, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21]);
+  assert.equal(smoothingWindow(0), 0, "0 is off: the bins are untouched");
+  assert.equal(smoothingWindow(1), 3);
+  assert.equal(smoothingWindow(10), 21);
+  assert.equal(smoothingLabel(0), "Off");
+  assert.equal(smoothingLabel(10), "Smoothing 10");
+  // out-of-range and junk values are clamped, never NaN windows
+  assert.equal(smoothingWindow(-4), 0);
+  assert.equal(smoothingWindow(99), 21);
+  assert.equal(smoothingWindow("nonsense"), 0);
+  assert.equal(smoothingWindow(undefined), 0);
 });

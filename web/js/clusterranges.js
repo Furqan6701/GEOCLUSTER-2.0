@@ -14,18 +14,19 @@
  * functions return, so the same rules can be unit-tested directly.
  */
 
+import { toGray } from "./color.js";
+
 export const CHANNEL_MIN = 0;
 export const CHANNEL_MAX = 255;
 export const CHANNEL_VALUES = CHANNEL_MAX - CHANNEL_MIN + 1; // 256
 
 /**
  * OpenCV's 8-bit `COLOR_BGR2GRAY` (the API converts to gray before K-Means and
- * classify): the fixed-point form of 0.299R + 0.587G + 0.114B, so the browser's
- * live preview matches the server's committed image.
+ * classify), so the browser's live preview matches the server's committed
+ * image. Defined once in ./color.js and re-exported here for the modules (and
+ * tests) that already import it from this file.
  */
-export function toGray(r, g, b) {
-  return (4899 * r + 9617 * g + 1868 * b + 8192) >> 14;
-}
+export { toGray } from "./color.js";
 
 /** A shallow copy of the entry list (entries are `{cluster, min, max, …}`). */
 export function cloneEntries(entries) {
