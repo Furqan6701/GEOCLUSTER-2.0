@@ -19,6 +19,7 @@ import {
 import { ApiError, detailToText, humanizeError, sanitizeMessage, validationToText } from "../js/errors.js";
 import { OPERATIONS_WITH_PARAMS, describeOperation } from "../js/panels/operations.js";
 import { ApiClient } from "../js/api.js";
+import { HISTORY_LIMIT, ImageHistory, snapshotOf } from "../js/history.js";
 import { defaultParamsFor, describeCommand, executeCommands } from "../js/commands.js";
 
 // --------------------------------------------------------------- test doubles
@@ -448,4 +449,111 @@ test("sanitizeMessage strips developer jargon", () => {
 test("humanizeError passes the operation through to the 422 mapper", () => {
   const error = new ApiError(422, [{ loc: ["body", "value"], msg: "Field required" }]);
   assert.equal(humanizeError(error, { operation: "brightness" }), "value is required");
+});
+
+// ------------------------------------------------------- STEP 3: image history
+
+function fakeState(overrides = {}) {
+  return { original: { id: "orig1", info: { image_id: "orig1" } }, result: null, ...overrides };
+}
+
+function fakeEntry(id, label = `step ${id}`) {
+  return {
+    label,
+    role: "result",
+    imageId: id,
+    info: { image_id: id, width: 4, height: 4 },
+    blob: { id },
+    kmeans: null,
+    snapshot: { original: { id: "orig1", info: null }, result: { id, info: null } },
+  };
+}
+
+test("ImageHistory keeps at most 15 states and drops the oldest", () => {
+  assert.equal(HISTORY_LIMIT, 15, "the documented limit is 15");
+  const history = new ImageHistory();
+  for (let i = 1; i <= 20; i += 1) history.record(fakeEntry(`img${i}`));
+  assert.equal(history.size, 15);
+  assert.equal(history.entries[0].imageId, "img6", "the five oldest states were dropped");
+  assert.equal(history.current.imageId, "img20");
+  assert.equal(history.summary, "15/15");
+});
+
+test("ImageHistory undo/redo walk the states and can be limited", () => {
+  const history = new ImageHistory();
+  assert.equal(history.canUndo, false);
+  assert.equal(history.canRedo, false);
+  history.record(fakeEntry("a"));
+  history.record(fakeEntry("b"));
+  history.record(fakeEntry("c"));
+  assert.equal(history.canUndo, true);
+  assert.equal(history.canRedo, false);
+  assert.equal(history.undo().imageId, "b");
+  assert.equal(history.undo().imageId, "a");
+  assert.equal(history.undo(), null, "undo stops at the oldest state");
+  assert.equal(history.canUndo, false);
+  assert.equal(history.redo().imageId, "b");
+  assert.equal(history.redo().imageId, "c");
+  assert.equal(history.redo(), null, "redo stops at the newest state");
+});
+
+test("recording after an undo discards the redo tail", () => {
+  const history = new ImageHistory();
+  history.record(fakeEntry("a"));
+  history.record(fakeEntry("b"));
+  history.undo();
+  history.record(fakeEntry("c"));
+  assert.deepEqual(history.entries.map((entry) => entry.imageId), ["a", "c"]);
+  assert.equal(history.canRedo, false, "the stale redo branch is gone");
+});
+
+test("ImageHistory re-points every entry when an evicted image is re-uploaded", () => {
+  const history = new ImageHistory();
+  history.record(fakeEntry("old"));
+  history.record(fakeEntry("new"));
+  history.record({
+    ...fakeEntry("newest"),
+    snapshot: { original: { id: "old", info: null }, result: { id: "newest", info: null } },
+  });
+  history.rememberBlob("old", { id: "old-blob" });
+  const replaced = [];
+  history.onReplaced = (oldId, info) => replaced.push([oldId, info.image_id]);
+  history.adopt("old", { image_id: "replacement" });
+  assert.equal(history.entries[0].imageId, "replacement");
+  assert.equal(history.entries[2].snapshot.original.id, "replacement");
+  assert.equal(history.entries[1].imageId, "new", "unrelated entries are untouched");
+  assert.deepEqual(replaced, [["old", "replacement"]]);
+  assert.deepEqual(history.blobFor("replacement"), { id: "old-blob" }, "the Blob moved with the id");
+  assert.equal(history.blobFor("old"), null);
+});
+
+test("Blobs are capped separately so history metadata survives", () => {
+  const history = new ImageHistory({ blobLimit: 3 });
+  for (const id of ["a", "b", "c", "d"]) {
+    history.record(fakeEntry(id));
+    history.rememberBlob(id, { id });
+  }
+  assert.equal(history.size, 4, "states are all still there");
+  assert.equal(history.blobCount, 3);
+  assert.equal(history.blobFor("a"), null, "the oldest Blob was released");
+  assert.deepEqual(history.blobFor("d"), { id: "d" });
+});
+
+test("snapshotOf captures both viewport slots without the info payload shape", () => {
+  const snapshot = snapshotOf(fakeState({ result: { id: "r1", info: { image_id: "r1" } } }));
+  assert.deepEqual(snapshot, {
+    original: { id: "orig1", info: { image_id: "orig1" } },
+    result: { id: "r1", info: { image_id: "r1" } },
+  });
+  assert.deepEqual(snapshotOf({ original: null, result: null }), { original: null, result: null });
+});
+
+test("reset clears every state and Blob", () => {
+  const history = new ImageHistory();
+  history.record(fakeEntry("a"));
+  history.rememberBlob("a", { id: "a" });
+  history.reset();
+  assert.equal(history.size, 0);
+  assert.equal(history.canUndo, false);
+  assert.equal(history.blobCount, 0);
 });

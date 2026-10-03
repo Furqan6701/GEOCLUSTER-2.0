@@ -143,7 +143,12 @@ export function createOperationsPanel(ctx) {
     const label = describeOperation(operation, params);
     setBusy(true, label);
     try {
-      const info = await session.withSession((sid) => ctx.api.runOperation(sid, active.id, operation, params));
+      const info = await session.withImage(active.id, (sid, imageId) =>
+        ctx.api.runOperation(sid, imageId, operation, params),
+      );
+      // set before the image is registered: the undo history labels the state
+      // with the operation that produced it
+      state.lastOperation = { operation: label, imageId: info.image_id, at: Date.now() };
       session.useAsResult(info);
       applyFeedback(label, info);
       return { ok: true, info, label };
@@ -158,7 +163,6 @@ export function createOperationsPanel(ctx) {
   /** Visible feedback: the result viewport updates (via useAsResult), plus a
    *  labelled toast and a persistent status-bar entry. */
   function applyFeedback(label, info) {
-    state.lastOperation = { operation: label, imageId: info.image_id, at: Date.now() };
     toast(`${label} applied → ${info.width}×${info.height}`, "ok");
     bus.emit("status", { message: `${label} applied — new image ${info.image_id}` });
     bus.emit("operation:applied", { label, info });

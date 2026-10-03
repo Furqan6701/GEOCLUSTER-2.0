@@ -25,6 +25,10 @@ export class SessionManager {
     this.bus = bus;
     /** image_id -> Blob, so re-displaying an image costs no extra request. */
     this.blobCache = new Map();
+    /** image_id -> in-flight download, so two callers share one request. */
+    this.pendingBlobs = new Map();
+    /** Set by the app: async (imageId) => new info, re-uploading a Blob. */
+    this.reviver = null;
   }
 
   get sessionId() {
@@ -90,11 +94,44 @@ export class SessionManager {
     return rememberImage(this.state, info);
   }
 
+  /** Register the callback that re-uploads an evicted image (see withImage). */
+  setReviver(reviver) {
+    this.reviver = reviver;
+  }
+
   async imageBlob(imageId) {
     if (this.blobCache.has(imageId)) return this.blobCache.get(imageId);
-    const blob = await this.withSession((sid) => this.api.downloadImage(sid, imageId, "png"));
-    this.blobCache.set(imageId, blob);
-    return blob;
+    if (this.pendingBlobs.has(imageId)) return this.pendingBlobs.get(imageId);
+    const request = this.withSession((sid) => this.api.downloadImage(sid, imageId, "png"))
+      .then((blob) => {
+        this.blobCache.set(imageId, blob);
+        return blob;
+      })
+      .finally(() => this.pendingBlobs.delete(imageId));
+    this.pendingBlobs.set(imageId, request);
+    return request;
+  }
+
+  /**
+   * Run `fn(sessionId, imageId)` for an image the server may have evicted.
+   *
+   * The API keeps only `max_images` images per session (LRU), so an id from
+   * the undo history can 404 even though the session is alive. When that
+   * happens the registered reviver re-uploads the state's Blob and the call is
+   * retried exactly once with the replacement id — the user sees nothing.
+   */
+  async withImage(imageId, fn) {
+    return this.withSession(async (sid) => {
+      try {
+        return await fn(sid, imageId);
+      } catch (error) {
+        const evicted = error instanceof ApiError && error.status === 404 && !error.isSessionExpired;
+        if (!evicted || !this.reviver) throw error;
+        const info = await this.reviver(imageId);
+        if (!info?.image_id) throw error;
+        return await fn(sid, info.image_id);
+      }
+    });
   }
 
   /** Upload a File/Blob as the new working ("original") image. */

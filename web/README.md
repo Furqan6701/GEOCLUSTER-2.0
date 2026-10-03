@@ -10,7 +10,7 @@ rather than a dashboard:
 ┌──────────────────────────────────────────────────────────────────┐
 │ GeoCluster 2.0 │ File View Processing Analysis Help │  status    │
 ├──────────────────────────────────────────────────────────────────┤
-│ Open │ Satellite │ Export │ Compress │ ⇄ Undo/Redo │ zoom │ tools│
+│ Open │ Satellite │ Export │ Compress │ ⇄ Undo/Redo │ tools │ docks│
 ├──────────────┬────────────────────────────────────┬──────────────┤
 │ TOOLBOX      │        IMAGE WORKSPACE             │ ASSISTANT    │
 │  Source      │  ┌──────────────┬──────────────┐   │  conversation│
@@ -35,14 +35,22 @@ rather than a dashboard:
   and named in the status bar.
 * **Toolbox** — collapsible sections: Source, Filters, Clusters, Analysis,
   Files (nothing was removed from the old panels).
-* **Toolbar / menus** — Open, Satellite, Export, Compress, Undo/Redo (marked
-  unavailable), zoom −/+/Fit/1:1/25 %/50 %/100 %, Pan, Pixel, Measure, Sync,
-  dock toggles; menus for File, View, Processing, Analysis, Help.
-* **Shortcuts** — `Ctrl+O` open, `Ctrl+S` export PNG, `+`/`−` zoom, `0` fit,
-  `1` actual size, `M` measure, `P` pixel readout, `Y` sync viewers.
-* **Not implemented, and visibly so** — Undo, Redo, Recent files, Map view,
-  Map legend and Map export appear as disabled menu entries with a reason;
-  there are no fake buttons.
+* **Toolbar / menus** — Open, Satellite, Export, Compress, Undo/Redo, Pan,
+  Pixel, Measure, Sync, dock toggles; menus for File, View, Processing,
+  Analysis, Help. One non-wrapping row: labels drop to icons when the window
+  is too narrow (≤1440 px or when a measured overflow is detected).
+* **Undo/redo** — the last 15 states are kept in the browser as Blobs, so
+  undoing paints instantly without a server call; if the server has evicted
+  that image (LRU), the stored Blob is re-uploaded and the step retried
+  silently. Toolbar buttons, File menu and `Ctrl+Z`/`Ctrl+Y` all drive it.
+* **Zoom** — lives in exactly one place, the per-viewport footers (the toolbar
+  duplicate was removed); the View menu keeps the same commands.
+* **Shortcuts** — `Ctrl+O` open, `Ctrl+S` export PNG, `Ctrl+Z`/`Ctrl+Y`
+  undo/redo, `+`/`−` zoom, `0` fit, `1` actual size, `M` measure, `P` pixel
+  readout, `Y` sync viewers.
+* **Not implemented, and visibly so** — Recent files, Map view, Map legend and
+  Map export appear as disabled menu entries with a reason; there are no fake
+  buttons.
 
 ## What it does
 

@@ -36,7 +36,9 @@ export function createClustersPanel(ctx) {
 
     setBusy(true);
     try {
-      const result = await session.withSession((sid) => ctx.api.kmeans(sid, active.id, { k, maxIter }));
+      const result = await session.withImage(active.id, (sid, imageId) =>
+        ctx.api.kmeans(sid, imageId, { k, maxIter }),
+      );
       state.kmeans = { ...result, sourceImageId: active.id, sourceInfo: active.info };
       renderSummary(result);
       renderEditor(result);
@@ -141,7 +143,9 @@ export function createClustersPanel(ctx) {
 
     setBusy(true);
     try {
-      const result = await session.withSession((sid) => ctx.api.classify(sid, active.id, { ranges, assignments }));
+      const result = await session.withImage(active.id, (sid, imageId) =>
+        ctx.api.classify(sid, imageId, { ranges, assignments }),
+      );
       session.useAsResultId(result.image_id, { ...(active.info ?? {}), source: "classify" });
       renderLegend(result.legend ?? []);
       toast("Classification applied.", "ok");

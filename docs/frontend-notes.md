@@ -11,7 +11,7 @@ The frontend is a desktop-style workspace, not a dashboard:
 | Region | Contents |
 | --- | --- |
 | Title bar | GeoCluster 2.0, menu bar (File · View · Processing · Analysis · Help), status chips (API, session, AI, satellite, max MP) |
-| Toolbar | Open · Satellite · Export · Compress · Undo/Redo (disabled) · zoom −/+/Fit/1:1/25 %/50 %/100 % · Pan · Pixel · Measure · Sync · dock toggles |
+| Toolbar | Open · Satellite · Export · Compress · Undo/Redo · Pan · Pixel · Measure · Sync · dock toggles (single non-wrapping row; labels collapse to icons below 1440 px) |
 | Toolbox dock | collapsible sections: Source, Filters, Clusters, Analysis, Files (every control from the previous panels, unchanged in behaviour) |
 | Image workspace | two viewports, **Original** and **Result**, each with a header (name + dimensions + active tool) and a footer (Fit/1:1/±/Distance, zoom %, pixel readout) |
 | Assistant dock | scrollable conversation, quick-command buttons, compact input; collapsible |
@@ -39,15 +39,29 @@ active. Turning the pixel readout off stops the footer/status-bar readout but
 never affects zoom or pan. The viewport's own `Distance` button and the toolbar
 `Measure` button stay in step through the `viewer:distance-mode` event.
 
+### Undo / redo (implemented client-side)
+
+The API has no operation history (every operation returns a new image id), so
+history lives in the browser: `js/history.js` keeps the last **15 displayed
+states**. Each state stores a label, the server image id, the image info and —
+once the viewer has fetched it — the **Blob** itself, plus a snapshot of both
+viewport slots so "Clear result" is undoable too.
+
+* Toolbar **Undo/Redo**, File → Undo/Redo, `Ctrl+Z` and `Ctrl+Y` (`Ctrl+Shift+Z`
+  also redoes). Disabled states explain themselves in the tooltip.
+* Restoring paints the stored Blob: **no server request** is made.
+* Sessions keep only a few images (LRU). If a state's id has been evicted, the
+  operation that needs it gets a 404, `SessionManager.withImage()` silently
+  re-uploads the stored Blob (`revive()` in `app.js`), re-points every history
+  entry that referenced the old id and retries the call once — the user sees
+  nothing. Old Blobs are released after 24 images to bound memory.
+* Starting a new session clears the history (server ids are gone).
+
 ### Deliberately not implemented
 
-Undo, Redo, Recent files, Map view, Map legend and Map export are listed in
-the menus as **disabled entries with a reason** instead of fake buttons:
+Recent files, Map view, Map legend and Map export are listed in the menus as
+**disabled entries with a reason** instead of fake buttons:
 
-* Undo/Redo — the API has no operation history; each operation returns a new
-  image id and the client keeps only the newest original/result. Adding them
-  would mean client-side history of image ids (structurally easy: the panels
-  already emit `image:loaded`).
 * Map view / legend / export — there is no map or georeferencing backend. The
   per-cluster legend that *does* exist lives in the Clusters section.
 * Recent files — session images are listed in the Source section instead.

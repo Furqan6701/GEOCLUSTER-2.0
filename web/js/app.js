@@ -11,6 +11,7 @@
 import { ApiClient } from "./api.js";
 import { resolveApiBase } from "./config.js";
 import { ApiError, humanizeError } from "./errors.js";
+import { ImageHistory, HISTORY_LIMIT, snapshotOf } from "./history.js";
 import { createChatPanel } from "./panels/chat.js";
 import { createPanels } from "./panels/index.js";
 import { SessionExpiredError, SessionManager } from "./session.js";
@@ -89,6 +90,189 @@ bus.on("viewer:distance", ({ text }) => {
 bus.on("viewer:distance-mode", ({ enabled, role }) => {
   if (enabled) toast(`Distance tool on the ${role} viewer — click two points (Esc clears).`, "", { timeout: 6000 });
   bus.emit("status", { message: enabled ? `Measure tool active on ${role}` : "Measure tool off" });
+});
+
+// ------------------------------------------------------------------ history
+/**
+ * Undo/redo (STEP 3): the last HISTORY_LIMIT displayed states, each with the
+ * Blob that produced it. Nothing here needs the server — restoring paints the
+ * stored Blob — except when a server id has since been evicted, in which case
+ * the stored Blob is re-uploaded and the state is re-pointed (see `revive`).
+ */
+const history = new ImageHistory();
+/** True while a history entry is being painted: those loads are not recorded. */
+let applyingHistory = false;
+
+/** The label shown for a state, e.g. "Brightness +40" or "Opened sample.jpg". */
+function stateLabel(role, info) {
+  if (role === "result") {
+    const last = state.lastOperation;
+    if (last && !last.error && last.imageId === info.image_id) return last.operation;
+    return info.source ? `Result — ${info.source}` : "Result";
+  }
+  return `Opened ${info.name ?? info.image_id}`;
+}
+
+async function cacheStateBlob(imageId) {
+  try {
+    const blob = await session.imageBlob(imageId);
+    history.rememberBlob(imageId, blob);
+  } catch {
+    // The viewer reports download problems; history simply stays blob-less
+    // for this step and falls back to the server if it is ever restored.
+  }
+}
+
+function recordHistory(role, info) {
+  if (applyingHistory || !info?.image_id) return;
+  history.record({
+    label: stateLabel(role, info),
+    role,
+    imageId: info.image_id,
+    info,
+    blob: session.blobCache.get(info.image_id) ?? null,
+    kmeans: state.kmeans,
+    snapshot: snapshotOf(state),
+  });
+  cacheStateBlob(info.image_id);
+  updateHistoryControls();
+}
+
+bus.on("image:loaded", ({ role, info }) => recordHistory(role, info));
+
+// looked up directly: `byId` is declared further down this module
+const undoButton = document.getElementById("tb-undo");
+const redoButton = document.getElementById("tb-redo");
+
+function updateHistoryControls() {
+  if (undoButton) {
+    undoButton.disabled = !history.canUndo;
+    undoButton.title = history.canUndo
+      ? `Undo ${history.current?.label ?? "the last step"} (Ctrl+Z) — ${history.summary} states kept`
+      : "Nothing to undo yet — run an operation first";
+  }
+  if (redoButton) {
+    redoButton.disabled = !history.canRedo;
+    redoButton.title = history.canRedo
+      ? "Redo the step you undid (Ctrl+Y)"
+      : "Nothing to redo — undo a step first";
+  }
+  if (sb.history) {
+    setCell(
+      sb.history,
+      history.size ? `History ${history.summary}` : "",
+      history.size
+        ? `Undo history: ${history.pointer + 1} of ${history.size} states (${HISTORY_LIMIT} kept, Blobs held in the browser)`
+        : "Undo history is empty",
+    );
+  }
+}
+
+/** Paint one slot of a state from a Blob we already hold. */
+async function paintSlot(role, info) {
+  const viewer = role === "original" ? originalViewer : resultViewer;
+  const token = ++loadTokens[role];
+  const blob = history.blobFor(info.image_id) ?? session.blobCache.get(info.image_id);
+  try {
+    if (blob) {
+      await viewer.loadBlob(blob, {
+        name: info.name ?? info.image_id,
+        description: `${info.source === "satellite" ? "satellite" : info.source} · ${info.width}×${info.height}`,
+      });
+      return;
+    }
+    await showImage(role, info); // not cached any more: ask the server
+  } catch (error) {
+    if (token !== loadTokens[role]) return;
+    report(error, "Could not restore that step");
+  }
+}
+
+/** Put the workspace back exactly as `entry` recorded it. */
+async function applyHistoryEntry(entry) {
+  applyingHistory = true;
+  try {
+    state.kmeans = entry.kmeans ?? null;
+    for (const role of ["original", "result"]) {
+      const slot = entry.snapshot[role];
+      if (!slot) {
+        state[role] = null;
+        loadTokens[role] += 1;
+        (role === "original" ? originalViewer : resultViewer).clear();
+        continue;
+      }
+      session.remember(slot.info ?? { image_id: slot.id });
+      state[role] = { id: slot.id, info: slot.info };
+      await paintSlot(role, slot.info ?? { image_id: slot.id, width: 0, height: 0 });
+    }
+  } finally {
+    applyingHistory = false;
+  }
+  updateHistoryControls();
+  updateStatusBar();
+}
+
+async function applyHistory(entry, verb) {
+  if (!entry) {
+    toast(`Nothing to ${verb}.`, "warn");
+    return null;
+  }
+  try {
+    await applyHistoryEntry(entry);
+    // keep the last-operation cells describing what is on screen now
+    if (entry.info) {
+      state.lastOperation = { operation: entry.label, imageId: entry.imageId, at: Date.now() };
+      bus.emit("operation:applied", { label: entry.label, info: entry.info });
+    }
+    toast(`${verb === "undo" ? "Undone" : "Redone"}: ${entry.label}`, "ok");
+    bus.emit("status", { message: `${verb === "undo" ? "Undo" : "Redo"} — ${entry.label}` });
+    return entry;
+  } catch (error) {
+    report(error, `Could not ${verb} that step`);
+    return null;
+  }
+}
+
+function undo() {
+  return applyHistory(history.undo(), "undo");
+}
+
+function redo() {
+  return applyHistory(history.redo(), "redo");
+}
+
+/**
+ * Re-upload a Blob we still hold so a server-side eviction is invisible: the
+ * operation is then retried against the replacement image id.
+ */
+async function revive(imageId) {
+  const blob = history.blobFor(imageId) ?? session.blobCache.get(imageId);
+  if (!blob) return null;
+  const info = await session.withSession((sid) =>
+    api.uploadImage(sid, blob, `restored-${String(imageId).slice(-6)}.png`),
+  );
+  session.blobCache.set(info.image_id, blob);
+  history.adopt(imageId, info, blob);
+  for (const slot of [state.original, state.result]) {
+    if (slot?.id === imageId) {
+      slot.id = info.image_id;
+      slot.info = info;
+    }
+  }
+  bus.emit("status", { message: `Restored image ${imageId} into the session (it had been evicted)` });
+  updateHistoryControls();
+  return info;
+}
+
+session.setReviver(revive);
+
+undoButton?.addEventListener("click", undo);
+redoButton?.addEventListener("click", redo);
+
+// A new session invalidates every server-side id, so the history goes too.
+bus.on("session:reset", () => {
+  history.reset();
+  updateHistoryControls();
 });
 
 bus.on("viewer:error", () => {
@@ -314,8 +498,13 @@ function exportCurrent() {
   bus.emit("export:request");
 }
 
+/** Set by the keydown listener; Ctrl+Shift+Z is the second redo binding. */
+let shiftDown = false;
+
 const shortcuts = [
   { key: "o", ctrl: true, run: () => bus.emit("open:file-request") },
+  { key: "z", ctrl: true, run: () => (shiftDown ? redo() : undo()) },
+  { key: "y", ctrl: true, run: () => redo() },
   { key: "s", ctrl: true, run: () => exportCurrent() },
   { key: "+", run: () => withActiveViewer((viewer) => viewer.zoomBy(1.25)) },
   { key: "=", run: () => withActiveViewer((viewer) => viewer.zoomBy(1.25)) },
@@ -333,6 +522,7 @@ window.addEventListener("keydown", (event) => {
     && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
   if (typing) return;
   const ctrl = event.ctrlKey || event.metaKey;
+  shiftDown = event.shiftKey;
   for (const shortcut of shortcuts) {
     if (shortcut.key !== event.key.toLowerCase()) continue;
     if (Boolean(shortcut.ctrl) !== ctrl) continue;
@@ -383,8 +573,22 @@ const menuBar = createMenuBar([
       { label: "Compress to .gch (GCH2)…", icon: "archive", onClick: () => bus.emit("huffman:compress-request") },
       { label: "Decompress a .gch…", icon: "file", onClick: () => { focusSection("files"); bus.emit("huffman:decompress-request"); } },
       { separator: true },
-      { label: "Undo", icon: "undo", disabled: true, reason: "not implemented" },
-      { label: "Redo", icon: "redo", disabled: true, reason: "not implemented" },
+      {
+        label: history.canUndo ? `Undo ${history.current?.label ?? ""}`.trim() : "Undo",
+        icon: "undo",
+        shortcut: "Ctrl+Z",
+        disabled: !history.canUndo,
+        reason: "nothing to undo — run an operation first",
+        onClick: undo,
+      },
+      {
+        label: "Redo",
+        icon: "redo",
+        shortcut: "Ctrl+Y",
+        disabled: !history.canRedo,
+        reason: "nothing to redo — undo a step first",
+        onClick: redo,
+      },
       { separator: true },
       {
         label: "New session",
@@ -535,6 +739,7 @@ const sb = {
   pixel: byId("sb-pixel"),
   viewer: byId("sb-viewer"),
   lastOp: byId("sb-lastop"),
+  history: byId("sb-history"),
   session: byId("sb-session"),
   api: byId("sb-api"),
 };
@@ -676,6 +881,11 @@ window.geocluster = {
   state,
   bus,
   viewers: { original: originalViewer, result: resultViewer },
+  history,
+  panels: panelById,
+  ApiError,
+  undo,
+  redo,
   selectTab: focusSection,
   selectSection: focusSection,
   setDockVisible,

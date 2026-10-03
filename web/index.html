@@ -40,10 +40,10 @@
         <span class="tb-sep" role="separator"></span>
 
         <div class="tb-group" role="group" aria-label="History">
-          <button class="tb-btn icon-btn disabled-stub" id="tb-undo" type="button" disabled title="Undo — not implemented yet (no operation history is kept)">
+          <button class="tb-btn icon-btn" id="tb-undo" type="button" disabled title="Nothing to undo yet — run an operation first">
             <span class="tb-label">Undo</span>
           </button>
-          <button class="tb-btn icon-btn disabled-stub" id="tb-redo" type="button" disabled title="Redo — not implemented yet (no operation history is kept)">
+          <button class="tb-btn icon-btn" id="tb-redo" type="button" disabled title="Nothing to redo — undo a step first">
             <span class="tb-label">Redo</span>
           </button>
         </div>
@@ -115,6 +115,7 @@
       <span class="sb-item" id="sb-pixel" title="Pixel value under the cursor"></span>
       <span class="sb-item sb-active-viewer" id="sb-viewer" title="Active viewer"></span>
       <span class="sb-item" id="sb-lastop" title="Last operation"></span>
+      <span class="sb-item" id="sb-history" title="Undo history"></span>
       <span class="sb-item" id="sb-session" title="Session"></span>
       <span class="sb-item" id="sb-api" title="API base URL"></span>
       <button class="sb-button" id="new-session" type="button" title="Start a new session (clears the server-side images)">New session</button>

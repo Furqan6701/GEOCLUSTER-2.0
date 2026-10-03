@@ -313,7 +313,8 @@ export function createMenuBar(menus) {
         type: "button",
         role: "menuitem",
         disabled,
-        title: item.reason || "",
+        // disabled items explain themselves; enabled ones name their shortcut
+        title: item.disabled ? item.reason || "" : item.note || item.shortcut || "",
         onclick: () => {
           closeAll();
           item.onClick?.();

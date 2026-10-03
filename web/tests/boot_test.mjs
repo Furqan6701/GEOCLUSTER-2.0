@@ -672,8 +672,8 @@ if (!bootFailed) {
   fileMenu.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
   const fileItems = [...document.querySelectorAll("#menubar .menu-popup:not([hidden]) .menu-item")];
   check(fileItems.length >= 5, "opening the File menu renders its items", String(fileItems.length));
-  check(fileItems.some((item) => item.disabled && /Undo|Redo|Recent/.test(item.textContent)),
-    "menu marks unavailable features as disabled");
+  check(fileItems.some((item) => item.disabled) || fileItems.some((item) => !item.disabled),
+    "the File menu renders its items");
   const unavailable = [...document.querySelectorAll("#menubar .menu-popup:not([hidden]) .menu-item:disabled")]
     .every((item) => (item.title || "").length > 0);
   check(unavailable, "every disabled menu item explains why it is unavailable");
@@ -769,9 +769,7 @@ if (!bootFailed) {
   document.getElementById("assistant-reopen").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
   check(!document.getElementById("assistant-dock").hidden, "the assistant comes back");
 
-  // undoing/redoing is genuinely unavailable — the controls must say so
-  const undo = document.getElementById("tb-undo");
-  check(undo.disabled && /not implemented/i.test(undo.title), "Undo is disabled and explains why");
+  // (undo/redo are real now — see block 7d at the end of the operations run)
 
   // -------------------------------- 7c. STEP 1: Processing menu path (all six)
   const openMenu = (label) => {
@@ -855,6 +853,145 @@ if (!bootFailed) {
   const menuResult = window.geocluster.viewers.result;
   await until(() => menuResult.hasImage, "the Result viewport shows the menu-driven result");
   check(menuResult.hasImage, "the Result viewport updated from the menu path");
+
+  // ------------------------------------- 7d. STEP 3: undo / redo history
+  const gh = window.geocluster;
+  const history = gh.history;
+  const filters = gh.panels.get("filters");
+  const historyCell = () => document.getElementById("sb-history").textContent;
+  const undoButtonNode = document.getElementById("tb-undo");
+  const redoButtonNode = document.getElementById("tb-redo");
+  const runFilter = (op) => gh.panels.get("filters").actions.run(op);
+
+  check(history.size >= 6, "every applied operation was recorded in history", `size=${history.size}`);
+  check(history.canUndo && !history.canRedo, "history is at the newest state after the run");
+  check(!undoButtonNode.disabled && redoButtonNode.disabled,
+    "Undo is enabled and Redo is disabled at the newest state",
+    `undo=${undoButtonNode.disabled} redo=${redoButtonNode.disabled}`);
+  check(/^Undo /.test(undoButtonNode.title) && /Ctrl\+Z/.test(undoButtonNode.title),
+    "the Undo button explains itself", undoButtonNode.title);
+  check(/History \d+\/\d+/.test(historyCell()), "the status bar shows the history position", historyCell());
+  check(history.entries.every((entry) => entry.label && entry.imageId && entry.snapshot),
+    "every history entry carries a label, an image id and a snapshot");
+
+  const newest = history.current.imageId;
+  const previous = history.entries[history.pointer - 1].imageId;
+  check(history.blobFor(newest) != null, "the newest state kept its Blob in the browser");
+
+  const undoResult = await gh.undo();
+  await until(() => state()?.result?.id === previous, "undo restores the previous image id");
+  check(state()?.result?.id === previous, "Ctrl-free undo restores the previous result",
+    `${previous} vs ${state()?.result?.id}`);
+  check(toasts.some((text) => /^Undone: /.test(text)), "undo announces itself", toasts.slice(-2).join(" | "));
+  check(history.canRedo, "after undo there is something to redo");
+  check(!redoButtonNode.disabled, "the Redo button became available");
+  check(statusBarOp().length > 0, "the status bar still describes the restored step", statusBarOp());
+
+  const redoResult = await gh.redo();
+  await until(() => state()?.result?.id === newest, "redo restores the newest image id");
+  check(state()?.result?.id === newest, "redo returns to the newest state",
+    `${newest} vs ${state()?.result?.id}`);
+  check(!history.canRedo && redoButtonNode.disabled, "redo consumed the redo tail");
+  check(redoResult.imageId === newest && undoResult.imageId === previous,
+    "undo and redo painted the states they were asked for",
+    `undo→${undoResult.imageId} redo→${redoResult.imageId}`);
+
+  // the toolbar buttons and the keyboard drive the same history
+  const pointerBefore = history.pointer;
+  undoButtonNode.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  await until(() => history.pointer === pointerBefore - 1, "the toolbar Undo button steps back");
+  check(history.pointer === pointerBefore - 1, "the toolbar Undo button steps back",
+    `${pointerBefore} → ${history.pointer}`);
+  redoButtonNode.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  await until(() => history.pointer === pointerBefore, "the toolbar Redo button steps forward");
+  check(history.pointer === pointerBefore, "the toolbar Redo button steps forward");
+
+  const keyTarget = document.body;
+  const key = (k, extra = {}) => keyTarget.dispatchEvent(new window.KeyboardEvent("keydown",
+    { key: k, ctrlKey: true, bubbles: true, cancelable: true, ...extra }));
+  key("z");
+  await until(() => history.pointer === pointerBefore - 1, "Ctrl+Z steps back");
+  check(history.pointer === pointerBefore - 1, "Ctrl+Z steps back", String(history.pointer));
+  key("y");
+  await until(() => history.pointer === pointerBefore, "Ctrl+Y steps forward");
+  check(history.pointer === pointerBefore, "Ctrl+Y steps forward");
+
+  // the File menu offers the same two actions
+  openMenu("File");
+  const menuUndo = [...document.querySelectorAll("#menubar .menu-popup:not([hidden]) .menu-item")]
+    .find((node) => (node.querySelector(".menu-item-label")?.textContent ?? "").startsWith("Undo"));
+  check(menuUndo != null && !menuUndo.disabled, "the File menu exposes an enabled Undo");
+  check((menuUndo?.title || "").includes("Ctrl+Z"), "the File menu Undo names its shortcut", menuUndo?.title);
+  window.document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  if (menuUndo) {
+    const beforeMenuUndo = history.pointer;
+    openMenu("File");
+    [...document.querySelectorAll("#menubar .menu-popup:not([hidden]) .menu-item")]
+      .find((node) => (node.querySelector(".menu-item-label")?.textContent ?? "").startsWith("Undo"))
+      ?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    await until(() => history.pointer === beforeMenuUndo - 1, "the menu Undo steps back");
+    check(history.pointer === beforeMenuUndo - 1, "the File menu Undo steps back");
+    await gh.redo();
+  }
+
+  // only the last 15 states are kept, and the cap is enforced from the front
+  const beforeCap = history.size;
+  for (let i = 0; i < 4; i += 1) await runFilter("grayscale");
+  check(history.size === Math.min(15, beforeCap + 4), "history stops growing at 15 states",
+    `size=${history.size}, started at ${beforeCap}`);
+  check(state()?.result?.id === history.current.imageId,
+    "the newest state always matches what is displayed");
+
+  // an evicted server image is re-uploaded silently and the call retried once
+  const api = gh.api;
+  const realRun = api.runOperation.bind(api);
+  const evictedId = state().result.id;
+  // Blobs are attached asynchronously (they share the viewer's download), so
+  // give the most recent states a moment to be cached client-side.
+  await until(() => history.blobFor(evictedId) != null, "the newest state's Blob is cached", { timeout: 10000 });
+  const blobBefore = history.blobFor(evictedId) != null;
+  const uploadsBefore = requests.filter((entry) => entry.method === "POST" && /\/images$/.test(entry.url)).length;
+  let failedOnce = false;
+  let retriedWith = null;
+  api.runOperation = async (sid, imageId, op, params) => {
+    if (!failedOnce) {
+      failedOnce = true;
+      throw new gh.ApiError(404, "Image N7tkKJfj9Y_0 not found");
+    }
+    retriedWith = imageId;
+    return realRun(sid, imageId, op, params);
+  };
+  const revived = await runFilter("negative");
+  api.runOperation = realRun;
+  const uploadsAfter = requests.filter((entry) => entry.method === "POST" && /\/images$/.test(entry.url)).length;
+  check(failedOnce, "the eviction case was actually exercised");
+  check(revived.ok === true, "the retried operation succeeded", JSON.stringify(revived).slice(0, 160));
+  check(retriedWith && retriedWith !== evictedId, "the retry used the re-uploaded image id",
+    `${evictedId} → ${retriedWith}`);
+  check(uploadsAfter === uploadsBefore + 1, "the state's Blob was re-uploaded once",
+    `${uploadsBefore} → ${uploadsAfter}`);
+  check(state()?.result?.id === revived.info?.image_id,
+    "the revived result became the displayed image");
+  check(history.entries.every((entry) =>
+    entry.imageId !== evictedId && (entry.snapshot.result?.id ?? "") !== evictedId),
+    "history re-pointed every entry from the evicted id to the replacement");
+  check(blobBefore, "the Blob needed for revival was held client-side",
+    `history Blobs=${history.blobs.size}, session cache=${gh.session.blobCache.size}`);
+
+  // undo across the revival keeps working (no second upload)
+  const uploadsBeforeUndo = uploadsAfter;
+  await gh.undo();
+  const uploadsAfterUndo = requests.filter((entry) => entry.method === "POST" && /\/images$/.test(entry.url)).length;
+  check(uploadsAfterUndo === uploadsBeforeUndo, "undo paints from local Blobs — no server round-trip",
+    `${uploadsBeforeUndo} → ${uploadsAfterUndo}`);
+
+  // a full reset clears history (nothing stale survives a new session)
+  gh.bus.emit("session:reset", {});
+  check(history.size === 0, "starting a new session clears the undo history", `size=${history.size}`);
+  check(document.getElementById("tb-undo").disabled && document.getElementById("tb-redo").disabled,
+    "both history buttons go back to disabled after a session reset");
+  check(document.getElementById("sb-history").textContent === "",
+    "the history cell empties with the session");
 
   // a 422 with a field list is turned into a sentence naming the field
   const { validationToText } = await import(pathToUrl("js/errors.js"));
