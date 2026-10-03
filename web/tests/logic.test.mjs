@@ -46,6 +46,9 @@ import {
   KMEANS_MAX_ITER,
   KMEANS_MAX_K,
   KMEANS_MIN_K,
+  PRESET_NAME_K,
+  defaultClassNames,
+  defaultNameFor,
   sharePercentage,
 } from "../js/panels/clusters.js";
 import {
@@ -1491,4 +1494,25 @@ test("register() reports the rule immediately and buttons without an image requi
   assert.equal(noImage.disabled, true, "but never while a request is in flight");
   assert.equal(gate.size(), 2);
   assert.equal(gate.canRun(), false);
+});
+
+// ------------- class names: land-cover presets only at K=5 (item 2) --------
+
+test("land-cover preset names apply only at K=5", () => {
+  assert.equal(PRESET_NAME_K, 5);
+  assert.equal(defaultClassNames(5), null, "K=5 keeps the API's land-cover presets");
+  assert.deepEqual(defaultClassNames(3), ["Class 1", "Class 2", "Class 3"]);
+  assert.deepEqual(defaultClassNames(2), ["Class 1", "Class 2"]);
+  assert.deepEqual(defaultClassNames(10).slice(-1), ["Class 10"]);
+  assert.equal(defaultClassNames(10).length, 10);
+});
+
+test("defaultNameFor picks the preset at K=5 and Class n everywhere else", () => {
+  assert.equal(defaultNameFor(5, 0, "Shadows"), "Shadows");
+  assert.equal(defaultNameFor(5, 4, "Grass / Lawn"), "Grass / Lawn");
+  assert.equal(defaultNameFor(4, 0, "Shadows"), "Class 1", "no preset words at K≠5");
+  assert.equal(defaultNameFor(6, 5, "Buildings / Rooftops"), "Class 6");
+  assert.equal(defaultNameFor(undefined, 0, undefined), "Class 1", "a missing K is safe");
+  assert.equal(defaultNameFor(5, 4, undefined), "Class 5",
+    "K=5 with no preset for that cluster still gets a name");
 });

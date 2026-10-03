@@ -64,6 +64,20 @@ the server's `image_id`: "Result — sample.jpg#negative (1600×1066)", not
 "new image EkEkL0bUvBYg". A boot assertion collects every `/images/<id>` id the
 session used and fails if any of them appears in a toast.
 
+### Clusters editor layout and class names
+
+* Each cluster is a **two-line grid row** (`grid-template-areas` on the table
+  rows): the swatch and the land-cover name on the first line, Min / Max / %
+  on the second. The number spinners are hidden (`appearance: textfield`) so a
+  3-digit bound fits its column. At the default 272 px sidebar (238 px on small
+  screens) the whole table fits without a horizontal scroller — the `.table-wrap`
+  was removed from this section.
+* Class names follow K: the API's land-cover presets at **K=5** only
+  (`Shadows`, `Dark Trees / Forest`, …); every other K gets `Class 1` … `Class K`
+  (`defaultClassNames()` / `defaultNameFor()` in `panels/clusters.js`).
+* "Reset ranges" now resets **only the min/max values** — names and colours the
+  user typed are carried into the re-render.
+
 ### The action gate (bug fix)
 
 * Root cause of the "not-allowed" point-operation buttons: the Filters panel

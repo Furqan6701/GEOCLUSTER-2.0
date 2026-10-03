@@ -666,13 +666,44 @@ if (!bootFailed) {
     "the editor table shows the verified sample.jpg min/max values", JSON.stringify(shown));
   check(Object.keys(kmeans?.assignments ?? {}).length === 5, "assignments received for every cluster");
 
+  // ------------- class names follow K: presets at 5, "Class n" otherwise
+  const editorNames = () => [...document.querySelectorAll("#section-clusters .cluster-table tbody input.cluster-name")]
+    .map((input) => input.value);
+  {
+    // at K=5 the names are exactly the ones the API's land-cover preset sends
+    const expected = state().kmeans.ranges.map((range, index) =>
+      String(state().kmeans.assignments?.[String(range.cluster)]?.name ?? `Class ${index + 1}`));
+    check(JSON.stringify(editorNames()) === JSON.stringify(expected),
+      "at K=5 the land-cover preset names are used",
+      `${JSON.stringify(editorNames())} vs ${JSON.stringify(expected)}`);
+    check(expected.some((name) => /Water|Grass|Trees|Roads|Shadows|Soil|Buildings/.test(name)),
+      "the K=5 names really are land-cover words", expected.join(", "));
+  }
+
   // ---------------------------------------- 3a. Clusters panel (STEP 2)
   {
     const tableCount = clusterSection.querySelectorAll("table.grid").length;
     check(tableCount === 1, "the Clusters section has exactly ONE table", String(tableCount));
     const headers = [...(editorTable?.querySelectorAll("thead th") ?? [])].map((node) => node.textContent.trim());
-    check(JSON.stringify(headers) === JSON.stringify(["Color", "Land cover", "Min", "Max", "% of pixels"]),
-      "the table columns are Color / Land cover / Min / Max / % of pixels", JSON.stringify(headers));
+    check(JSON.stringify(headers) === JSON.stringify(["Color", "Land cover", "Min", "Max", "%"]),
+      "the table columns are Color / Land cover / Min / Max / %", JSON.stringify(headers));
+    const percentHead = editorTable?.querySelector("thead th:nth-child(5)");
+    check(percentHead?.getAttribute("title") === "% of pixels",
+      "the % column still spells out what it means", percentHead?.getAttribute("title"));
+    check(clusterSection.querySelector(".table-wrap") == null,
+      "the editor has no horizontal scroller (the two-line rows fit the sidebar)");
+    const rowStyle = [...document.querySelectorAll("#section-clusters .cluster-table tbody tr")];
+    check(rowStyle.length === 5, "five editor rows", String(rowStyle.length));
+    check(rowStyle.every((row) => row.querySelectorAll("td").length === 5),
+      "every row still carries all five cells (color, name, min, max, %)");
+    // all five controls are visible in every row
+    check(rowStyle.every((row) => {
+      const color = row.querySelector('input[type="color"]');
+      const name = row.querySelector("input.cluster-name");
+      const bounds = [...row.querySelectorAll("input.cluster-bound")];
+      const share = row.querySelector(".cluster-share");
+      return color && name && bounds.length === 2 && share;
+    }), "each row shows its swatch, name, min, max and percentage");
     check(editorRows.length === 5, "one row per cluster", String(editorRows.length));
     check(editorRows.every((row) =>
       row.querySelectorAll('input[type="color"]').length === 1 &&
@@ -1108,6 +1139,31 @@ if (!bootFailed) {
     check(state()?.result === null, "Clear result removed the result");
     check(Boolean(state()?.original), "the working image survived Clear result");
     checkPointButtons("after Clear result (the original is still loaded)");
+  }
+
+  // ------------- K != 5 must not borrow land-cover words: "Class 1"…"Class K"
+  {
+    const kField = [...document.querySelectorAll("#section-clusters .field input")]
+      .find((node) => node.type === "number");
+    const before5 = JSON.stringify(editorNames());
+    kField.value = "3";
+    kField.dispatchEvent(new window.Event("change", { bubbles: true }));
+    clickButton("Run K-Means");
+    await until(() => state()?.kmeans?.k === 3 && !state()?.busy, "a run with K=3 finishes", { timeout: 20000 });
+    check(JSON.stringify(editorNames()) === JSON.stringify(["Class 1", "Class 2", "Class 3"]),
+      "at K=3 the clusters are named Class 1…Class 3", JSON.stringify(editorNames()));
+    check([...document.querySelectorAll("#section-clusters .cluster-table tbody tr")].length === 3,
+      "the editor table follows K");
+
+    // and K=5 goes back to the presets
+    kField.value = "5";
+    kField.dispatchEvent(new window.Event("change", { bubbles: true }));
+    clickButton("Run K-Means");
+    await until(() => state()?.kmeans?.k === 5 && !state()?.busy, "K=5 run restored", { timeout: 20000 });
+    const restored = state().kmeans.ranges.map((range, index) =>
+      String(state().kmeans.assignments?.[String(range.cluster)]?.name ?? `Class ${index + 1}`));
+    check(JSON.stringify(editorNames()) === JSON.stringify(restored),
+      "the preset names come back with K=5", `${JSON.stringify(editorNames())} vs ${before5}`);
   }
 
   // ------------------------------------------------------------- 4. filters

@@ -434,6 +434,15 @@ def check_workstation_layout() -> None:
     files_source = _js_text("js/panels/files.js")
     check("Download raw label map" in files_source and "labelmap:request" in files_source,
           "the label-map download lives in the Files panel")
+    check("grid-template-areas" in css and "grid-area: name" in css,
+          "the editor rows are laid out on two lines so every column fits the sidebar")
+    check('el("div", { class: "table-wrap" }' not in clusters_js,
+          "the editor no longer wraps its table in a horizontal scroller")
+    check("defaultClassNames" in clusters_js and "PRESET_NAME_K" in clusters_js,
+          "class names follow the K rule (presets at 5, Class n otherwise)")
+    check("appearance: textfield" in css,
+          "the number spinners are dropped so 3-digit bounds fit")
+
     for token in [".cluster-actions", ".cluster-bound", ".cluster-name", ".cluster-share"]:
         check(token in css, f"the Clusters styling exists: {token}")
 

@@ -29,6 +29,26 @@ export const KMEANS_MAX_ITER = 100;
 export const KMEANS_MIN_K = 2;
 export const KMEANS_MAX_K = 10;
 
+/**
+ * Land-cover preset names are the curated five-cluster palette; for any other
+ * K the panel names the clusters "Class 1" … "Class K" instead of borrowing
+ * land-cover words that do not describe the image.
+ */
+export const PRESET_NAME_K = 5;
+
+export function defaultClassNames(k) {
+  const count = Math.max(0, Math.round(Number(k) || 0));
+  if (count === PRESET_NAME_K) return null; // use the API's land-cover presets
+  return Array.from({ length: count }, (_value, index) => `Class ${index + 1}`);
+}
+
+/** The name a cluster starts with, for the given K. */
+export function defaultNameFor(k, index, presetName) {
+  const names = defaultClassNames(k);
+  if (names) return names[index] ?? `Class ${index + 1}`;
+  return String(presetName ?? `Class ${index + 1}`);
+}
+
 /** Percentage of the classified pixels that a count represents. */
 export function sharePercentage(count, total) {
   const value = Number(count);
@@ -115,19 +135,40 @@ export function createClustersPanel(ctx) {
   }
 
   // -------------------------------------------------------- editor table
-  function renderEditor(result) {
-    const ranges = result.ranges ?? [];
-    const assignments = result.assignments ?? {};
-    const total = (result.counts ?? ranges.map((range) => range.count))
+  /**
+   * (Re)build the editor. `keepEdits` carries the names and colours the user
+   * already typed into the next render — used by "Reset ranges", which must
+   * only put the min/max values back.
+   */
+  function renderEditor(result, { keepEdits = false } = {}) {
+    const ranges = result?.ranges ?? [];
+    const assignments = result?.assignments ?? {};
+    const previous = new Map(editorRows.map((row) => [row.cluster, row]));
+    const total = (result?.counts ?? ranges.map((range) => range.count))
       .reduce((sum, value) => sum + Number(value || 0), 0);
-    editorRows = ranges.map((range) => {
-      const assignment = assignments[String(range.cluster)] ?? { name: `Cluster ${range.cluster}`, color: [128, 128, 128] };
+
+    editorRows = ranges.map((range, index) => {
+      const assignment = assignments[String(range.cluster)] ?? {};
+      const carried = keepEdits ? previous.get(range.cluster) : null;
       const minInput = numberInput({ value: range.min, min: 0, max: 255 });
       const maxInput = numberInput({ value: range.max, min: 0, max: 255 });
-      const nameInput = el("input", { type: "text", value: String(assignment.name), class: "cluster-name" });
-      const colorInput = el("input", { type: "color", value: rgbToHex(assignment.color), class: "cluster-color" });
+      const nameInput = el("input", {
+        type: "text",
+        class: "cluster-name",
+        // land-cover presets at K=5, "Class 1"…"Class K" for every other K
+        value: String(carried?.nameInput.value ?? defaultNameFor(result?.k, index, assignment.name)),
+        "aria-label": `Land cover for cluster ${index + 1}`,
+      });
+      const colorInput = el("input", {
+        type: "color",
+        class: "cluster-color",
+        value: carried ? carried.colorInput.value : rgbToHex(assignment.color),
+        "aria-label": `Colour for cluster ${index + 1}`,
+      });
       minInput.classList.add("cluster-bound");
       maxInput.classList.add("cluster-bound");
+      minInput.setAttribute("aria-label", `Minimum for cluster ${index + 1}`);
+      maxInput.setAttribute("aria-label", `Maximum for cluster ${index + 1}`);
       const count = Number(range.count ?? 0);
       const share = el("span", { class: "cluster-share", text: formatPercentage(sharePercentage(count, total)) });
       const row = { cluster: range.cluster, minInput, maxInput, nameInput, colorInput, count, share, total };
@@ -138,13 +179,15 @@ export function createClustersPanel(ctx) {
     });
 
     setChildren(editorHost, [
-      el("div", { class: "table-wrap" }, el("table", { class: "grid cluster-table" }, [
+      // no .table-wrap horizontal scroller: the two-line row layout below fits
+      // the default sidebar width (see .cluster-table in styles.css)
+      el("table", { class: "grid cluster-table" }, [
         el("thead", {}, el("tr", {}, [
-          el("th", { text: "Color" }),
+          el("th", { class: "cluster-color-head", text: "Color" }),
           el("th", { text: "Land cover" }),
           el("th", { class: "num", text: "Min" }),
           el("th", { class: "num", text: "Max" }),
-          el("th", { class: "num", text: "% of pixels" }),
+          el("th", { class: "num", text: "%", title: "% of pixels", "aria-label": "% of pixels" }),
         ])),
         el("tbody", {}, editorRows.map((row) => el("tr", { dataset: { cluster: String(row.cluster) } }, [
           el("td", { class: "cluster-color-cell" }, row.colorInput),
@@ -153,7 +196,7 @@ export function createClustersPanel(ctx) {
           el("td", { class: "num" }, row.maxInput),
           el("td", { class: "num" }, row.share),
         ]))),
-      ])),
+      ]),
       el("div", { class: "cluster-actions" }, [
         button("Classify", classify, { variant: "primary", size: "small" }),
         button("Reset ranges", resetRanges, { size: "small", variant: "ghost" }),
@@ -191,8 +234,8 @@ export function createClustersPanel(ctx) {
   /** Put every min/max back to the values the algorithm returned. */
   function resetRanges() {
     if (!state.kmeans) return;
-    renderEditor(state.kmeans);
-    toast("Ranges reset to the K-Means values.", "ok");
+    renderEditor(state.kmeans, { keepEdits: true });
+    toast("Ranges reset to the values K-Means found.", "ok");
   }
 
   /** The editor as legend rows: what Classify will send and the map will draw. */

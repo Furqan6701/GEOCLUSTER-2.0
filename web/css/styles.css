@@ -639,13 +639,43 @@ table.grid input[type="color"] { height: 18px; }
 .viewer-preview[hidden] { display: none; }
 
 /* ─────────────────────── Clusters: one editor table ───────────────────── */
-table.grid.cluster-table { table-layout: auto; }
-table.grid.cluster-table th, table.grid.cluster-table td { vertical-align: middle; }
-.cluster-color-cell { width: 34px; }
-.cluster-color-cell input[type="color"] { width: 30px; height: 20px; padding: 0; }
-table.grid.cluster-table input.cluster-bound { width: 52px; text-align: right; }
-table.grid.cluster-table input.cluster-name { width: 100%; min-width: 108px; }
-.cluster-share { font-family: var(--mono); font-size: var(--fs-xs); white-space: nowrap; }
+/* Two lines per cluster so all five columns fit the default sidebar width
+   (272 px, 238 px on small screens) without a horizontal scroller:
+     line 1  [swatch] [ land cover name ..................... ]
+     line 2  [      ] [ min ] [ max ] [ % ]                    */
+table.grid.cluster-table { width: 100%; table-layout: fixed; }
+table.grid.cluster-table thead tr,
+table.grid.cluster-table tbody tr {
+  display: grid;
+  grid-template-columns: 22px repeat(4, minmax(0, 1fr));
+  grid-template-areas:
+    "color name name name name"
+    ".     min  max  pct  .   ";
+  align-items: center;
+  column-gap: 4px;
+  row-gap: 1px;
+}
+table.grid.cluster-table thead th,
+table.grid.cluster-table tbody td { display: block; min-width: 0; padding: 2px 0; border-bottom: 0; }
+table.grid.cluster-table thead tr { border-bottom: 1px solid var(--border); padding-bottom: 2px; }
+table.grid.cluster-table tbody tr { border-bottom: 1px solid var(--border); padding: 3px 0; }
+table.grid.cluster-table th:nth-child(1), table.grid.cluster-table td:nth-child(1) { grid-area: color; }
+table.grid.cluster-table th:nth-child(2), table.grid.cluster-table td:nth-child(2) { grid-area: name; }
+table.grid.cluster-table th:nth-child(3), table.grid.cluster-table td:nth-child(3) { grid-area: min; }
+table.grid.cluster-table th:nth-child(4), table.grid.cluster-table td:nth-child(4) { grid-area: max; }
+table.grid.cluster-table th:nth-child(5), table.grid.cluster-table td:nth-child(5) { grid-area: pct; }
+table.grid.cluster-table thead th { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cluster-color-cell { display: flex; align-items: center; }
+.cluster-color-cell input[type="color"] { width: 20px; height: 18px; padding: 0; flex: none; }
+table.grid.cluster-table input.cluster-bound {
+  width: 100%; text-align: right; font-family: var(--mono);
+  /* no spinner arrows: they ate the width a 3-digit value needs */
+  appearance: textfield; -moz-appearance: textfield;
+}
+table.grid.cluster-table input.cluster-bound::-webkit-outer-spin-button,
+table.grid.cluster-table input.cluster-bound::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+table.grid.cluster-table input.cluster-name { width: 100%; min-width: 0; }
+.cluster-share { display: block; text-align: right; font-family: var(--mono); font-size: var(--fs-xs); white-space: nowrap; }
 
 /* Classify / Reset ranges must never clip their labels */
 .cluster-actions { display: flex; gap: 6px; margin-top: 7px; flex-wrap: wrap; }
