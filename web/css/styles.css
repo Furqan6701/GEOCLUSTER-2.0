@@ -720,7 +720,7 @@ table.grid.cluster-table input.cluster-bound::-webkit-inner-spin-button { -webki
 table.grid.cluster-table input.cluster-name { width: 100%; min-width: 0; }
 .cluster-share { display: block; text-align: right; font-family: var(--mono); font-size: var(--fs-xs); white-space: nowrap; }
 
-/* Classify / Reset ranges must never clip their labels */
+/* Generate map / Reset ranges must never clip their labels */
 .cluster-actions { display: flex; gap: 6px; margin-top: 7px; flex-wrap: wrap; }
 .cluster-actions .btn { flex: 1 1 auto; min-width: max-content; }
 
