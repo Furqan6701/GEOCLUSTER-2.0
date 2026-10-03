@@ -16,7 +16,8 @@ import {
   normalizeBase,
   resolveApiBase,
 } from "../js/config.js";
-import { ApiError, detailToText, humanizeError } from "../js/errors.js";
+import { ApiError, detailToText, humanizeError, sanitizeMessage, validationToText } from "../js/errors.js";
+import { OPERATIONS_WITH_PARAMS, describeOperation } from "../js/panels/operations.js";
 import { ApiClient } from "../js/api.js";
 import { defaultParamsFor, describeCommand, executeCommands } from "../js/commands.js";
 
@@ -113,7 +114,7 @@ test("detailToText handles every detail shape", () => {
       { loc: ["body", "value"], msg: "Input should be less than or equal to 255" },
       { loc: ["body", "window"], msg: "window must be an odd number" },
     ]),
-    "value: Input should be less than or equal to 255; window: window must be an odd number",
+    "value must be 255 or less; window size must be an odd number",
   );
   assert.equal(detailToText(["one", "two"]), "one; two");
   assert.equal(detailToText({ detail: "nested" }), "nested");
@@ -145,9 +146,9 @@ test("humanizeError maps statuses to friendly text", () => {
 test("humanizeError turns a 422 detail list into one sentence and never shows JSON", () => {
   const error = new ApiError(422, [{ loc: ["body", "k"], msg: "Input should be less than or equal to 20" }]);
   const text = humanizeError(error);
-  assert.match(text, /Please check these values/);
-  assert.match(text, /k: Input should be less than or equal to 20/);
+  assert.equal(text, "cluster count (K) must be 20 or less");
   assert.doesNotMatch(text, /[{}[\]"]/);
+  assert.doesNotMatch(text, /json/i);
 });
 
 // -------------------------------------------------------------- api client
@@ -259,7 +260,7 @@ test("request throws ApiError with the API detail (string and list)", async () =
     (error) => {
       assert.ok(error instanceof ApiError);
       assert.equal(error.status, 422);
-      assert.match(humanizeError(error), /k: too big/);
+      assert.match(humanizeError(error), /cluster count \(K\) too big/);
       return true;
     },
   );
@@ -372,4 +373,79 @@ test("chat posts the message", async () => {
   assert.equal(calls[0].url, `${DEFAULT_API_BASE}/ai/chat`);
   assert.deepEqual(parseBody(calls[0].init), { message: "what is NDVI?" });
   assert.equal(response.reply, "hi");
+});
+
+// ------------------------------------------- STEP 1: operation params + 422s
+
+test("describeOperation names what was applied", () => {
+  assert.equal(describeOperation("grayscale"), "Grayscale");
+  assert.equal(describeOperation("brightness", { value: 40 }), "Brightness +40");
+  assert.equal(describeOperation("brightness", { value: -30 }), "Brightness -30");
+  assert.equal(describeOperation("threshold", { value: 128 }), "Threshold 128");
+  assert.equal(describeOperation("meanfilter", { window: 3 }), "Mean filter w=3");
+  assert.equal(describeOperation("brightness"), "Brightness");
+});
+
+test("the operations that require a body are the ones the API requires", () => {
+  assert.deepEqual([...OPERATIONS_WITH_PARAMS], ["brightness", "threshold", "meanfilter"]);
+});
+
+test("validationToText names the field for list details", () => {
+  assert.equal(
+    validationToText([{ loc: ["body", "value"], msg: "Input should be less than or equal to 255" }]),
+    "value must be 255 or less",
+  );
+  assert.equal(
+    validationToText([{ loc: ["body", "window"], msg: "window must be an odd number" }], { operation: "meanfilter" }),
+    "window size must be an odd number",
+  );
+  assert.equal(
+    validationToText([{ loc: ["body", "k"], msg: "Field required" }], { operation: "kmeans" }),
+    "cluster count (K) is required",
+  );
+  assert.equal(
+    validationToText([
+      { loc: ["body", "value"], msg: "Input should be less than or equal to 255" },
+      { loc: ["body", "window"], msg: "window must be an odd number" },
+    ]),
+    "value must be 255 or less; window size must be an odd number",
+  );
+});
+
+test("the API's missing-body message becomes a sentence naming the field", () => {
+  const text = validationToText("Operation 'brightness' requires a JSON body matching BrightnessRequest.",
+    { operation: "brightness" });
+  assert.equal(text, "Brightness needs a whole number from \u2212255 to 255, but none was sent.");
+  assert.ok(!/json/i.test(text), "never says JSON");
+});
+
+test("parameterless operations are described as such", () => {
+  assert.equal(validationToText("Operation 'grayscale' takes no parameters.", { operation: "grayscale" }),
+    "Grayscale does not take any parameters.");
+});
+
+test("no 422 message ever leaks raw JSON", () => {
+  const samples = [
+    [{ loc: ["body", "value"], msg: "Input should be a valid integer" }],
+    "Operation 'threshold' requires a JSON body matching ThresholdRequest.",
+    { detail: "boom" },
+    null,
+    [{ loc: ["body", "value"], msg: "value: {\"detail\": \"x\"}" }],
+  ];
+  for (const sample of samples) {
+    const text = validationToText(sample, { operation: "threshold" });
+    assert.ok(!/\{/.test(text), `no braces in: ${text}`);
+    assert.ok(!/json/i.test(text), `no JSON mention in: ${text}`);
+  }
+});
+
+test("sanitizeMessage strips developer jargon", () => {
+  assert.ok(!/json/i.test(sanitizeMessage("requires a JSON body matching MeanFilterRequest.")));
+  assert.equal(sanitizeMessage('{"detail": "x"}'), "detail: x");
+  assert.doesNotMatch(sanitizeMessage('{"detail": "x"}'), /[{}"]/);
+});
+
+test("humanizeError passes the operation through to the 422 mapper", () => {
+  const error = new ApiError(422, [{ loc: ["body", "value"], msg: "Field required" }]);
+  assert.equal(humanizeError(error, { operation: "brightness" }), "value is required");
 });

@@ -321,7 +321,9 @@ export function createMenuBar(menus) {
       }, [
         icon(item.icon ?? (item.checked ? "check" : "dot"), { size: 13, class: "menu-item-icon" }),
         el("span", { class: "menu-item-label", text: item.label }),
-        disabled && item.reason ? el("span", { class: "menu-item-note", text: item.reason }) : null,
+        (item.disabled ? item.reason : item.note)
+          ? el("span", { class: "menu-item-note", text: item.disabled ? item.reason : item.note })
+          : null,
         item.shortcut ? el("span", { class: "menu-item-shortcut", text: item.shortcut }) : null,
       ]);
       return node;

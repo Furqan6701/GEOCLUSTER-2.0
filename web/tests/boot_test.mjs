@@ -89,6 +89,9 @@ function check(condition, label, detail = "") {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** file:// URL of a file inside web/ (for importing app modules in tests). */
+const pathToUrl = (relative) => pathToFileURL(path.join(WEB, relative)).href;
+
 async function until(predicate, label, { timeout = 20000, interval = 25 } = {}) {
   const deadline = Date.now() + timeout;
   let last = null;
@@ -206,6 +209,8 @@ if (typeof window.Element.prototype.setPointerCapture !== "function") {
   window.Element.prototype.setPointerCapture = function setPointerCapture() {};
   window.Element.prototype.releasePointerCapture = function releasePointerCapture() {};
 }
+// jsdom has neither of these; real browsers do
+window.Element.prototype.scrollIntoView ??= function scrollIntoView() {};
 window.ResizeObserver = class ResizeObserver {
   observe() {}
   unobserve() {}
@@ -239,11 +244,19 @@ window.createImageBitmap = async (blob) => {
 };
 
 // fetch: Node's, with jsdom FormData/Blob converted to Node's own types.
+/** Every request the app makes, so tests can assert on exact bodies. */
+const requests = [];
+
 async function patchedFetch(input, init = {}) {
   const options = { ...init };
   // the page's own origin: a relative "/api/..." call belongs to the server
   // that served the page (this is what a real browser does)
   if (typeof input === "string" && input.startsWith("/")) input = WEB_ORIGIN + input;
+  requests.push({
+    url: String(input),
+    method: (options.method ?? "GET").toUpperCase(),
+    body: typeof options.body === "string" ? options.body : options.body ? `<${options.body.constructor?.name}>` : null,
+  });
   if (options.body && options.body.constructor?.name === "FormData") {
     const converted = new NodeFormData();
     for (const [key, value] of options.body.entries()) {
@@ -430,8 +443,8 @@ if (!bootFailed) {
     check(Boolean(next), `${label} → new image id`, String(next));
     previousId = next ?? previousId;
   }
-  check(toasts.some((text) => /grayscale complete/.test(text)) && toasts.some((text) => /meanfilter complete/.test(text)),
-    "filter completion toasts shown", toasts.slice(-3).join(" | "));
+  check(toasts.some((text) => /Grayscale applied/.test(text)) && toasts.some((text) => /Mean filter w=3 applied/.test(text)),
+    "filter completion toasts name what was applied", toasts.slice(-3).join(" | "));
 
   // the Result viewport must actually show the operation output
   const rv = window.geocluster.viewers.result;
@@ -676,6 +689,96 @@ if (!bootFailed) {
   // undoing/redoing is genuinely unavailable — the controls must say so
   const undo = document.getElementById("tb-undo");
   check(undo.disabled && /not implemented/i.test(undo.title), "Undo is disabled and explains why");
+
+  // -------------------------------- 7c. STEP 1: Processing menu path (all six)
+  const openMenu = (label) => {
+    const button = [...document.querySelectorAll("#menubar .menu-button")]
+      .find((node) => node.textContent.trim() === label);
+    if (!button) {
+      check(false, `the ${label} menu exists`);
+      return false;
+    }
+    button.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    return true;
+  };
+  const clickMenuItem = (menuLabel, itemLabel) => {
+    if (!openMenu(menuLabel)) return false;
+    const items = [...document.querySelectorAll("#menubar .menu-popup:not([hidden]) .menu-item")];
+    const item = items.find((node) =>
+      (node.querySelector(".menu-item-label")?.textContent ?? "").trim().startsWith(itemLabel));
+    if (!item) {
+      check(false, `menu item "${itemLabel}" exists in ${menuLabel}`);
+      return false;
+    }
+    item.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    return true;
+  };
+  const requestsFor = (operation) => requests.filter((entry) =>
+    entry.url.includes(`/operations/${operation}`) && entry.method === "POST");
+
+  const statusBarOp = () => document.getElementById("sb-lastop").textContent;
+  const opMenuLabels = {
+    grayscale: "Grayscale",
+    negative: "Negative",
+    laplacian: "Laplacian",
+    brightness: "Brightness",
+    threshold: "Threshold",
+    meanfilter: "Mean filter",
+  };
+  const expectedBodies = {
+    grayscale: null,
+    negative: null,
+    laplacian: null,
+    brightness: "{\"value\":40}",
+    threshold: "{\"value\":128}",
+    meanfilter: "{\"window\":3}",
+  };
+  const expectedLabels = {
+    grayscale: "Grayscale",
+    negative: "Negative",
+    laplacian: "Laplacian",
+    brightness: "Brightness +40",
+    threshold: "Threshold 128",
+    meanfilter: "Mean filter w=3",
+  };
+
+  for (const operation of Object.keys(opMenuLabels)) {
+    const before = state()?.result?.id ?? null;
+    const beforeCount = requestsFor(operation).length;
+    clickMenuItem("Processing", opMenuLabels[operation]);
+    const applied = await until(() => {
+      const id = state()?.result?.id;
+      return id && id !== before ? id : null;
+    }, `menu: ${opMenuLabels[operation]} produces a result`, { timeout: 25000 });
+    check(Boolean(applied), `Processing menu runs ${opMenuLabels[operation]}`, String(applied));
+
+    const sent = requestsFor(operation).slice(beforeCount);
+    const body = sent.length ? sent[sent.length - 1].body : "NO REQUEST";
+    check(body === expectedBodies[operation],
+      `menu: ${opMenuLabels[operation]} sends the right body`,
+      `sent ${body}, expected ${expectedBodies[operation]}`);
+
+    const label = expectedLabels[operation];
+    check(toasts.some((text) => text.startsWith(label)), `menu: toast confirms "${label}"`,
+      toasts.slice(-2).join(" | "));
+    check(statusBarOp().includes(label), `menu: status bar shows "${label}"`, statusBarOp());
+    check(!toasts.slice(-2).some((text) => /JSON|\{"detail"/.test(text)),
+      `menu: ${opMenuLabels[operation]} never leaks raw JSON`, toasts.slice(-2).join(" | "));
+    check(state()?.lastOperation?.operation === label, `menu: last operation recorded for ${label}`,
+      String(state()?.lastOperation?.operation));
+  }
+
+  // the Result viewport really is showing the last of those
+  const menuResult = window.geocluster.viewers.result;
+  await until(() => menuResult.hasImage, "the Result viewport shows the menu-driven result");
+  check(menuResult.hasImage, "the Result viewport updated from the menu path");
+
+  // a 422 with a field list is turned into a sentence naming the field
+  const { validationToText } = await import(pathToUrl("js/errors.js"));
+  check(validationToText([{ loc: ["body", "value"], msg: "Input should be less than or equal to 255" }])
+    === "value must be 255 or less", "422 field lists become friendly text");
+  check(!/json/i.test(validationToText("Operation 'brightness' requires a JSON body matching BrightnessRequest.",
+    { operation: "brightness" })), "the API's JSON-body message is rewritten without the word JSON");
 
   // ------------------------------------------------- 8. session-expired path
   const doomed = "00000000-0000-0000-0000-000000000000";

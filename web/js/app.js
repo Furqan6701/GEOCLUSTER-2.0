@@ -144,6 +144,8 @@ syncToggle.node.id = "tb-sync";
 // -------------------------------------------------------------------- panels
 const panels = createPanels(ctx);
 const panelById = new Map(panels.map((panel) => [panel.id, panel]));
+// the assistant dispatches operations through the same parameterised path
+ctx.panels = panelById;
 const toolboxSections = document.getElementById("toolbox-sections");
 
 for (const panel of panels) {
@@ -157,7 +159,8 @@ function focusSection(id) {
     if (other !== panel) other.section.setCollapsed(true);
   }
   panel.section.setCollapsed(false);
-  panel.section.node.scrollIntoView({ block: "nearest" });
+  // guarded: some environments (and older browsers) have no scrollIntoView
+  panel.section.node.scrollIntoView?.({ block: "nearest" });
   setDockVisible("toolbox", true);
   return true;
 }
@@ -325,9 +328,26 @@ window.addEventListener("keydown", (event) => {
 });
 
 // -------------------------------------------------------------------- menus
+/**
+ * Every menu/toolbar entry point funnels through the Filters panel's `run()`,
+ * which is the single place that knows the parameters each operation needs —
+ * so a menu click can never dispatch an operation without its body.
+ */
 const runOperation = (operation) => () => {
+  const filters = panelById.get("filters");
   focusSection("filters");
-  panelById.get("filters")?.actions?.run(operation);
+  filters?.actions?.revealParams(operation);
+  filters?.actions?.run(operation);
+};
+
+/** Current value the Filters panel would send, for the menu's hint line. */
+const operationHint = (operation) => {
+  const filters = panelById.get("filters");
+  if (!filters?.actions?.paramsFor) return "";
+  if (operation === "grayscale" || operation === "negative" || operation === "laplacian") return "no parameters";
+  const params = filters.actions.paramsFor(operation);
+  if (params === undefined || params === null) return "set the value in Filters";
+  return `uses ${JSON.stringify(params)}`.replace(/[{}"]/g, "").replace(/:/g, ": ");
 };
 
 const menuBar = createMenuBar([
@@ -382,13 +402,13 @@ const menuBar = createMenuBar([
   {
     label: "Processing",
     items: () => [
-      { label: "Grayscale", icon: "filters", onClick: runOperation("grayscale") },
-      { label: "Negative", icon: "filters", onClick: runOperation("negative") },
-      { label: "Laplacian", icon: "filters", onClick: runOperation("laplacian") },
+      { label: "Grayscale", icon: "filters", note: operationHint("grayscale"), onClick: runOperation("grayscale") },
+      { label: "Negative", icon: "filters", note: operationHint("negative"), onClick: runOperation("negative") },
+      { label: "Laplacian", icon: "filters", note: operationHint("laplacian"), onClick: runOperation("laplacian") },
       { separator: true },
-      { label: "Brightness…", icon: "filters", onClick: runOperation("brightness") },
-      { label: "Threshold…", icon: "filters", onClick: runOperation("threshold") },
-      { label: "Mean filter…", icon: "filters", onClick: runOperation("meanfilter") },
+      { label: "Brightness…", icon: "filters", note: operationHint("brightness"), onClick: runOperation("brightness") },
+      { label: "Threshold…", icon: "filters", note: operationHint("threshold"), onClick: runOperation("threshold") },
+      { label: "Mean filter…", icon: "filters", note: operationHint("meanfilter"), onClick: runOperation("meanfilter") },
       { separator: true },
       {
         label: "Clear result",
@@ -499,6 +519,7 @@ const sb = {
   cursor: byId("sb-cursor"),
   pixel: byId("sb-pixel"),
   viewer: byId("sb-viewer"),
+  lastOp: byId("sb-lastop"),
   session: byId("sb-session"),
   api: byId("sb-api"),
 };
@@ -549,12 +570,26 @@ function updateStatusBar() {
   sb.session.textContent = state.sessionId
     ? `Session ${state.sessionId.slice(0, 8)}… · ${state.ttlMinutes ?? "?"} min · max ${state.maxImages ?? "?"}`
     : "Session —";
+  if (state.lastOperation && !state.lastOperation.error) {
+    sb.lastOp.textContent = `Last: ${state.lastOperation.operation}`;
+    sb.lastOp.title = `Last operation: ${state.lastOperation.operation}`;
+  } else if (state.lastOperation?.error) {
+    sb.lastOp.textContent = `Last: ${state.lastOperation.operation}`;
+    sb.lastOp.title = "The last operation did not complete";
+  }
   sb.api.textContent = state.health ? `API ${apiBase} ●` : `API ${apiBase} ○`;
   sb.api.className = `sb-item ${state.health ? "ok" : "bad"}`;
 }
 
 bus.on("viewer:camera", ({ role }) => {
   if (role === activeRole) updateStatusBar();
+});
+
+// the status bar keeps the last operation visible until the next one
+bus.on("operation:applied", ({ label, info }) => {
+  sb.lastOp.textContent = `Last: ${label} (${info.width}×${info.height})`;
+  sb.lastOp.title = `Last operation: ${label} → image ${info.image_id}`;
+  updateStatusBar();
 });
 bus.on("viewer:cursor", ({ role, inside, x, y, r, g, b, gray }) => {
   if (role !== activeRole) return;

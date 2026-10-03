@@ -410,6 +410,18 @@ p { margin: 0; }
 .row.tight { gap: 4px; }
 .row.center { align-items: center; }
 
+/* brief highlight when the Processing menu reveals an operation's controls */
+@keyframes rowFlash {
+  0% { background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
+  100% { background: transparent; box-shadow: inset 2px 0 0 transparent; }
+}
+.row.flash {
+  animation: rowFlash 1.4s ease-out;
+  border-radius: 3px;
+  padding: 2px 4px;
+  margin: -2px -4px;
+}
+
 input[type="text"], input[type="number"], input[type="date"], input[type="search"], textarea, select {
   background: var(--bg-input);
   border: 1px solid var(--border-strong);

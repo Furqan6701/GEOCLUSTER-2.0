@@ -104,6 +104,16 @@ export function createChatPanel(ctx) {
   // ------------------------------------------------------------- command plumbing
   const handlers = {
     async runOperation(operation, params) {
+      // Same dispatcher as the Filters panel and the Processing menu, so the
+      // chat gets identical parameters, feedback and error handling.
+      const filters = ctx.panels?.get?.("filters");
+      if (filters) {
+        const outcome = await filters.actions.run(operation, params);
+        if (outcome?.ok === false && outcome.reason === "no-image") {
+          throw new Error("no image loaded — upload or fetch one first");
+        }
+        return;
+      }
       const active = activeImage(state);
       if (!active) throw new Error("no image loaded — upload or fetch one first");
       const info = await session.withSession((sid) => api.runOperation(sid, active.id, operation, params));
