@@ -406,15 +406,6 @@ export class MapStudio {
     if (this.isOpen()) this.render();
   }
 
-  /** Used by the Analysis menu's "Map legend" entry. */
-  setLegendVisible(visible) {
-    if (!this.settings) return false;
-    this.settings.legend.visible = Boolean(visible);
-    if (this.isOpen()) this.render();
-    this.bus?.emit?.("status", { message: `Map legend ${this.settings.legend.visible ? "shown" : "hidden"}` });
-    return this.settings.legend.visible;
-  }
-
   _update(mutate) {
     if (!this.settings) return;
     mutate(this.settings);

@@ -10,6 +10,10 @@
  * real Origin header that the API's ALLOWED_ORIGINS accepts.
  */
 
+/** Product name and version, shown in the Help → About dialog only. */
+export const PROJECT_NAME = "GeoCluster 2.0";
+export const APP_VERSION = "2.0";
+
 export const DEFAULT_API_BASE = "http://localhost:8000";
 export const API_BASE_STORAGE_KEY = "geocluster.apiBase";
 export const DEFAULT_PORT = 5173;

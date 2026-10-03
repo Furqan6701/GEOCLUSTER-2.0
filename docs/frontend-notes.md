@@ -419,20 +419,56 @@ image regardless of which pane is active.
   `scale` from the upload response. Without a calibration number the UI asks
   for it instead of inventing one.
 
-### Menu honesty (STEP 6)
+### The menus, item by item (item 14)
 
-Every entry in File / View / Processing / Analysis / Help does something real.
-The never-implemented *Recent files* entry was removed and replaced by
-*Session images…*, which reveals the Source section (the list it was standing in
-for). Nothing in the menus says "not implemented", "planned" or "coming soon".
+Every entry in File / Edit / View / Processing / Analysis / Help does something
+real. Nothing says "not implemented", "planned" or "coming soon", and the old
+*Recent files* / *Session images…* placeholders are gone entirely (the session
+image list they pointed at no longer exists).
+
+* **File** — Open image… (Ctrl+O) · Fetch Sentinel-2 tile… · — · Export current
+  image (PNG)… (Ctrl+S) · *Export raw label map (PNG)…* · Compress to .gch
+  (GCH2)… · Open .gch file (decompress)… · — · New session.
+  The label-map entry is not a greyed-out promise: it **appears** once
+  `state.kmeans` exists (the label map is one of K-Means' outputs) and disappears
+  again when a new image takes over the Original viewport. **New session asks
+  first** (`confirmDialog`): the dialog says the current session, its images and
+  the undo history are discarded, and cancelling keeps everything. The status-bar
+  *New session* button goes through the same `startNewSession()`.
+* **Edit** (between File and View) — Undo (Ctrl+Z) · Redo (Ctrl+Y). They were
+  taken out of the File menu; the toolbar buttons and the shortcuts are unchanged.
+* **View** — Fit to view · Actual size · Zoom in · Zoom out · — · Show toolbox ·
+  Show assistant · Show result viewport. Zoom 25 %/50 %, Pixel readout, Pan tool,
+  Measure distance, Synchronise and Map composer were removed from the menu; the
+  **toolbar keeps those buttons and the shortcuts still work**.
+* **Processing** — Grayscale · Negative · Laplacian · — · Brightness · Threshold ·
+  Mean filter · — · Clear result. The right-hand notes ("uses {value: 40}") are
+  gone. Grayscale/Negative/Laplacian run immediately (they take no parameters);
+  **Brightness/Threshold/Mean filter open the Filters panel and put the cursor on
+  their slider** (`focusOperation` → `focusSection("filters")` +
+  `revealParams()`), so a menu click can never apply a value the user has not
+  seen. The slider itself is the readout now.
+* **Analysis** — Run K-Means… · Histogram · — · Map composer… . *Histogram* (the
+  renamed "Histogram & statistics") emits `histogram:request`, which opens a
+  histogram **window**, not a section. Classification editor, Map legend and Map
+  export were removed — the legend and the export scale live in the composer
+  itself.
+* **Help** — Keyboard shortcuts · — · About. Both open a small **modal dialog**
+  (`js/dialogs.js`): `role="dialog"`, `aria-modal="true"`, labelled by its own
+  heading, focus moved inside on open and returned to whatever had it on close,
+  Tab/Shift+Tab trapped, Escape closes. Shortcuts is a two-column list built from
+  the `SHORTCUTS` table (keys in `<kbd>`, action beside it); About names the
+  product, shows `APP_VERSION` and carries the two required credits
+  (`CREDITS`): "Contains modified Copernicus Sentinel data." and "Place search by
+  OpenStreetMap contributors." Neither dialog mentions a host, a port or any
+  developer wording — the old About toast printed the API base and the page
+  origin, which is exactly what the user asked to have removed.
 
 Entries that are unavailable **right now** are disabled and carry the reason in
-their tooltip — e.g. Export without an image ("load, fetch or decompress an
-image first"), Clear result with no result ("there is no result yet — run a
-filter or K-Means first"), and the map entries before a classification ("run
-Classify in the Clusters section first — the map is its output"). The toolbar
-buttons explain themselves the same way, and a boot test asserts that no
-disabled entry anywhere is missing its reason.
+their **tooltip only** — the `.menu-item-note` span and its CSS rule are gone, so
+no row can grow to two lines or print a wrapped sentence beside its label. The
+toolbar buttons explain themselves the same way, and boot tests assert both (no
+inline notes anywhere in `#menubar`, and every disabled entry has a title).
 
 ## Serving and CORS
 
@@ -632,10 +668,10 @@ message. Raw JSON is never displayed.
 
 | Command | What it does |
 | --- | --- |
-| `node --test "web/tests/*.test.mjs"` | 144 logic tests: config resolution, error mapping, API client contract (URLs, bodies, multipart, session recovery), chat command mapping/execution, the satellite request shapes, the filter preview maths (reflect-101 box average, threshold/brightness clipping, the 512 px preview cap), the slider snapping/help texts, the grouped point-operation help list, the history `dropEntry` replacement rule, the linked classification ranges (item 11) and the histogram maths of item 13 (the OpenCV gray weights, channel counting with alpha, the 0…10 smoothing slider, the channel→series mapping). No browser needed. |
+| `node --test "web/tests/*.test.mjs"` | 148 logic tests: config resolution, error mapping, API client contract (URLs, bodies, multipart, session recovery), chat command mapping/execution, the satellite request shapes, the filter preview maths (reflect-101 box average, threshold/brightness clipping, the 512 px preview cap), the slider snapping/help texts, the grouped point-operation help list, the history `dropEntry` replacement rule, the linked classification ranges (item 11) and the histogram maths of item 13 (the OpenCV gray weights, channel counting with alpha, the 0…10 smoothing slider, the channel→series mapping), the product copy and the required credits (item 14). No browser needed. |
 | `python web/tests/smoke_test.py` | Serves `web/` on 5173 (reuses a running server for the same root), checks assets + content types, that every relative module import resolves, that no key material exists under `web/`, that no `innerHTML` is used, the workstation layout contract (image workspace owns the flexible track, no `object-fit: cover`, technical corner radii), and that the API's CORS allows the frontend origin. |
 | `python web/tests/integration_check.py` | Live contract check against a running API: the exact call sequence the browser makes (session → upload → 6 filters → kmeans k=5 → classify → histogram → stats → GCH2 round trip → satellite validation and error paths → chat commands → 404/415). The three checks that need real Copernicus credentials report SKIP when the server has no `api/.env` instead of failing. Requires `uvicorn main:app --port 8000`. |
-| `node web/tests/boot_test.mjs --jsdom <dir>` | Boot test: loads `index.html` in jsdom, imports `js/app.js` and drives the UI through DOM events against the live API — 753 assertions covering the shell (menu bar, toolbar, status bar, dock collapse), viewport behaviour (pan, wheel zoom, pixel readout, distance measurement, sync mirroring), upload, the six filters, the Source panel's place/corner modes, the Filters panel's popovers and slider sessions (preview without requests, one request per release, replace-not-stack, Escape, arrow-key commits, one slider at a time), the rendered K-Means range table (item 11: live linked ranges, clamped commits, locked ends, the browser-side preview with zero requests/history entries, the boundary bar, "Generate map" = one undo step), the File menu's four image actions (item 12: exact compress tooltip, label-map entry, GCH2 compress → decompress through the menu and the toolbar), histogram windows (item 13: the active-viewport rule with its Active badge, the per-footer Histogram buttons, the smoothing slider, the Channel dropdown's per-image option list, the resize/min/max clamps on all four edges), histogram/stats, chat router commands, session-expiry recovery, and a clean browser console. jsdom is optional (not a dependency of the app); without it the test skips. |
+| `node web/tests/boot_test.mjs --jsdom <dir>` | Boot test: loads `index.html` in jsdom, imports `js/app.js` and drives the UI through DOM events against the live API — 810 assertions covering the shell (menu bar, toolbar, status bar, dock collapse), viewport behaviour (pan, wheel zoom, pixel readout, distance measurement, sync mirroring), upload, the six filters, the Source panel's place/corner modes, the Filters panel's popovers and slider sessions (preview without requests, one request per release, replace-not-stack, Escape, arrow-key commits, one slider at a time), the rendered K-Means range table (item 11: live linked ranges, clamped commits, locked ends, the browser-side preview with zero requests/history entries, the boundary bar, "Generate map" = one undo step), the File menu's four image actions (item 12: exact compress tooltip, label-map entry, GCH2 compress → decompress through the menu and the toolbar), histogram windows (item 13: the active-viewport rule with its Active badge, the per-footer Histogram buttons, the smoothing slider, the Channel dropdown's per-image option list, the resize/min/max clamps on all four edges), the menus (item 14: the exact File/Edit/View/Processing/Analysis/Help contents, the conditional label-map entry, the New-session confirmation and its cancel path, the Help dialogs with their focus trap, Escape and credits, disabled reasons as tooltips and no inline notes anywhere), chat router commands, session-expiry recovery, and a clean browser console. jsdom is optional (not a dependency of the app); without it the test skips. |
 
 The boot test runs in both serving modes: the default (page on localhost →
 direct API calls) and hosted (`--page-host 5173-demo.e2b.app` → everything

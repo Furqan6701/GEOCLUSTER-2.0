@@ -149,7 +149,6 @@ p { margin: 0; }
 .menu-item:not(:disabled) .menu-item-icon,
 .menu-item.checked .menu-item-icon { color: var(--accent); }
 .menu-item-label { flex: 1; white-space: nowrap; }
-.menu-item-note { color: var(--text-faint); font-size: var(--fs-xs); font-style: italic; }
 .menu-item-shortcut { color: var(--text-faint); font-family: var(--mono); font-size: var(--fs-xs); }
 .menu-sep { height: 1px; background: var(--border); margin: 3px 6px; }
 
@@ -190,6 +189,48 @@ p { margin: 0; }
    row anyway: .tb-tight (the row would still overflow) wins over .tb-wide. */
 .toolbar.tb-wide:not(.tb-tight) .tb-label { display: inline; }
 .toolbar.tb-wide:not(.tb-tight) .tb-btn { padding: 0 7px; }
+
+/* ─────────────────────────────── dialogs (item 14) ─────────────────────────
+   Keyboard shortcuts, About and the New-session confirmation share one builder
+   and one look: a small modal, opaque, centred, with its own heading. */
+.app-dialog-layer {
+  position: fixed; inset: 0; z-index: 70; display: grid; place-items: center;
+  padding: 16px; box-sizing: border-box; background: rgba(2, 5, 7, 0.6);
+}
+.app-dialog {
+  display: flex; flex-direction: column; min-width: 320px; max-width: min(560px, 94vw);
+  max-height: min(80vh, 640px); overflow: hidden; box-sizing: border-box;
+  background: var(--bg-panel); background-color: #10131a;   /* opaque */
+  border: 1px solid var(--border-strong); border-radius: 4px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
+}
+.app-dialog-head {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+  border-bottom: 1px solid var(--border); background: var(--bg-panel-2);
+}
+.app-dialog-title { margin: 0; flex: 1; font-size: var(--fs-lg); font-weight: 600; }
+.app-dialog-body { padding: 12px; overflow: auto; }
+.app-dialog-text { margin: 0 0 8px; color: var(--text); font-size: var(--fs-md); line-height: 1.5; }
+.app-dialog-note { margin: 0; color: var(--text-faint); font-size: var(--fs-sm); }
+.app-dialog-version { margin: 0 0 10px; color: var(--text-dim); font-family: var(--mono); font-size: var(--fs-sm); }
+.app-dialog-credits { margin: 0; padding-left: 18px; color: var(--text-dim); font-size: var(--fs-sm); line-height: 1.6; }
+.app-dialog-actions {
+  display: flex; justify-content: flex-end; gap: 8px; padding: 10px 12px;
+  border-top: 1px solid var(--border); background: var(--bg-panel-2);
+}
+/* the two-column shortcut list: keys on the left, what they do on the right */
+.shortcut-list {
+  display: grid; grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 14px; margin: 0; align-items: baseline;
+}
+.shortcut-keys { margin: 0; }
+.shortcut-keys kbd {
+  display: inline-block; padding: 1px 6px; border-radius: 3px;
+  border: 1px solid var(--border-strong); background: var(--bg-input);
+  color: var(--text); font-family: var(--mono); font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+.shortcut-what { margin: 0; color: var(--text-dim); font-size: var(--fs-md); }
 
 .chips { display: flex; flex-wrap: nowrap; gap: 5px; overflow: hidden; }
 .chip {

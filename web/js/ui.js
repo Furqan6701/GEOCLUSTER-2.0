@@ -85,6 +85,8 @@ const ICONS = {
   check: ["m5 12.5 4.5 4.5L19 7.5"],
   dot: [{ circle: [12, 12, 4] }],
   route: ["M6.5 20V8.5a4 4 0 0 1 4-4h7", "m14 1.5 3.5 3-3.5 3", { circle: [6.5, 20, 1.5] }],
+  // a fresh start: the circular arrow on the File menu's New session entry
+  refresh: ["M19.5 12a7.5 7.5 0 1 1-2.2-5.3", "M19.5 4V8.6h-4.6"],
 };
 
 const PRIMITIVE_TAGS = { circle: "circle", line: "line" };
@@ -464,6 +466,10 @@ export function toolGroup(title, children, { actions = [] } = {}) {
  * enabled state always reflects the current application state.
  *
  * item: { label, icon, shortcut, disabled, reason, checked, separator, onClick }
+ *
+ * Item 14: an entry shows its LABEL and its shortcut chip and nothing else. A
+ * disabled entry explains itself in its tooltip (`reason`) instead of printing
+ * wrapped text beside it, so no row ever grows to two lines.
  */
 export function createMenuBar(menus) {
   const bar = el("nav", { class: "menubar", role: "menubar" });
@@ -507,9 +513,6 @@ export function createMenuBar(menus) {
       }, [
         icon(item.icon ?? (item.checked ? "check" : "dot"), { size: 13, class: "menu-item-icon" }),
         el("span", { class: "menu-item-label", text: item.label }),
-        (item.disabled ? item.reason : item.note)
-          ? el("span", { class: "menu-item-note", text: item.disabled ? item.reason : item.note })
-          : null,
         item.shortcut ? el("span", { class: "menu-item-shortcut", text: item.shortcut }) : null,
       ]);
       return node;

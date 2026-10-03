@@ -772,11 +772,13 @@ if (!bootFailed) {
     };
     const menuItem = (label) => fileMenu().find((node) => node.textContent.trim().startsWith(label));
     const labelEntry = menuItem("Export raw label map (PNG)");
-    check(labelEntry != null, "the File menu exports the raw label map");
-    check(labelEntry?.disabled === false, "the label-map entry is enabled once K-Means has run",
+    check(labelEntry != null, "the File menu exports the raw label map once K-Means has run");
+    check(labelEntry?.disabled === false, "…and it is enabled, not greyed out",
       String(labelEntry?.disabled));
-    check(/one grey value per cluster/.test(labelEntry?.textContent ?? ""),
-      "the label-map entry says what the file holds", labelEntry?.textContent);
+    check(labelEntry?.querySelector(".menu-item-note") == null &&
+      !/one grey value per cluster/.test(labelEntry?.textContent ?? ""),
+      "…with no inline note beside it (item 14: reasons and notes live in tooltips)",
+      labelEntry?.textContent);
     {
       const before = createdUrls.length;
       labelEntry.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
@@ -1498,16 +1500,14 @@ if (!bootFailed) {
       return { item, disabled: false };
     };
     studio.close();
-    const legendMenu = analysisItem("Map legend");
-    check(legendMenu.item != null, "the Analysis menu Map legend entry is enabled");
-    check(studio.getSettings().legend.visible === false, "the menu hides the legend");
-    analysisItem("Map legend");
-    check(studio.getSettings().legend.visible === true, "and shows it again");
-    const exportMenu = analysisItem("Map export (PNG)");
-    check(exportMenu.item != null, "the Analysis menu Map export entry is enabled");
-    await until(() => studio.isOpen(), "Map export opens the composer so the scale can be chosen",
-      { timeout: 15000 });
-    check(studio.isOpen(), "Map export opens the composer so the scale can be chosen");
+    // item 14: the menu keeps ONE map entry — the composer owns the legend and
+    // the export scale itself (Map legend / Map export were removed from it)
+    check(!analysisItem("Map legend").item, "the Analysis menu no longer offers Map legend");
+    check(!analysisItem("Map export").item, "the Analysis menu no longer offers Map export");
+    const composerMenu = analysisItem("Map composer");
+    await until(() => studio.isOpen(), "the Analysis menu opens the composer", { timeout: 15000 });
+    check(composerMenu.item != null && studio.isOpen(),
+      "the Analysis menu still reaches the composer");
     studio.close();
     const toolbarOpen = document.getElementById("tb-map");
     toolbarOpen.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
@@ -2610,8 +2610,9 @@ if (!bootFailed) {
     const labels = items.map((node) => node.textContent.trim());
     check(labels.some((label) => label.startsWith("Export current image (PNG)")),
       "the File menu exports the current image", labels.join(" | "));
-    check(labels.some((label) => label.startsWith("Export raw label map (PNG)")),
-      "the File menu exports the raw label map", labels.join(" | "));
+    check(!labels.some((label) => label.startsWith("Export raw label map")),
+      "the label-map entry is hidden until K-Means has run for the current image",
+      labels.join(" | "));
     check(labels.some((label) => label.startsWith("Compress to .gch (GCH2)")),
       "the File menu compresses to .gch", labels.join(" | "));
     check(labels.some((label) => label.startsWith("Open .gch file (decompress)")),
@@ -2622,10 +2623,11 @@ if (!bootFailed) {
       "the compress entry carries the exact tooltip", compressEntry?.title);
     check(!labels.some((label) => /^Decompress a \.gch/.test(label)),
       "the old Decompress entry is replaced", labels.join(" | "));
-    const emptyNote = compressEntry
-      ?.closest(".menu-popup")?.querySelector(".menu-item-note")?.textContent ?? "";
+    check(document.querySelectorAll("#menubar .menu-item-note").length === 0,
+      "no menu entry prints wrapped text beside it (item 14: the reason is a tooltip)",
+      String(document.querySelectorAll("#menubar .menu-item-note").length));
     check(!/GCH2 files are compatible|Compression is lossless and stateless/.test(items.map((n) => n.textContent).join(" ")),
-      "the Files panel hint lines are gone", emptyNote);
+      "the Files panel hint lines are gone");
     document.body.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
 
     // the toolbar keeps its two icons, wired to the same actions
@@ -2894,8 +2896,8 @@ if (!bootFailed) {
   const menubar = document.getElementById("menubar");
   check(menubar != null && menubar.classList.contains("menubar"), "menu bar rendered");
   const menuLabels = [...document.querySelectorAll("#menubar .menu-button")].map((node) => node.textContent.trim());
-  check(JSON.stringify(menuLabels) === JSON.stringify(["File", "View", "Processing", "Analysis", "Help"]),
-    "menu bar exposes File/View/Processing/Analysis/Help", menuLabels.join(", "));
+  check(JSON.stringify(menuLabels) === JSON.stringify(["File", "Edit", "View", "Processing", "Analysis", "Help"]),
+    "menu bar exposes File/Edit/View/Processing/Analysis/Help, in that order", menuLabels.join(", "));
 
   const fileMenu = [...document.querySelectorAll("#menubar .menu-button")].find((n) => n.textContent.trim() === "File");
   fileMenu.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
@@ -2911,7 +2913,7 @@ if (!bootFailed) {
 
   // ---------------------------------------- 8b. STEP 6: no stub entries left
   {
-    const menuLabelsAll = ["File", "View", "Processing", "Analysis", "Help"];
+    const menuLabelsAll = ["File", "Edit", "View", "Processing", "Analysis", "Help"];
     const disabledWithoutReason = [];
     const stubWords = [];
     const labels = [];
@@ -2958,6 +2960,258 @@ if (!bootFailed) {
     check([...document.querySelectorAll("#toolbar button")].every((node) =>
       !/not implemented|planned|coming soon/i.test(node.title ?? "")),
       "no toolbar tooltip mentions an unimplemented feature");
+  }
+
+  // ------------------------------------------------- 8c. item 14: the menus
+  {
+    const gh = window.geocluster;
+    const escapeMenu = () => window.document.dispatchEvent(
+      new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    /** The entries of one menu, in order, with separators as "—". */
+    const entriesOf = (menuLabel) => {
+      const button = [...document.querySelectorAll("#menubar .menu-button")]
+        .find((node) => node.textContent.trim() === menuLabel);
+      check(button != null, `the ${menuLabel} menu exists`);
+      button.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      const popup = document.querySelector("#menubar .menu-popup:not([hidden])");
+      const entries = [...popup.children].map((node) => (node.classList.contains("menu-sep")
+        ? "—"
+        : (node.querySelector(".menu-item-label")?.textContent ?? "").trim()));
+      escapeMenu();
+      return entries;
+    };
+
+    // ---- View: the four zoom entries and the three dock toggles, nothing else
+    const viewEntries = entriesOf("View");
+    check(viewEntries.join(" | ") === [
+      "Fit to view", "Actual size", "Zoom in", "Zoom out", "—",
+      "Show toolbox", "Show assistant", "Show result viewport",
+    ].join(" | "), "the View menu is Fit/Actual size/Zoom in/Zoom out + the three dock toggles",
+      viewEntries.join(" | "));
+    check(!/Zoom 25%|Zoom 50%|Pixel readout|Pan tool|Measure distance|Synchronise|Map composer/.test(viewEntries.join(" ")),
+      "the removed View entries are gone (their toolbar buttons and shortcuts stay)",
+      viewEntries.join(" | "));
+
+    // ---- Processing: six real operations and Clear result, no notes
+    const processingEntries = entriesOf("Processing");
+    check(processingEntries.join(" | ") === [
+      "Grayscale", "Negative", "Laplacian", "—",
+      "Brightness", "Threshold", "Mean filter", "—", "Clear result",
+    ].join(" | "), "the Processing menu lists the six operations and Clear result",
+      processingEntries.join(" | "));
+
+    // ---- Analysis: K-Means, Histogram, Map composer
+    const analysisEntries = entriesOf("Analysis");
+    check(analysisEntries.join(" | ") === ["Run K-Means…", "Histogram", "—", "Map composer…"].join(" | "),
+      "the Analysis menu is Run K-Means / Histogram / Map composer",
+      analysisEntries.join(" | "));
+    check(!/Classification editor|Map legend|Map export|statistics/.test(analysisEntries.join(" ")),
+      "the removed Analysis entries are gone", analysisEntries.join(" | "));
+
+    // the Histogram entry really opens a window (it is not a section jump)
+    {
+      gh.histograms.closeAll();
+      const windowsBefore = gh.histograms.count;
+      const opened = (() => {
+        const button = [...document.querySelectorAll("#menubar .menu-button")]
+          .find((node) => node.textContent.trim() === "Analysis");
+        button.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+        const item = [...document.querySelectorAll("#menubar .menu-popup:not([hidden]) .menu-item")]
+          .find((node) => (node.querySelector(".menu-item-label")?.textContent ?? "").trim() === "Histogram");
+        item?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+        return item != null;
+      })();
+      check(opened, "the Analysis menu has a Histogram entry");
+      const window_ = await until(() => (gh.histograms.count > windowsBefore ? gh.histograms.windows.at(-1) : null),
+        "the Histogram menu entry opens a window");
+      check(window_ != null, "the Histogram menu entry opened a real histogram window");
+      gh.histograms.closeAll();
+    }
+
+    // ---- File: the required order, with New session last
+    const fileEntries = entriesOf("File");
+    check(fileEntries[0] === "Open image…" && fileEntries[1] === "Fetch Sentinel-2 tile…" &&
+      fileEntries[2] === "—" &&
+      fileEntries[3] === "Export current image (PNG)…" &&
+      fileEntries.at(-1) === "New session",
+      "the File menu is Open / Fetch / Export / … / New session", fileEntries.join(" | "));
+    check(!fileEntries.some((label) => /^Undo|^Redo/.test(label)),
+      "Undo and Redo are not in the File menu any more", fileEntries.join(" | "));
+
+    // ---- Edit: Undo + Redo only
+    const editEntries = entriesOf("Edit");
+    check(editEntries.length === 2 && /^Undo/.test(editEntries[0]) && editEntries[1] === "Redo",
+      "the Edit menu holds exactly Undo and Redo", editEntries.join(" | "));
+
+    // ---- Help: two entries, and no developer wording anywhere in the menus
+    const helpEntries = entriesOf("Help");
+    check(helpEntries.join(" | ") === ["Keyboard shortcuts", "—", "About"].join(" | "),
+      "the Help menu is Keyboard shortcuts + About", helpEntries.join(" | "));
+    {
+      const menuText = [...document.querySelectorAll("#menubar .menu-item")]
+        .map((node) => `${node.textContent} ${node.title}`);
+      check(!menuText.some((text) => /localhost|127\.0\.0\.1|:\d{4}\b|API |uvicorn|jsdom|dev server/i.test(text)),
+        "no menu entry mentions a port, a hostname or developer wording",
+        menuText.filter((text) => /localhost|:8000|API /i.test(text)).join(" || "));
+    }
+
+    // ---- Help → Keyboard shortcuts: a two-column list in a real dialog
+    {
+      const trigger = [...document.querySelectorAll("#menubar .menu-button")]
+        .find((node) => node.textContent.trim() === "Help");
+      trigger.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      [...document.querySelectorAll("#menubar .menu-popup:not([hidden]) .menu-item")]
+        .find((node) => (node.querySelector(".menu-item-label")?.textContent ?? "").trim() === "Keyboard shortcuts")
+        .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      await until(() => document.querySelector(".app-dialog") != null, "the shortcuts dialog opens");
+      const dialog = document.querySelector(".app-dialog");
+      const layer = document.querySelector(".app-dialog-layer");
+      check(layer != null && dialog.getAttribute("role") === "dialog" &&
+        dialog.getAttribute("aria-modal") === "true",
+        "the shortcuts dialog is a modal dialog");
+      check(dialog.getAttribute("aria-labelledby") != null &&
+        document.getElementById(dialog.getAttribute("aria-labelledby"))?.textContent === "Keyboard shortcuts",
+        "…labelled by its own heading");
+      const keys = [...dialog.querySelectorAll(".shortcut-keys")].map((node) => node.textContent);
+      const what = [...dialog.querySelectorAll(".shortcut-what")].map((node) => node.textContent);
+      check(keys.length === what.length && keys.length >= 8,
+        "the dialog is a two-column list of shortcuts", `${keys.length} keys / ${what.length} actions`);
+      check(keys.some((text) => /Ctrl\+O/.test(text)) && keys.some((text) => /^M$/.test(text.trim())),
+        "…including the open and measure keys", keys.join(" · "));
+      check(!/localhost|127\.0\.0\.1|:\d{4}\b|API base|uvicorn/i.test(dialog.textContent),
+        "the shortcuts dialog carries no developer wording", dialog.textContent.slice(0, 120));
+      // a modal dialog owns the keyboard: the page shortcuts and the histogram
+      // windows behind it stand down while it is open
+      {
+        const measureBefore = gh.toggles.measure.isPressed();
+        window.dispatchEvent(new window.KeyboardEvent("keydown", { key: "m", bubbles: true, cancelable: true }));
+        check(gh.toggles.measure.isPressed() === measureBefore,
+          "the page shortcuts do not fire behind an open dialog",
+          `measure ${measureBefore} → ${gh.toggles.measure.isPressed()}`);
+        const histWindow = gh.histograms.openFromPanel();
+        check(histWindow != null, "a histogram window is open behind the dialog");
+        window.document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+        check(document.querySelector(".app-dialog") == null, "Escape closes the dialog");
+        check(gh.histograms.count === 1 && gh.histograms.windows[0] === histWindow,
+          "…and leaves the histogram window behind it open, not closed by the same key",
+          String(gh.histograms.count));
+        gh.histograms.closeAll();
+
+        // reopen for the focus-trap checks
+        gh.dialogs.shortcuts();
+        await until(() => document.querySelector(".app-dialog") != null, "the dialog reopens");
+        const reopened = document.querySelector(".app-dialog");
+        const trapItems = [...reopened.querySelectorAll("button, [href], input, select, [tabindex]")]
+          .filter((node) => !node.disabled);
+        trapItems.at(-1).focus();
+        const tabEvent = new window.KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+        window.document.dispatchEvent(tabEvent);
+        check(tabEvent.defaultPrevented, "Tab at the end of the shortcuts dialog is trapped");
+        check(reopened.contains(document.activeElement), "…and focus stays inside the dialog");
+        trapItems[0].focus();
+        const shiftTab = new window.KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true, cancelable: true });
+        window.document.dispatchEvent(shiftTab);
+        check(shiftTab.defaultPrevented, "Shift+Tab at the start is trapped too");
+        if (trapItems.length > 2) {
+          trapItems[1].focus();
+          const tabInside = new window.KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+          window.document.dispatchEvent(tabInside);
+          check(!tabInside.defaultPrevented, "Tab in the middle moves on normally");
+        } else {
+          check(trapItems.length === 2,
+            "the shortcuts dialog is a compact two-control dialog", String(trapItems.length));
+        }
+        // Escape closes it; the Help menu button is still there to reopen it
+        check(gh.dialogs.isOpen(), "the app knows a dialog is open");
+        window.document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+        check(document.querySelector(".app-dialog") == null, "Escape closes the shortcuts dialog");
+        check(!gh.dialogs.isOpen(), "…and the dialog state is cleared");
+        check(trigger != null, "the Help menu button is still there to reopen it");
+      }
+    }
+
+    // ---- Help → About: name, version, one-line description and the credits
+    {
+      [...document.querySelectorAll("#menubar .menu-button")]
+        .find((node) => node.textContent.trim() === "Help")
+        .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      [...document.querySelectorAll("#menubar .menu-popup:not([hidden]) .menu-item")]
+        .find((node) => (node.querySelector(".menu-item-label")?.textContent ?? "").trim() === "About")
+        .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      await until(() => document.querySelector(".app-dialog") != null, "the About dialog opens");
+      const dialog = document.querySelector(".app-dialog");
+      const text = dialog.textContent;
+      check(/GeoCluster 2\.0/.test(text), "About names the product", text.slice(0, 80));
+      check(/Version 2\.0/.test(text), "About shows the version", text.slice(0, 120));
+      check(dialog.querySelector(".app-dialog-text")?.textContent.length >= 40,
+        "About has a one-line description");
+      check(/Contains modified Copernicus Sentinel data/.test(text),
+        "About credits Copernicus", text.slice(0, 200));
+      check(/OpenStreetMap contributors/.test(text), "About credits OpenStreetMap", text.slice(0, 200));
+      check(!/localhost|127\.0\.0\.1|:\d{4}\b|API |uvicorn|jsdom/i.test(text),
+        "About carries no port, hostname or developer wording", text.slice(0, 160));
+      check((text.match(/\n/g) ?? []).length <= 6, "About stays a small dialog", JSON.stringify(text.slice(0, 200)));
+      // the primary action closes it
+      dialog.querySelector(".app-dialog-actions [data-primary='true']")
+        .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      check(document.querySelector(".app-dialog") == null, "the Close button closes the dialog");
+      check(!gh.dialogs.isOpen(), "…and the app knows the dialog is gone");
+    }
+
+    // ---- File → New session asks first, and cancelling keeps the session
+    {
+      const sessionBefore = state()?.sessionId ?? null;
+      const clickFileEntry = (label) => {
+        [...document.querySelectorAll("#menubar .menu-button")]
+          .find((node) => node.textContent.trim() === "File")
+          .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+        const item = [...document.querySelectorAll("#menubar .menu-popup:not([hidden]) .menu-item")]
+          .find((node) => (node.querySelector(".menu-item-label")?.textContent ?? "").trim() === label);
+        item?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+        return item != null;
+      };
+      // the status-bar button asks the same question (and is a visible opener, so
+      // the focus-restore path can be checked on it)
+      const statusButton = document.getElementById("new-session");
+      statusButton.focus();
+      statusButton.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      const statusDialog = await until(() => document.querySelector(".app-dialog"),
+        "the status-bar New session button asks the same question");
+      statusDialog.querySelector(".app-dialog-actions button:not([data-primary])")
+        .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      await until(() => document.querySelector(".app-dialog") == null, "cancelling closes it");
+      check(document.activeElement === statusButton,
+        "focus returns to the button that opened the dialog",
+        document.activeElement?.id || document.activeElement?.tagName);
+
+      check(clickFileEntry("New session"), "the File menu has a New session entry");
+      const dialog = await until(() => document.querySelector(".app-dialog"), "New session asks first");
+      check(/new session/i.test(dialog.textContent), "the dialog names what it will do",
+        dialog.textContent.slice(0, 120));
+      check(/discard|discarded|ends/i.test(dialog.textContent),
+        "…and says the current session is discarded", dialog.textContent.slice(0, 160));
+      dialog.querySelector(".app-dialog-actions button:not([data-primary])")
+        .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      await until(() => document.querySelector(".app-dialog") == null, "cancelling closes the dialog");
+      check((state()?.sessionId ?? null) === sessionBefore, "cancelling keeps the current session",
+        `${sessionBefore} → ${state()?.sessionId}`);
+
+      // confirming really calls session.restart() — stubbed so the run continues
+      const realRestart = gh.session.restart;
+      let restarted = 0;
+      gh.session.restart = async () => { restarted += 1; return { sessionId: state()?.sessionId }; };
+      try {
+        clickFileEntry("New session");
+        await until(() => document.querySelector(".app-dialog") != null, "the confirmation opens again");
+        document.querySelector(".app-dialog-actions [data-primary='true']")
+          .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+        await until(() => restarted === 1, "confirming starts the new session");
+        check(restarted === 1, "confirming calls session.restart()", String(restarted));
+        check(document.querySelector(".app-dialog") == null, "the dialog closes after the decision");
+      } finally {
+        gh.session.restart = realRestart;
+      }
+    }
   }
 
   const viewers = window.geocluster.viewers;
@@ -3078,29 +3332,21 @@ if (!bootFailed) {
     entry.url.includes(`/operations/${operation}`) && entry.method === "POST");
 
   const statusBarOp = () => document.getElementById("sb-lastop").textContent;
+  // item 14: the three operations without parameters run straight from the menu
   const opMenuLabels = {
     grayscale: "Grayscale",
     negative: "Negative",
     laplacian: "Laplacian",
-    brightness: "Brightness",
-    threshold: "Threshold",
-    meanfilter: "Mean filter",
   };
   const expectedBodies = {
     grayscale: null,
     negative: null,
     laplacian: null,
-    brightness: "{\"value\":40}",
-    threshold: "{\"value\":128}",
-    meanfilter: "{\"window\":3}",
   };
   const expectedLabels = {
     grayscale: "Grayscale",
     negative: "Negative",
     laplacian: "Laplacian",
-    brightness: "Brightness +40",
-    threshold: "Threshold 128",
-    meanfilter: "Mean filter w=3",
   };
 
   for (const operation of Object.keys(opMenuLabels)) {
@@ -3127,6 +3373,40 @@ if (!bootFailed) {
       `menu: ${opMenuLabels[operation]} never leaks raw JSON`, toasts.slice(-2).join(" | "));
     check(state()?.lastOperation?.operation === label, `menu: last operation recorded for ${label}`,
       String(state()?.lastOperation?.operation));
+  }
+
+  // item 14: Brightness / Threshold / Mean filter open the Filters panel and put
+  // the cursor ON their slider — a menu click never runs an operation with a
+  // value the user has not seen (the notes that used to print it are gone).
+  {
+    const cases = [
+      ["Brightness", "brightness", "filter-brightness-slider"],
+      ["Threshold", "threshold", "filter-threshold-slider"],
+      ["Mean filter", "meanfilter", "filter-meanfilter-slider"],
+    ];
+    for (const [label, operation, sliderId] of cases) {
+      const beforeCount = requestsFor(operation).length;
+      const beforeResult = state()?.result?.id ?? null;
+      check(clickMenuItem("Processing", label), `the Processing menu has ${label}`);
+      const slider = document.getElementById(sliderId);
+      check(slider != null && slider.type === "range", `${label} has a slider`, sliderId);
+      check(document.activeElement === slider,
+        `the ${label} menu entry puts the cursor on its slider`,
+        `${document.activeElement?.id || document.activeElement?.tagName}`);
+      check(slider.closest(".section")?.querySelector(".slider-row.flash") != null,
+        `the ${label} row is flashed so the eye can find it`);
+      check(document.getElementById("section-filters")?.querySelector(".section-body")?.hidden === false ||
+        document.getElementById("section-filters")?.classList.contains("collapsed") === false,
+        `the ${label} entry opens the Filters panel`);
+      check(requestsFor(operation).length === beforeCount &&
+        (state()?.result?.id ?? null) === beforeResult,
+        `the ${label} entry sends no request by itself`,
+        `${beforeCount} → ${requestsFor(operation).length}`);
+      // the section is expanded, so the slider is visible, not just focused
+      check(document.querySelector(`[data-slider="${operation}"]`)?.offsetParent !== null ||
+        document.querySelector(`[data-slider="${operation}"]`) != null,
+        `the ${label} slider is on screen`);
+    }
   }
 
   // the Result viewport really is showing the last of those
@@ -3198,22 +3478,40 @@ if (!bootFailed) {
   await until(() => history.pointer === pointerBefore, "Ctrl+Y steps forward");
   check(history.pointer === pointerBefore, "Ctrl+Y steps forward");
 
-  // the File menu offers the same two actions
-  openMenu("File");
-  const menuUndo = [...document.querySelectorAll("#menubar .menu-popup:not([hidden]) .menu-item")]
-    .find((node) => (node.querySelector(".menu-item-label")?.textContent ?? "").startsWith("Undo"));
-  check(menuUndo != null && !menuUndo.disabled, "the File menu exposes an enabled Undo");
-  check((menuUndo?.title || "").includes("Ctrl+Z"), "the File menu Undo names its shortcut", menuUndo?.title);
+  // item 14: Undo/Redo moved out of File into their own Edit menu
+  const menuItemIn = (menu) => {
+    openMenu(menu);
+    return [...document.querySelectorAll("#menubar .menu-popup:not([hidden]) .menu-item")];
+  };
+  const fileEntries = menuItemIn("File").map((node) => node.querySelector(".menu-item-label")?.textContent ?? "");
+  check(!fileEntries.some((label) => /^Undo|^Redo/.test(label)),
+    "the File menu no longer carries Undo/Redo", fileEntries.join(" | "));
+  window.document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  const editItems = menuItemIn("Edit");
+  const menuUndo = editItems.find((node) =>
+    (node.querySelector(".menu-item-label")?.textContent ?? "").startsWith("Undo"));
+  const menuRedo = editItems.find((node) =>
+    (node.querySelector(".menu-item-label")?.textContent ?? "").startsWith("Redo"));
+  check(menuUndo != null && !menuUndo.disabled, "the Edit menu exposes an enabled Undo");
+  check((menuUndo?.title || "").includes("Ctrl+Z"), "the Edit menu Undo names its shortcut", menuUndo?.title);
+  check(menuRedo != null && menuRedo.disabled, "Redo is offered but disabled at the newest state");
+  check((menuRedo?.title || "").length > 0, "the disabled Redo explains why", menuRedo?.title);
   window.document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
   if (menuUndo) {
     const beforeMenuUndo = history.pointer;
-    openMenu("File");
+    menuItemIn("Edit");
     [...document.querySelectorAll("#menubar .menu-popup:not([hidden]) .menu-item")]
       .find((node) => (node.querySelector(".menu-item-label")?.textContent ?? "").startsWith("Undo"))
       ?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
     await until(() => history.pointer === beforeMenuUndo - 1, "the menu Undo steps back");
-    check(history.pointer === beforeMenuUndo - 1, "the File menu Undo steps back");
-    await gh.redo();
+    check(history.pointer === beforeMenuUndo - 1, "the Edit menu Undo steps back");
+    // …and it really did what the Edit menu Redo promises
+    menuItemIn("Edit");
+    [...document.querySelectorAll("#menubar .menu-popup:not([hidden]) .menu-item")]
+      .find((node) => (node.querySelector(".menu-item-label")?.textContent ?? "").startsWith("Redo"))
+      ?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    await until(() => history.pointer === beforeMenuUndo, "the Edit menu Redo steps forward");
+    check(history.pointer === beforeMenuUndo, "the Edit menu Redo steps forward");
   }
 
   // only the last 15 states are kept, and the cap is enforced from the front

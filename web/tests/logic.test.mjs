@@ -11,13 +11,16 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  APP_VERSION,
   DEFAULT_API_BASE,
+  PROJECT_NAME,
   PROXY_API_BASE,
   isUsableApiBase,
   isValidHttpUrl,
   normalizeBase,
   resolveApiBase,
 } from "../js/config.js";
+import { CREDITS, SHORTCUTS } from "../js/dialogs.js";
 import { ApiError, detailToText, humanizeError, sanitizeMessage, validationToText } from "../js/errors.js";
 import {
   HELP_TEXTS,
@@ -2371,4 +2374,58 @@ test("the smoothing slider maps 0…10 onto the window it averages", () => {
   assert.equal(smoothingWindow(99), 21);
   assert.equal(smoothingWindow("nonsense"), 0);
   assert.equal(smoothingWindow(undefined), 0);
+});
+
+// ═══════════════════ item 14: the menus' dialogs and their copy ══════════════
+
+test("the product copy is versioned in one place", () => {
+  assert.equal(PROJECT_NAME, "GeoCluster 2.0");
+  assert.equal(APP_VERSION, "2.0");
+  assert.ok(/^\d+\.\d+$/.test(APP_VERSION), "the version is a two-part number");
+  assert.ok(PROJECT_NAME.includes(APP_VERSION), "the name carries the version");
+});
+
+test("the About dialog's credits are exactly the two required lines", () => {
+  assert.deepEqual([...CREDITS], [
+    "Contains modified Copernicus Sentinel data.",
+    "Place search by OpenStreetMap contributors.",
+  ]);
+  for (const line of CREDITS) {
+    // no developer wording, no addresses: this text is user-facing
+    assert.ok(!/localhost|127\.0\.0\.1|:\d{4}\b|API|uvicorn|jsdom/i.test(line), line);
+    assert.ok(/[.!]$/.test(line), "each credit is a sentence");
+  }
+});
+
+test("every shortcut the Help dialog lists is a real, described binding", () => {
+  assert.ok(SHORTCUTS.length >= 8, `expected the full list, got ${SHORTCUTS.length}`);
+  const keys = SHORTCUTS.map((entry) => entry.keys);
+  assert.equal(new Set(keys).size, keys.length, "no key is listed twice");
+  for (const entry of SHORTCUTS) {
+    assert.ok(entry.keys.trim().length > 0, "every row names its key");
+    assert.ok(entry.label.trim().length > 0, `no description for ${entry.keys}`);
+    assert.ok(!/localhost|:\d{4}\b|API /i.test(entry.label), entry.label);
+  }
+  for (const expected of ["Ctrl+O", "Ctrl+S", "Ctrl+Z", "M", "P", "Y", "Esc"]) {
+    assert.ok(keys.includes(expected), `the list covers ${expected}: ${keys.join(" · ")}`);
+  }
+  // the list is a two-column table: one description per key row
+  assert.equal(SHORTCUTS.filter((entry) => entry.keys === "M")[0].label, "Measure a distance (two clicks; Esc clears)");
+});
+
+test("menu reasons read as tooltips, never as wrapped sentences", () => {
+  // the reasons the menus pass are short, lower-case clauses (they become the
+  // item's title attribute); nothing may look like a paragraph
+  const reasons = [
+    "a request is in flight",
+    "load, fetch or decompress an image first",
+    "nothing to undo — run an operation first",
+    "nothing to redo — undo a step first",
+    "there is no result yet — run a filter or K-Means first",
+  ];
+  for (const reason of reasons) {
+    assert.ok(reason.length <= 60, `too long for a tooltip: ${reason}`);
+    assert.ok(!reason.includes("\n"), "a tooltip is one line");
+    assert.ok(reason.trim() === reason, "no stray whitespace");
+  }
 });

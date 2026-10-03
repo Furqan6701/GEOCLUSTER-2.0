@@ -270,17 +270,55 @@ pointer behaviour, and layout at the two widths the user asked about.
 46. **[both]** Choose a ground unit with an EMPTY pixel size: the line asks for
     the pixel size instead of printing a made-up number.
 
-## F. STEP 6 — menus
+## F. STEP 6 — the menus (item 14)
 
-47. **[both]** Open File / View / Processing / Analysis / Help: every entry is
-    real; none says "not implemented", "planned" or "coming soon".
-48. **[both]** **Recent files** is gone. Instead **File → Session images…**
-    opens the Source section and lists the session's images.
-49. **[both]** Every greyed-out entry has a tooltip saying what to do first
-    (Export with no image, Clear result with no result, map entries with no
-    classification). Hover each one to confirm.
-50. **[both]** Disabled toolbar buttons (Undo/Redo when empty) also explain
+47. **[both]** The bar reads **File · Edit · View · Processing · Analysis ·
+    Help** in that order, and every entry is real: none says "not implemented",
+    "planned" or "coming soon".
+47a. **[both]** **File**: Open image… (Ctrl+O), Fetch Sentinel-2 tile…, a
+    separator, Export current image (PNG)… (Ctrl+S), Compress to .gch (GCH2)…,
+    Open .gch file (decompress)…, a separator, **New session**. There is **no
+    "Export raw label map" entry yet** — run K-Means (Analysis → Run K-Means…)
+    and reopen the File menu: the entry appears (and is enabled). Load or fetch
+    a different image and it is gone again.
+47b. **[both]** **File → New session** asks first ("The current session ends…").
+    **Cancel** keeps everything exactly as it was (same session, same image,
+    same undo history); confirming starts a fresh session and says so in the
+    bottom-right toast. The status-bar **New session** button asks the same
+    question.
+47c. **[both]** **Edit** holds exactly **Undo** and **Redo** (with Ctrl+Z /
+    Ctrl+Y next to them). With nothing to undo, Undo is greyed out and hovering
+    it says "nothing to undo — run an operation first"; hover text never wraps
+    onto a second line in any menu.
+47d. **[both]** **View** holds Fit to view, Actual size, Zoom in, Zoom out, a
+    separator, Show toolbox, Show assistant, Show result viewport — and nothing
+    else. Zoom 25 %/50 %, Pixel readout, Pan tool, Measure distance,
+    Synchronise and Map composer are gone from this menu, yet the toolbar still
+    has Pixel, Measure, Sync and Map with their shortcuts working.
+47e. **[both]** **Processing** lists Grayscale, Negative, Laplacian, a
+    separator, Brightness, Threshold, Mean filter, a separator, Clear result —
+    with **no notes on the right**. Clicking **Brightness** (or Threshold / Mean
+    filter) opens the Filters panel, flashes that row and puts the cursor on its
+    slider; it sends no request. Move the slider (or press Enter) and the
+    operation applies as usual. Grayscale/Negative/Laplacian still run straight
+    away.
+47f. **[both]** **Analysis** lists Run K-Means…, **Histogram**, a separator and
+    Map composer… . **Classification editor**, **Map legend** and **Map export**
+    are gone from the menu (the composer's own panel and footer do those jobs).
+    **Histogram** opens a floating histogram window immediately.
+47g. **[both]** Disabled entries explain themselves **only** in a tooltip
+    (Export with no image, Clear result with no result): no entry shows wrapped
+    inline text. Disabled toolbar buttons (Undo/Redo when empty) also explain
     themselves on hover.
+47h. **[both]** **Help → Keyboard shortcuts** opens a small dialog with a
+    two-column list (key on the left, what it does on the right) and a Close
+    button. Tab from the last control wraps to the first, Shift+Tab from the
+    first wraps to the last, Escape closes it, and focus returns to where you
+    were.
+47i. **[both]** **Help → About** opens a small dialog with the product name, the
+    version, one line about what the app is, and the credits "Contains modified
+    Copernicus Sentinel data." / "Place search by OpenStreetMap contributors."
+    There is **no hostname, port or developer wording** in either dialog.
 
 ## G. Wrap-up
 

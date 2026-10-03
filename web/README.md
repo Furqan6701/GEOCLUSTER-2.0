@@ -33,16 +33,19 @@ rather than a dashboard:
 * **Sync** — one toggle mirrors zoom and pan between Original and Result
   (they stay independent when it is off). The active viewport is highlighted
   and named in the status bar.
-* **Toolbox** — collapsible sections: Source, Filters, Clusters, Analysis,
-  Files (nothing was removed from the old panels).
+* **Toolbox** — collapsible sections: Source, Filters, Clusters, Analysis.
 * **Toolbar / menus** — Open, Satellite, Export, Compress, Undo/Redo, Pan,
-  Pixel, Measure, Sync, dock toggles; menus for File, View, Processing,
-  Analysis, Help. One non-wrapping row: labels drop to icons when the window
-  is too narrow (≤1440 px or when a measured overflow is detected).
+  Pixel, Measure, Sync, dock toggles; menus for File, **Edit** (Undo/Redo),
+  View, Processing, Analysis, Help. One non-wrapping row: from 1600 px the
+  words sit next to the icons, below that they drop to icons only, and a row
+  that would still overflow compacts further rather than wrapping.
+* **Help → Keyboard shortcuts / About** — two small modal dialogs (focus trap
+  and Escape; no hostnames or developer notes in either). About names the
+  product, its version and the Copernicus/OpenStreetMap credits.
 * **Undo/redo** — the last 15 states are kept in the browser as Blobs, so
   undoing paints instantly without a server call; if the server has evicted
   that image (LRU), the stored Blob is re-uploaded and the step retried
-  silently. Toolbar buttons, File menu and `Ctrl+Z`/`Ctrl+Y` all drive it.
+  silently. Toolbar buttons, the **Edit** menu and `Ctrl+Z`/`Ctrl+Y` all drive it.
 * **Zoom** — lives in exactly one place, the per-viewport footers (the toolbar
   duplicate was removed); the View menu keeps the same commands.
 * **Map composer** — a large modal (toolbar **Map**, Analysis → *Map composer…*
@@ -57,10 +60,11 @@ rather than a dashboard:
   undo/redo, `+`/`−` zoom, `0` fit, `1` actual size, `M` measure, `P` pixel
   readout, `Y` sync viewers.
 * **No stub entries** — every menu entry does something real. Entries that are
-  unavailable *right now* (Export before an image, Clear result, the map
-  entries before a classification) are disabled and say why in their tooltip;
-  the old "Recent files" placeholder was removed in favour of
-  File → *Session images…*, which opens the Source list it stood for.
+  unavailable *right now* (Export before an image, Clear result) are disabled
+  and say why in their **tooltip** — never in wrapped text beside the label —
+  and File → *Export raw label map* only appears once K-Means has run.
+  File → *New session* asks for confirmation before discarding the session.
+  The old "Recent files" / "Session images…" placeholders are gone.
 
 ## What it does
 
@@ -72,19 +76,19 @@ rather than a dashboard:
 * **Clusters** — K-Means (K 2–20, max iterations) with ranges, centroids and
   pixel counts, then a classify editor (per-cluster min/max, land-cover name,
   colour) that returns the recoloured image and legend percentages.
-* **Analysis** — 256-bin histogram with log scale, smoothing (3/5/9), cumulative
-  and density views, light/dark canvas and PNG export; all options are
-  recomputed in the browser from the 256 bins (no extra requests). Min/max/mean/std
-  and the distance tool for the active viewport, with px/mm/cm/inch units from a
-  user-entered pixels-per-unit value — and, for downscaled uploads, the distance
-  at the original resolution as well, both labelled.
+* **Analysis** — floating histogram windows (one per image, opened from the
+  sidebar, each viewport footer or the Analysis menu) with the API's 256 bins,
+  log scale, a 0…10 smoothing slider, Counts/Density/Cumulative, light/dark
+  canvas, a Compare overlay and a browser-computed Channel dropdown
+  (Gray/Red/Green/Blue/RGB overlay) — every option recomputed in the browser,
+  no extra requests. Plus the distance tool for the active viewport, with
+  px/mm/cm/m/km/inch/ft/mile units from a user-entered ground scale — and, for
+  downscaled uploads, the distance at the original resolution as well.
 * **Files** — GCH2 Huffman compress to `.gch` (desktop-compatible), decompress
   back into the session, and PNG export of the current image.
 * **Assistant** — chat with the API's AI assistant; router commands such as
   `Show me F-8 imagery`, `Run k-means`, `Histogram` and `Compress this image`
   work even when the model is unavailable. Replies are shown as plain text.
-* **Session files** — the Source section lists every image the session holds
-  (newest first) and can bring any of them back as the working image.
 
 ## Run it (Windows PowerShell)
 

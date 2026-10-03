@@ -748,6 +748,9 @@ export class HistogramWindows {
   }
 
   _handleKey(event) {
+    // a modal dialog owns the keyboard while it is open (item 14): Escape must
+    // close the dialog, not the window behind it
+    if (this.doc.querySelector?.(".app-dialog")) return;
     const win = this.windows.find((entry) => entry.root.contains(event.target));
     if (!win) return;
     if (event.key === "Escape") {

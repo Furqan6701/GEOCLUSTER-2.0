@@ -405,17 +405,51 @@ def check_workstation_layout() -> None:
           "no File menu entry promises a session image list (the list is gone)")
     check(re.search(r'label: "Fetch Sentinel-2 tile…"', app_js) is not None,
           "the File menu still offers the satellite fetch")
-    check(re.search(r'label: "Map export \(PNG\)…"', app_js) is not None,
-          "Map export is a real menu action")
+    # item 14: the menu keeps ONE map entry. Map export and Map legend are gone
+    # from it — the composer's own footer chooses the scale and its properties
+    # panel owns the legend.
     check(re.search(r'label: "Map composer…"', app_js) is not None and
           "openMapStudio" in app_js,
-          "the composer is reachable from the View/Analysis menus")
+          "the composer is reachable from the Analysis menu")
+    check("Map export" not in app_js and "Map legend" not in app_js,
+          "Map export and Map legend are no longer menu entries")
     check("mapViewer" not in app_js and "setMapVisible" not in app_js,
           "the docked map viewport wiring is gone from app.js")
-    check(re.search(r'if \(!mapStudio\.isOpen\(\)\)', app_js) is not None,
-          "an export from the menu opens the composer first (so the scale can be chosen)")
     check(re.search(r'reason: "there is no result yet', app_js) is not None,
           "Clear result explains when it is unavailable")
+
+    # item 14: the six menus in the required order, each entry real
+    order = [m.group(1) for m in re.finditer(r'label: "([A-Za-z]+)",\n    items:', app_js)]
+    check(order[:6] == ["File", "Edit", "View", "Processing", "Analysis", "Help"],
+          "the menu bar is File / Edit / View / Processing / Analysis / Help",
+          ", ".join(order[:6]))
+    for gone in ["Zoom 25%", "Zoom 50%", "Pixel readout", "Pan tool", "Measure distance",
+                 "Synchronise Original", "Classification editor", "Histogram & statistics"]:
+        check(f'label: "{gone}' not in app_js, f"the removed menu entry {gone!r} is gone")
+    # …while the toolbar keeps its buttons and the shortcuts still work
+    for kept in ["Pixel readout on", "Pan tool on", "Measure tool active"]:
+        check(kept in app_js, f"the toolbar behaviour behind {kept!r} is untouched")
+    check(re.search(r'state\.kmeans\s*\n?\s*\?', app_js) is not None,
+          "the raw label map entry is conditional on a K-Means run (not a greyed-out stub)")
+    check("focusOperation" in app_js and "revealParams" in app_js,
+          "Brightness / Threshold / Mean filter open the Filters panel and focus their slider")
+    check("showShortcutsDialog" in app_js and "showAboutDialog" in app_js and "confirmDialog" in app_js,
+          "the Help entries are real dialogs and New session asks first")
+    check("startNewSession" in app_js and 'byId("new-session")' in app_js,
+          "the File menu and the status-bar button share one confirmed New session")
+
+    # the menu rows never grow a second line, and the reason is a tooltip
+    check(".menu-item-note" not in css and "menu-item-note" not in ui_js,
+          "no menu entry renders an inline note (item 14: the reason is a tooltip)")
+    dialogs_js = _js_text("js/dialogs.js")
+    for rule in [".app-dialog", ".app-dialog-layer", ".shortcut-list", ".shortcut-keys"]:
+        check(rule in css, f"styles.css styles {rule}")
+    for token in ["role: \"dialog\"", 'aria-modal\": \"true\"', "Escape", "FOCUSABLE",
+                  "Contains modified Copernicus Sentinel data",
+                  "Place search by OpenStreetMap contributors"]:
+        check(token in dialogs_js, f"dialogs.js implements {token}")
+    check("localhost" not in dialogs_js and "127.0.0.1" not in dialogs_js,
+          "no dialog mentions a host or a port")
 
     # STEP 3 of the redesign: the Filters panel has help popovers instead of
     # hint lines, and sliders instead of Apply buttons

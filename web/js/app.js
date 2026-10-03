@@ -9,7 +9,7 @@
  */
 
 import { ApiClient } from "./api.js";
-import { resolveApiBase } from "./config.js";
+import { APP_VERSION, resolveApiBase } from "./config.js";
 import { ApiError, humanizeError } from "./errors.js";
 import { createActionGate } from "./gate.js";
 import { ImageHistory, HISTORY_LIMIT, snapshotOf } from "./history.js";
@@ -22,6 +22,7 @@ import { createPanels } from "./panels/index.js";
 import { SessionExpiredError, SessionManager, carryGroundMetadata } from "./session.js";
 import { activeImage, createAppState, createBus } from "./state.js";
 import { chip, createMenuBar, downloadBlob, el, icon, setChildren, toast, toggleButton } from "./ui.js";
+import { closeDialog, confirmDialog, isDialogOpen, openDialog, showAboutDialog, showShortcutsDialog, SHORTCUTS } from "./dialogs.js";
 import { Viewer } from "./viewer.js";
 
 const SERVER_ORDER = { original: 0, result: 1 };
@@ -709,6 +710,8 @@ window.addEventListener("keydown", (event) => {
   const typing = target instanceof HTMLElement
     && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
   if (typing) return;
+  // a modal dialog (item 14) is the only thing the keyboard talks to
+  if (isDialogOpen()) return;
   const ctrl = event.ctrlKey || event.metaKey;
   shiftDown = event.shiftKey;
   for (const shortcut of shortcuts) {
@@ -733,15 +736,38 @@ const runOperation = (operation) => () => {
   filters?.actions?.run(operation);
 };
 
-/** Current value the Filters panel would send, for the menu's hint line. */
-const operationHint = (operation) => {
+/**
+ * Item 14: the three operations whose result depends on a value open the
+ * Filters panel and put the cursor ON their slider, instead of running with
+ * whatever number happened to be there. The menu no longer prints that number
+ * beside the entry (the right-hand notes are gone) — the slider itself shows it.
+ */
+const focusOperation = (operation) => () => {
   const filters = panelById.get("filters");
-  if (!filters?.actions?.paramsFor) return "";
-  if (operation === "grayscale" || operation === "negative" || operation === "laplacian") return "no parameters";
-  const params = filters.actions.paramsFor(operation);
-  if (params === undefined || params === null) return "set the value in Filters";
-  return `uses ${JSON.stringify(params)}`.replace(/[{}"]/g, "").replace(/:/g, ": ");
+  focusSection("filters");
+  filters?.actions?.revealParams(operation);
 };
+
+/** File → New session asks first: a session reset discards the current images. */
+async function startNewSession() {
+  const confirmed = await confirmDialog({
+    title: "Start a new session?",
+    message: "The current session ends: its images, the undo history and any measured lines are discarded.",
+    note: "Export anything you want to keep before starting a new session.",
+    confirmLabel: "Start new session",
+    cancelLabel: "Keep this session",
+  });
+  if (!confirmed) return false;
+  try {
+    await session.restart();
+    toast("New session started — upload your image again.", "ok");
+    renderChips();
+    return true;
+  } catch (error) {
+    report(error, "Could not start a session");
+    return false;
+  }
+}
 
 const menuBar = createMenuBar([
   {
@@ -750,7 +776,7 @@ const menuBar = createMenuBar([
       { label: "Open image…", icon: "open", shortcut: "Ctrl+O", onClick: () => bus.emit("open:file-request") },
       { label: "Fetch Sentinel-2 tile…", icon: "satellite", onClick: () => { focusSection("source"); bus.emit("satellite:request"); } },
       { separator: true },
-      // The gate is the single source of truth for these four entries: they are
+      // The gate is the single source of truth for these entries: they are
       // enabled exactly when the toolbar buttons would be.
       {
         label: "Export current image (PNG)…",
@@ -760,20 +786,20 @@ const menuBar = createMenuBar([
         reason: gate.isBusy() ? "a request is in flight" : "load, fetch or decompress an image first",
         onClick: exportCurrent,
       },
-      {
-        label: "Export raw label map (PNG)…",
-        icon: "layers",
-        note: "one grey value per cluster",
-        disabled: !gate.canRun() || !state.kmeans,
-        reason: gate.isBusy()
-          ? "a request is in flight"
-          : "run K-Means first — the label map is one of its outputs",
-        onClick: () => bus.emit("labelmap:request"),
-      },
+      // The raw label map is one of K-Means' outputs, so the entry APPEARS with
+      // the first K-Means run (item 14) — it is never a greyed-out promise.
+      ...(state.kmeans
+        ? [{
+          label: "Export raw label map (PNG)…",
+          icon: "layers",
+          disabled: !gate.canRun(),
+          reason: gate.isBusy() ? "a request is in flight" : "load, fetch or decompress an image first",
+          onClick: () => bus.emit("labelmap:request"),
+        }]
+        : []),
       {
         label: "Compress to .gch (GCH2)…",
         icon: "archive",
-        note: "lossless Huffman coding",
         // exact wording the user asked for, shown as the item's tooltip
         title: "Lossless .gch compression (Huffman coding); files also open in the desktop app.",
         disabled: !gate.canRun(),
@@ -788,6 +814,12 @@ const menuBar = createMenuBar([
         onClick: () => bus.emit("huffman:decompress-request"),
       },
       { separator: true },
+      { label: "New session", icon: "refresh", onClick: () => { void startNewSession(); } },
+    ],
+  },
+  {
+    label: "Edit",
+    items: () => [
       {
         label: history.canUndo ? `Undo ${history.current?.label ?? ""}`.trim() : "Undo",
         icon: "undo",
@@ -804,50 +836,31 @@ const menuBar = createMenuBar([
         reason: "nothing to redo — undo a step first",
         onClick: redo,
       },
-      { separator: true },
-      {
-        label: "New session",
-        icon: "route",
-        onClick: () => byId("new-session").click(),
-      },
     ],
   },
   {
     label: "View",
     items: () => [
       { label: "Fit to view", icon: "fit", shortcut: "0", onClick: () => withActiveViewer((v) => v.fit()) },
-      { label: "Actual size (100%)", icon: "grid", shortcut: "1", onClick: () => withActiveViewer((v) => v.zoomTo(1)) },
+      { label: "Actual size", icon: "grid", shortcut: "1", onClick: () => withActiveViewer((v) => v.zoomTo(1)) },
       { label: "Zoom in", icon: "zoomIn", shortcut: "+", onClick: () => withActiveViewer((v) => v.zoomBy(1.25)) },
       { label: "Zoom out", icon: "zoomOut", shortcut: "−", onClick: () => withActiveViewer((v) => v.zoomBy(1 / 1.25)) },
-      { label: "Zoom 25%", onClick: () => withActiveViewer((v) => v.zoomTo(0.25)) },
-      { label: "Zoom 50%", onClick: () => withActiveViewer((v) => v.zoomTo(0.5)) },
-      { separator: true },
-      { label: "Pixel readout", icon: "pixel", checked: pixelToggle.isPressed(), onClick: () => pixelToggle.setPressed(!pixelToggle.isPressed()) },
-      { label: "Pan tool", icon: "pan", checked: panToggle.isPressed(), onClick: () => panToggle.setPressed(!panToggle.isPressed()) },
-      { label: "Measure distance", icon: "measure", shortcut: "M", checked: measureToggle.isPressed(), onClick: () => withActiveViewer((v) => v.toggleDistance()) },
-      { label: "Synchronise Original ↔ Result", icon: "sync", shortcut: "Y", checked: syncToggle.isPressed(), onClick: () => syncToggle.setPressed(!syncToggle.isPressed()) },
       { separator: true },
       { label: "Show toolbox", icon: "panelLeft", checked: dockVisibility.toolbox, onClick: () => setDockVisible("toolbox", !dockVisibility.toolbox) },
       { label: "Show assistant", icon: "chat", checked: dockVisibility.assistant, onClick: () => setDockVisible("assistant", !dockVisibility.assistant) },
       { label: "Show result viewport", icon: "grid", checked: resultVisible, onClick: () => setResultVisible(!resultVisible) },
-      {
-        label: "Map composer…",
-        icon: "map",
-        note: "a modal that draws the image, legend, scale bar and north arrow on one canvas",
-        onClick: () => { void openMapStudio(); },
-      },
     ],
   },
   {
     label: "Processing",
     items: () => [
-      { label: "Grayscale", icon: "filters", note: operationHint("grayscale"), onClick: runOperation("grayscale") },
-      { label: "Negative", icon: "filters", note: operationHint("negative"), onClick: runOperation("negative") },
-      { label: "Laplacian", icon: "filters", note: operationHint("laplacian"), onClick: runOperation("laplacian") },
+      { label: "Grayscale", icon: "filters", onClick: runOperation("grayscale") },
+      { label: "Negative", icon: "filters", onClick: runOperation("negative") },
+      { label: "Laplacian", icon: "filters", onClick: runOperation("laplacian") },
       { separator: true },
-      { label: "Brightness…", icon: "filters", note: operationHint("brightness"), onClick: runOperation("brightness") },
-      { label: "Threshold…", icon: "filters", note: operationHint("threshold"), onClick: runOperation("threshold") },
-      { label: "Mean filter…", icon: "filters", note: operationHint("meanfilter"), onClick: runOperation("meanfilter") },
+      { label: "Brightness", icon: "filters", onClick: focusOperation("brightness") },
+      { label: "Threshold", icon: "filters", onClick: focusOperation("threshold") },
+      { label: "Mean filter", icon: "filters", onClick: focusOperation("meanfilter") },
       { separator: true },
       {
         label: "Clear result",
@@ -862,66 +875,22 @@ const menuBar = createMenuBar([
     label: "Analysis",
     items: () => [
       { label: "Run K-Means…", icon: "layers", onClick: () => { focusSection("clusters"); panelById.get("clusters")?.actions?.runKMeans(); } },
-      { label: "Classification editor…", icon: "legend", onClick: () => focusSection("clusters") },
+      { label: "Histogram", icon: "chart", onClick: () => bus.emit("histogram:request") },
       { separator: true },
-      { label: "Histogram & statistics", icon: "chart", onClick: () => { focusSection("analysis"); panelById.get("analysis")?.actions?.refresh(); } },
-      { separator: true },
-      {
-        label: "Map composer…",
-        icon: "map",
-        note: state.map
-          ? `image, legend (${state.map.legend.length} classes), scale bar, north arrow`
-          : "opens on the current image; Generate map fills the legend",
-        onClick: () => { void openMapStudio(); },
-      },
-      {
-        label: "Map legend",
-        icon: "legend",
-        checked: mapStudio.getSettings()?.legend?.visible !== false,
-        note: "also editable in the composer's properties panel",
-        onClick: () => {
-          if (!mapStudio.getSettings()) { void openMapStudio(); return; }
-          mapStudio.setLegendVisible(!(mapStudio.getSettings().legend.visible !== false));
-        },
-      },
-      {
-        label: "Map export (PNG)…",
-        icon: "download",
-        note: "1x/2x/3x in the composer footer",
-        onClick: () => {
-          if (!mapStudio.isOpen()) { void openMapStudio(); return; }
-          void mapStudio.download(2);
-        },
-      },
+      { label: "Map composer…", icon: "map", onClick: () => { void openMapStudio(); } },
     ],
   },
   {
     label: "Help",
     items: () => [
-      { label: "Keyboard shortcuts", icon: "help", onClick: () => showShortcuts() },
+      { label: "Keyboard shortcuts", icon: "help", onClick: () => showShortcutsDialog() },
       { separator: true },
-      { label: "About GeoCluster 2.0", icon: "info", onClick: () => showAbout() },
+      { label: "About", icon: "info", onClick: () => showAboutDialog() },
     ],
   },
 ]);
 byId("menubar").replaceWith(menuBar.node);
 menuBar.node.id = "menubar";
-
-function showShortcuts() {
-  toast(
-    "Shortcuts: Ctrl+O open · Ctrl+S export PNG · +/− zoom · 0 fit · 1 actual size · M measure · P pixel readout · Y sync viewers",
-    "",
-    { timeout: 12000 },
-  );
-}
-
-function showAbout() {
-  toast(
-    `GeoCluster 2.0 web workstation · API ${apiBase} · frontend at ${window.location.origin}. Image processing runs on the API; the viewports, readout and measurement are client-side.`,
-    "",
-    { timeout: 14000 },
-  );
-}
 
 // -------------------------------------------------------------------- chips
 const chipHost = document.getElementById("status-chips");
@@ -1082,15 +1051,8 @@ bus.on("viewer:cursor", ({ role, inside, x, y, r, g, b, gray }) => {
 });
 
 // ------------------------------------------------------------- session ops
-byId("new-session").addEventListener("click", async () => {
-  try {
-    await session.restart();
-    toast("New session started — upload your image again.", "ok");
-    renderChips();
-  } catch (error) {
-    report(error, "Could not start a session");
-  }
-});
+// the status-bar button asks the same question as the File menu entry
+byId("new-session").addEventListener("click", () => { void startNewSession(); });
 
 bus.on("session", () => renderChips());
 bus.on("health", () => renderChips());
@@ -1149,5 +1111,6 @@ window.geocluster = {
   setResultVisible,
   toggles: { sync: syncToggle, pan: panToggle, pixel: pixelToggle, measure: measureToggle },
   ui: { toast, downloadBlob, el, chip },
-  version: "2.0",
+  dialogs: { open: openDialog, close: closeDialog, isOpen: isDialogOpen, confirm: confirmDialog, shortcuts: showShortcutsDialog, about: showAboutDialog, SHORTCUTS },
+  version: APP_VERSION,
 };
