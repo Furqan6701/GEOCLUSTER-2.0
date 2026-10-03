@@ -68,8 +68,10 @@ import { UNITS, convertPixels, describeDistance, formatMeasurement, unitRateLabe
 import { formatPercentage, mapCanvasToBlob, mapFileName } from "../js/map.js";
 import {
   CORNERS,
+  DEFAULT_LEGEND_PLACEMENT,
   DEFAULT_MAP_FONT,
   EXPORT_SCALES,
+  LEGEND_PLACEMENTS,
   MAP_DEFAULTS,
   MAP_FONTS,
   NORTH_STYLES,
@@ -89,6 +91,7 @@ import {
   fromMeters,
   groundWidthMeters,
   hasGroundScale,
+  legendPlacementOf,
   mapFont,
   normalizeSettings,
   niceRoundNumber,
@@ -844,9 +847,9 @@ test("normalizeSettings gives the documented defaults", () => {
   assert.equal(settings.cornerCoordinates, false);
   const plain = normalizeSettings(null, { name: "photo.jpg", source: "upload" });
   assert.equal(plain.credit, "", "uploads carry no default credit");
-  const saved = normalizeSettings({ title: "kept", legend: { corner: "tl" } }, { name: "x.png" });
+  const saved = normalizeSettings({ title: "kept", legend: { placement: "onmap-tl" } }, { name: "x.png" });
   assert.equal(saved.title, "kept", "session settings win over the defaults");
-  assert.equal(saved.legend.corner, "tl");
+  assert.equal(saved.legend.placement, "onmap-tl");
   assert.equal(saved.legend.showPercentages, true, "partially saved legend keeps the rest");
 });
 
@@ -932,7 +935,15 @@ test("composeStudioMap draws image, legend, scale bar and north arrow on ONE can
   const result = composeStudioMap({
     image, settings: STUDIO_SETTINGS({ title: "sample", subtitle: "k=3" }), documentRef: documentStub,
   });
-  assert.equal(result.canvas.width, 800 + frameMetrics(800, 600, { scale: 1 }).pad * 2);
+  const basePad = frameMetrics(800, 600, { scale: 1 }).pad;
+  assert.ok(result.canvas.width > 800 + basePad * 2,
+    "the legend sits outside by default, so the canvas grew sideways",
+    `${result.canvas.width} vs ${800 + basePad * 2}`);
+  assert.ok(result.canvas.height > 600 + basePad * 2, "and keeps the title/footer strips");
+  assert.equal(result.boxes.legendOutside, true, "the legend is outside the image");
+  assert.ok(result.boxes.legend.x >= result.boxes.image.x + result.boxes.image.width,
+    "the outside legend starts to the right of the image",
+    `${result.boxes.legend.x} vs ${result.boxes.image.x + result.boxes.image.width}`);
   assert.ok(result.boxes.legend != null, "the legend box was measured");
   assert.ok(result.boxes.scaleBar != null, "the scale bar was placed");
   assert.ok(result.boxes.northArrow != null, "the north arrow was placed");
@@ -963,7 +974,7 @@ test("composeStudioMap at 2x/3x is the same drawing, scaled exactly", () => {
   assert.deepEqual(big, base, "the same percentages are drawn at 2x");
 });
 
-test("the legend honours its visibility, percentages, corner and font size", () => {
+test("the legend honours its visibility, percentages, placement and font size", () => {
   const hidden = composeStudioMap({
     image: { width: 800, height: 600 },
     settings: STUDIO_SETTINGS({ legend: { visible: false } }),
@@ -982,12 +993,12 @@ test("the legend honours its visibility, percentages, corner and font size", () 
 
   const left = composeStudioMap({
     image: { width: 800, height: 600 },
-    settings: STUDIO_SETTINGS({ legend: { corner: "tl" } }),
+    settings: STUDIO_SETTINGS({ legend: { placement: "onmap-tl" } }),
     documentRef: fakeDocument(),
   });
   const right = composeStudioMap({
     image: { width: 800, height: 600 },
-    settings: STUDIO_SETTINGS({ legend: { corner: "br" } }),
+    settings: STUDIO_SETTINGS({ legend: { placement: "onmap-br" } }),
     documentRef: fakeDocument(),
   });
   assert.ok(left.boxes.legend.y < right.boxes.legend.y, "tl sits above br");
@@ -1625,4 +1636,90 @@ test("every text on the composed canvas uses the one selected font", () => {
     assert.match(font, /^("?[\w ]+\d+px )?"Trebuchet MS", system-ui, sans-serif$/,
       `every drawn font starts with the chosen family: ${font}`);
   }
+});
+
+// ------------- item 5: legend placement, outside by default -----------------
+
+test("the placement dropdown offers outside right/bottom and the four on-map corners", () => {
+  assert.deepEqual(LEGEND_PLACEMENTS.map((entry) => entry.key),
+    ["outside-right", "outside-bottom", "onmap-tl", "onmap-tr", "onmap-bl", "onmap-br"]);
+  assert.deepEqual(LEGEND_PLACEMENTS.map((entry) => entry.label), [
+    "Outside right", "Outside bottom",
+    "On map — top left", "On map — top right", "On map — bottom left", "On map — bottom right",
+  ]);
+  assert.equal(DEFAULT_LEGEND_PLACEMENT, "outside-right", "outside right is the default");
+  assert.equal(MAP_DEFAULTS.legend.placement, "outside-right");
+  assert.ok(LEGEND_PLACEMENTS.filter((entry) => entry.outside).length === 2);
+  assert.ok(LEGEND_PLACEMENTS.filter((entry) => !entry.outside).length === 4);
+});
+
+test("legendPlacementOf falls back for unknown or missing placements", () => {
+  assert.equal(legendPlacementOf(MAP_DEFAULTS).key, "outside-right");
+  assert.equal(legendPlacementOf({ legend: { placement: "onmap-bl" } }).key, "onmap-bl");
+  assert.equal(legendPlacementOf({ legend: { placement: "nowhere" } }).key, "outside-right");
+  assert.equal(legendPlacementOf({}).key, "outside-right");
+  assert.equal(legendPlacementOf(null).key, "outside-right");
+});
+
+test("an outside legend enlarges the composed canvas and never covers the image", () => {
+  const documentStub = fakeDocument();
+  const image = { width: 800, height: 600 };
+  const measure = documentStub.createElement("canvas").getContext("2d");
+  const rows = STUDIO_ROWS;
+
+  const right = composeStudioMap({
+    image, settings: STUDIO_SETTINGS({ legend: { placement: "outside-right" } }), documentRef: documentStub,
+  });
+  const rightPlain = frameMetrics(800, 600, { scale: 1 });
+  assert.equal(right.canvas.height, rightPlain.height, "outside right does not change the height");
+  assert.ok(right.canvas.width > rightPlain.width, "the canvas grew to the right");
+  assert.ok(right.boxes.legend.x >= right.boxes.image.x + right.boxes.image.width,
+    "the legend is entirely right of the image");
+  assert.ok(right.boxes.legend.x + right.boxes.legend.width <= right.canvas.width,
+    "and entirely inside the canvas");
+
+  const bottom = composeStudioMap({
+    image, settings: STUDIO_SETTINGS({ legend: { placement: "outside-bottom" } }), documentRef: documentStub,
+  });
+  assert.equal(bottom.canvas.width, rightPlain.width, "outside bottom does not change the width");
+  assert.ok(bottom.canvas.height > rightPlain.height, "the canvas grew downwards");
+  assert.ok(bottom.boxes.legend.y >= bottom.boxes.image.y + bottom.boxes.image.height,
+    "the legend is entirely below the image");
+  assert.ok(bottom.boxes.legend.y + bottom.boxes.legend.height <= bottom.canvas.height,
+    "and entirely inside the canvas");
+
+  // every on-map placement draws INSIDE the image rectangle
+  for (const key of ["onmap-tl", "onmap-tr", "onmap-bl", "onmap-br"]) {
+    const onMap = composeStudioMap({
+      image, settings: STUDIO_SETTINGS({ legend: { placement: key } }), documentRef: documentStub,
+    });
+    const img = onMap.boxes.image;
+    const box = onMap.boxes.legend;
+    assert.equal(onMap.canvas.width, rightPlain.width, `${key} keeps the original width`);
+    assert.ok(box.x >= img.x && box.x + box.width <= img.x + img.width, `${key} inside the image horizontally`);
+    assert.ok(box.y >= img.y && box.y + box.height <= img.y + img.height, `${key} inside the image vertically`);
+    assert.equal(onMap.boxes.legendOutside, false);
+  }
+
+  // the outside bands scale exactly with the export scale
+  const one = composeStudioMap({ image, settings: STUDIO_SETTINGS(), scale: 1, documentRef: documentStub });
+  const three = composeStudioMap({ image, settings: STUDIO_SETTINGS(), scale: 3, documentRef: documentStub });
+  assert.equal(three.canvas.width, one.canvas.width * 3, "3x is exactly 3x wide");
+  assert.equal(three.canvas.height, one.canvas.height * 3, "3x is exactly 3x tall");
+  assert.equal(three.boxes.legend.x, one.boxes.legend.x * 3);
+  void measure;
+  void rows;
+});
+
+test("an invisible or empty legend reserves no space at all", () => {
+  const documentStub = fakeDocument();
+  const plain = frameMetrics(800, 600, { scale: 1 });
+  const hidden = composeStudioMap({
+    image: { width: 800, height: 600 },
+    settings: STUDIO_SETTINGS({ legend: { visible: false } }),
+    documentRef: documentStub,
+  });
+  assert.equal(hidden.canvas.width, plain.width, "no legend, no extra band");
+  assert.equal(hidden.boxes.outsideLegend, false);
+  assert.ok(!hidden.canvas.__texts.includes("Legend"));
 });

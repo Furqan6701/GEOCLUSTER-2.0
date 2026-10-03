@@ -50,6 +50,32 @@ export const TITLE_ALIGNS = Object.freeze([
 /** Size limits shared by the controls and the clamp in normalizeSettings. */
 export const TEXT_SIZE_RANGE = Object.freeze({ min: 8, max: 96 });
 
+/**
+ * Where the legend goes. Two placements sit NEXT TO the image — the composed
+ * canvas is enlarged so the legend never covers a pixel of the map — and four
+ * overlay it in a corner.
+ */
+export const LEGEND_PLACEMENTS = Object.freeze([
+  { key: "outside-right", label: "Outside right", outside: true, corner: null },
+  { key: "outside-bottom", label: "Outside bottom", outside: true, corner: null },
+  { key: "onmap-tl", label: "On map — top left", outside: false, corner: "tl" },
+  { key: "onmap-tr", label: "On map — top right", outside: false, corner: "tr" },
+  { key: "onmap-bl", label: "On map — bottom left", outside: false, corner: "bl" },
+  { key: "onmap-br", label: "On map — bottom right", outside: false, corner: "br" },
+]);
+
+export const DEFAULT_LEGEND_PLACEMENT = "outside-right";
+
+/** The placement entry for a settings object (unknown values fall back). */
+export function legendPlacementOf(settings) {
+  const key = settings?.legend?.placement;
+  return LEGEND_PLACEMENTS.find((entry) => entry.key === key)
+    ?? LEGEND_PLACEMENTS.find((entry) => entry.key === DEFAULT_LEGEND_PLACEMENT);
+}
+
+/** Gap between the image and an outside legend, in CSS px at 1x. */
+export const LEGEND_MARGIN = 12;
+
 export const MAP_DEFAULTS = Object.freeze({
   title: "",
   subtitle: "",
@@ -63,7 +89,7 @@ export const MAP_DEFAULTS = Object.freeze({
     visible: true,
     title: "Legend",
     showPercentages: true,
-    corner: "br",
+    placement: DEFAULT_LEGEND_PLACEMENT,   // outside the image by default
     fontSize: 14,
   }),
   scaleBar: Object.freeze({
@@ -235,6 +261,9 @@ export function normalizeSettings(saved, { name, source, info } = {}) {
   merged.subtitleSize = clamp(merged.subtitleSize, base.subtitleSize);
   merged.creditSize = clamp(merged.creditSize, base.creditSize);
   merged.legend.fontSize = clamp(merged.legend.fontSize, base.legend.fontSize);
+  if (!LEGEND_PLACEMENTS.some((entry) => entry.key === merged.legend.placement)) {
+    merged.legend.placement = base.legend.placement;
+  }
   merged.scaleBar.fontSize = clamp(merged.scaleBar.fontSize, base.scaleBar.fontSize);
   merged.northArrow.size = Math.max(12, Math.min(160, Math.round(Number(merged.northArrow.size) || base.northArrow.size)));
   return merged;
@@ -259,6 +288,7 @@ export function frameMetrics(imageWidth, imageHeight, {
   subtitleSize: subtitleSizeIn = MAP_DEFAULTS.subtitleSize,
   creditSize: creditSizeIn = MAP_DEFAULTS.creditSize,
   scaleBarSize = MAP_DEFAULTS.scaleBar.fontSize,
+  outsideLegend = null,
 } = {}) {
   // the base numbers are integers and every one of them is multiplied by the
   // scale, so 2x and 3x are exactly 2x and 3x of the 1x canvas (no drift).
@@ -279,11 +309,24 @@ export function frameMetrics(imageWidth, imageHeight, {
   const footerHeight = baseFooterHeight * scale;
   const width = Math.round(imageWidth * scale);
   const height = Math.round(imageHeight * scale);
+  const image = { x: pad, y: pad + titleHeight, width, height };
+  const gap = Math.round(LEGEND_MARGIN * scale);
+  // an outside legend enlarges the canvas by its own band + a gap
+  const legendWidth = outsideLegend?.placement === "outside-right"
+    ? Math.round(outsideLegend.width * scale) + gap : 0;
+  const legendHeight = outsideLegend?.placement === "outside-bottom"
+    ? Math.round(outsideLegend.height * scale) + gap : 0;
+  const legendArea = outsideLegend?.placement === "outside-bottom"
+    ? { x: image.x, y: image.y + height + gap, width: Math.max(0, legendWidth), height: Math.max(0, legendHeight - gap) }
+    : { x: image.x + width + gap, y: image.y, width: Math.max(0, legendWidth - gap), height: Math.max(0, legendHeight) };
   return {
     pad, titleSize, subtitleSize, creditSize, titleHeight, footerHeight,
-    width: width + pad * 2,
-    height: height + pad * 2 + titleHeight + footerHeight,
-    image: { x: pad, y: pad + titleHeight, width, height },
+    width: width + pad * 2 + legendWidth,
+    height: height + pad * 2 + titleHeight + footerHeight + legendHeight,
+    image,
+    legendArea,
+    legendGap: gap,
+    outsideLegend: Boolean(legendWidth || legendHeight),
   };
 }
 
@@ -465,17 +508,20 @@ export function legendBoxSize(ctx, rows, {
   unitSize = 14, showPercentages = true, title = "Legend", font = DEFAULT_MAP_FONT,
 } = {}) {
   // measure with the very font the box is drawn with, or the box will clip
-  const previousFont = ctx.font;
-  ctx.font = fontSpec(unitSize, { font });
+  const previousFont = ctx?.font;
+  const width = (text) => (typeof ctx?.measureText === "function"
+    ? ctx.measureText(String(text)).width
+    : String(text).length * unitSize * 0.6);
+  if (ctx?.font !== undefined) ctx.font = fontSpec(unitSize, { font });
   const pad = Math.max(6, Math.round(unitSize * 0.7));
   const rowHeight = Math.round(unitSize * 1.9);
   const swatch = Math.round(unitSize * 1.35);
   const titleHeight = Math.round(unitSize * 2.1);
   const percentWidth = showPercentages
-    ? Math.max(...rows.map((row) => ctx.measureText(percentTextFor(row)).width), unitSize * 3)
+    ? Math.max(...rows.map((row) => width(percentTextFor(row))), unitSize * 3)
     : 0;
-  const nameWidth = Math.max(unitSize * 6, ...rows.map((row) => ctx.measureText(String(row.name ?? "")).width));
-  if (previousFont !== undefined) ctx.font = previousFont;
+  const nameWidth = Math.max(unitSize * 6, ...rows.map((row) => width(row.name ?? "")));
+  if (ctx?.font !== undefined && previousFont !== undefined) ctx.font = previousFont;
   return {
     width: Math.round(pad * 2 + swatch + unitSize * 0.6 + nameWidth + (showPercentages ? unitSize * 0.8 + percentWidth : 0)),
     height: titleHeight + rows.length * rowHeight + pad * 2,
@@ -486,17 +532,59 @@ export function legendBoxSize(ctx, rows, {
  * Paint the whole map into `ctx`. The canvas must already be sized by
  * `composeStudioMap`/`studioSize` — this only draws.
  */
-export function drawStudioMap(ctx, { image, settings, imageWidth, imageHeight, scale = 1, info = null } = {}) {
-  const width = Math.round(imageWidth * scale);
-  const height = Math.round(imageHeight * scale);
+/**
+ * Everything the composition needs to know BEFORE a canvas size is chosen:
+ * the frame metrics (which grow when the legend sits outside) and the legend
+ * box itself. `measure` is a 2D context used only for text metrics.
+ */
+export function studioLayout({
+  settings, imageWidth, imageHeight, scale = 1, measure = null, documentRef = null,
+} = {}) {
+  const rows = (settings?.legend?.rows ?? []).filter(Boolean);
+  const placement = legendPlacementOf(settings);
+  const legendVisible = settings?.legend?.visible !== false && rows.length > 0;
+  const unitSize = Math.round((settings?.legend?.fontSize ?? MAP_DEFAULTS.legend.fontSize) * scale);
+  let legendBox = null;
+  if (legendVisible && placement.outside) {
+    const ctx = measure ?? measureContext(documentRef);
+    // measured at 1x with integer sizes and multiplied by the scale in
+    // frameMetrics, so 2x/3x stay EXACT multiples; the +2 px is slack so the
+    // legend's own border/rounding can never be clipped by the frame
+    const box = legendBoxSize(ctx, rows, {
+      unitSize: Math.round(settings?.legend?.fontSize ?? MAP_DEFAULTS.legend.fontSize),
+      showPercentages: settings.legend.showPercentages !== false,
+      title: settings.legend.title,
+      font: settings.font,
+    });
+    legendBox = { width: box.width + 2, height: box.height + 2 };
+  }
   const metrics = frameMetrics(imageWidth, imageHeight, {
     scale,
-    hasSubtitle: Boolean(settings.subtitle),
-    titleSize: settings.titleSize,
-    subtitleSize: settings.subtitleSize,
-    creditSize: settings.creditSize,
-    scaleBarSize: settings.scaleBar?.fontSize,
+    hasSubtitle: Boolean(settings?.subtitle),
+    titleSize: settings?.titleSize,
+    subtitleSize: settings?.subtitleSize,
+    creditSize: settings?.creditSize,
+    scaleBarSize: settings?.scaleBar?.fontSize,
+    outsideLegend: legendBox ? { placement: placement.key, ...legendBox } : null,
   });
+  return { metrics, placement, legendBox, legendUnit: unitSize, legendVisible, rows };
+}
+
+/** A throwaway 2D context used for text measurement (falls back to none). */
+function measureContext(documentRef) {
+  const canvas = documentRef?.createElement?.("canvas");
+  return canvas?.getContext?.("2d") ?? null;
+}
+
+export function drawStudioMap(ctx, {
+  image, settings, imageWidth, imageHeight, scale = 1, info = null, layout = null,
+} = {}) {
+  const width = Math.round(imageWidth * scale);
+  const height = Math.round(imageHeight * scale);
+  const plan = layout ?? studioLayout({
+    settings, imageWidth, imageHeight, scale, measure: ctx,
+  });
+  const metrics = plan.metrics;
   const font = mapFont(settings.font);
   const legendRows = (settings.legend?.rows ?? []).filter(Boolean);
   const metres = groundWidthMeters({ info, settings });
@@ -565,23 +653,39 @@ export function drawStudioMap(ctx, { image, settings, imageWidth, imageHeight, s
     }
   }
 
-  // legend overlay at its corner
+  // legend — outside the image (the canvas grew for it) or over a corner
+  boxes.outsideLegend = metrics.outsideLegend;
   if (settings.legend?.visible && legendRows.length) {
-    const legendUnit = Math.round((settings.legend.fontSize ?? MAP_DEFAULTS.legend.fontSize) * scale);
+    const legendUnit = plan.legendUnit;
     const size = legendBoxSize(ctx, legendRows, {
       unitSize: legendUnit,
       showPercentages: settings.legend.showPercentages !== false,
       title: settings.legend.title,
       font,
     });
-    const margin = Math.round(12 * scale);
-    const anchor = cornerAnchor(settings.legend.corner ?? "br", metrics.image, size, margin);
+    const outside = plan.placement.outside;
+    let x;
+    let y;
+    if (plan.placement.key === "outside-right") {
+      x = metrics.legendArea.x;
+      y = metrics.image.y + Math.max(0, Math.round((metrics.image.height - size.height) / 2));
+    } else if (plan.placement.key === "outside-bottom") {
+      x = metrics.legendArea.x;
+      y = metrics.legendArea.y;
+    } else {
+      const margin = Math.round(12 * scale);
+      const anchor = cornerAnchor(plan.placement.corner, metrics.image, size, margin);
+      x = anchor.x;
+      y = anchor.y;
+    }
     boxes.legend = drawLegendBox(ctx, {
-      x: anchor.x, y: anchor.y, rows: legendRows, title: settings.legend.title ?? "Legend",
+      x, y, rows: legendRows, title: settings.legend.title ?? "Legend",
       unitSize: legendUnit,
       showPercentages: settings.legend.showPercentages !== false,
       font,
+      ...(outside ? { background: "rgba(10, 15, 19, 1)" } : {}),
     });
+    boxes.legendOutside = outside;
   }
 
   // north arrow at its corner
@@ -628,14 +732,9 @@ export function drawStudioMap(ctx, { image, settings, imageWidth, imageHeight, s
 }
 
 /** Composition size for a given scale factor (sizes follow the settings). */
-export function studioSize(imageWidth, imageHeight, scale = 1, settings = MAP_DEFAULTS) {
-  const metrics = frameMetrics(imageWidth, imageHeight, {
-    scale,
-    hasSubtitle: Boolean(settings?.subtitle),
-    titleSize: settings?.titleSize,
-    subtitleSize: settings?.subtitleSize,
-    creditSize: settings?.creditSize,
-    scaleBarSize: settings?.scaleBar?.fontSize,
+export function studioSize(imageWidth, imageHeight, scale = 1, settings = MAP_DEFAULTS, { measure = null, documentRef = null } = {}) {
+  const { metrics } = studioLayout({
+    settings, imageWidth, imageHeight, scale, measure, documentRef,
   });
   return { width: metrics.width, height: metrics.height };
 }
@@ -647,18 +746,19 @@ export function studioSize(imageWidth, imageHeight, scale = 1, settings = MAP_DE
 export function composeStudioMap({ image, settings, scale = 1, info = null, documentRef = globalThis.document } = {}) {
   const imageWidth = Math.max(1, Math.round(image?.width ?? 0));
   const imageHeight = Math.max(1, Math.round(image?.height ?? 0));
-  const metrics = frameMetrics(imageWidth, imageHeight, {
-    scale,
-    hasSubtitle: Boolean(settings?.subtitle),
-    titleSize: settings?.titleSize,
-    subtitleSize: settings?.subtitleSize,
-    creditSize: settings?.creditSize,
-    scaleBarSize: settings?.scaleBar?.fontSize,
+  // measure the legend first: an outside legend changes the canvas size
+  const layout = studioLayout({
+    settings, imageWidth, imageHeight, scale,
+    measure: measureContext(documentRef),
+    documentRef,
   });
   const canvas = documentRef.createElement("canvas");
-  canvas.width = metrics.width;
-  canvas.height = metrics.height;
+  canvas.width = layout.metrics.width;
+  canvas.height = layout.metrics.height;
   const ctx = canvas.getContext("2d");
-  const boxes = drawStudioMap(ctx, { image, settings, imageWidth, imageHeight, scale, info });
-  return { canvas, width: canvas.width, height: canvas.height, boxes, imageWidth, imageHeight };
+  const boxes = drawStudioMap(ctx, { image, settings, imageWidth, imageHeight, scale, info, layout });
+  return {
+    canvas, width: canvas.width, height: canvas.height, boxes, imageWidth, imageHeight,
+    layout: layout.metrics,
+  };
 }

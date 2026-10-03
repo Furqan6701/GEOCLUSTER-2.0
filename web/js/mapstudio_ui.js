@@ -13,7 +13,7 @@
 import { downloadBlob, el, icon, setChildren, toggleButton } from "./ui.js";
 import { mapCanvasToBlob } from "./map.js";
 import {
-  CORNERS, EXPORT_SCALES, MAP_DEFAULTS, MAP_FONTS, NORTH_STYLES, SCALE_UNITS,
+  CORNERS, EXPORT_SCALES, LEGEND_PLACEMENTS, MAP_DEFAULTS, MAP_FONTS, NORTH_STYLES, SCALE_UNITS,
   TEXT_SIZE_RANGE, TITLE_ALIGNS, composeStudioMap,
   formatLength, groundWidthMeters, hasGroundScale, normalizeSettings, roundScaleLength, titleFromName,
 } from "./mapstudio.js";
@@ -210,7 +210,12 @@ export class MapStudio {
     return [
       this._checkbox("Show legend", true, (value) => this._update((settings) => { settings.legend.visible = value; }), "legendVisible"),
       this._field("Legend title", this._text("Legend", (value) => this._update((settings) => { settings.legend.title = value; }), { key: "legendTitle" })),
-      this._field("Position", this._select(CORNERS, "br", (value) => this._update((settings) => { settings.legend.corner = value; }), "legendCorner")),
+      this._field("Placement", this._select(
+        LEGEND_PLACEMENTS.map((entry) => ({ key: entry.key, label: entry.label })),
+        MAP_DEFAULTS.legend.placement,
+        (value) => this._update((settings) => { settings.legend.placement = value; }),
+        "legendPlacement",
+      )),
       this._checkbox("Show percentages", true, (value) => this._update((settings) => { settings.legend.showPercentages = value; }), "legendPercent"),
       this._field("Legend text size (px)", this._number(MAP_DEFAULTS.legend.fontSize, (value) => this._update((settings) => {
         settings.legend.fontSize = Math.max(TEXT_SIZE_RANGE.min, Math.min(TEXT_SIZE_RANGE.max, Math.round(Number(value) || MAP_DEFAULTS.legend.fontSize)));
@@ -465,7 +470,7 @@ export class MapStudio {
     set(f.creditSize, s.creditSize);
     if (f.legendVisible) f.legendVisible.checked = Boolean(s.legend.visible);
     set(f.legendTitle, s.legend.title);
-    set(f.legendCorner, s.legend.corner);
+    set(f.legendPlacement, s.legend.placement);
     if (f.legendPercent) f.legendPercent.checked = s.legend.showPercentages !== false;
     set(f.legendFont, s.legend.fontSize);
     if (f.scaleVisible) f.scaleVisible.checked = Boolean(s.scaleBar.visible);

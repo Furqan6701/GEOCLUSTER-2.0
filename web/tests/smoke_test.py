@@ -270,7 +270,8 @@ def check_workstation_layout() -> None:
     for token in ["drawStudioMap", "composeStudioMap", "drawScaleBar", "drawNorthArrow",
                   "drawLegendBox", "groundWidthMeters", "cornerLabels", "roundScaleLength",
                   "SCALE_UNITS", "NORTH_STYLES", "EXPORT_SCALES",
-                  "MAP_FONTS", "fontSpec", "TITLE_ALIGNS", "TEXT_SIZE_RANGE"]:
+                  "MAP_FONTS", "fontSpec", "TITLE_ALIGNS", "TEXT_SIZE_RANGE",
+                  "LEGEND_PLACEMENTS", "DEFAULT_LEGEND_PLACEMENT", "legendPlacementOf", "studioLayout"]:
         check(token in studio_js, f"mapstudio.js provides {token}")
     check('createElement("canvas")' in studio_js,
           "the whole map (image + legend + bar + arrow) is composited on one canvas")
@@ -287,6 +288,12 @@ def check_workstation_layout() -> None:
           "the composer offers the Font dropdown, the bold toggle, the alignment and the arrow size")
     check("arrowRotation" not in ui_js and "arrowSize" in ui_js,
           "the north arrow has a Size control and NO rotation control")
+    check("outsideLegend" in studio_js and "legendArea" in studio_js,
+          "frameMetrics reserves a band for an outside legend")
+    check('DEFAULT_LEGEND_PLACEMENT = "outside-right"' in studio_js,
+          "the default legend placement is outside right")
+    check("legendPlacement" in ui_js and "legendCorner" not in ui_js,
+          "the composer offers the placement dropdown, not the old corner one")
     check("drawImage" in studio_js and "not to scale" in studio_js,
           "the image is drawn in and unknown scales are labelled honestly")
     # ---- item 3: the composer is opaque and clears the page toolbar

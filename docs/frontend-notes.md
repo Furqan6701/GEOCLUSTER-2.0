@@ -64,6 +64,23 @@ the server's `image_id`: "Result — sample.jpg#negative (1600×1066)", not
 "new image EkEkL0bUvBYg". A boot assertion collects every `/images/<id>` id the
 session used and fails if any of them appears in a toast.
 
+### Legend placement (item 5)
+
+* `legend.placement` replaces the old `legend.corner`. `LEGEND_PLACEMENTS`:
+  **Outside right (default)**, Outside bottom, On map — top left / top right /
+  bottom left / bottom right. `legendPlacementOf()` normalizes anything unknown
+  back to the default.
+* The two outside placements **enlarge the composed canvas** instead of drawing
+  over the image: `studioLayout()` measures the legend box at 1x, `frameMetrics()`
+  adds a band (width, for outside right; height, for outside bottom) plus a
+  12 px gap, and exposes `legendArea` for the drawing code. All numbers stay
+  integral at 1x and are multiplied by the export scale, so 2x/3x remain
+  **exact** multiples and the legend can never cover a pixel of the map.
+  A legend that is hidden (or has no rows) reserves no space at all.
+* The measurement is text-metric based (the same `legendBoxSize()` used for
+  drawing, with the chosen font), plus 2 px of slack so rounding cannot clip
+  the box border.
+
 ### Composer typography (item 4)
 
 * **One font for every text on the canvas.** `MAP_FONTS` = Arial (default),

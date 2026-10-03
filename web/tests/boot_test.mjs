@@ -936,11 +936,67 @@ if (!bootFailed) {
     const legendSettings = studio.getSettings().legend;
     check(legendSettings.visible === true && legendSettings.title === "Legend",
       "the legend is on by default with an editable title");
-    check(field("legendCorner") != null && field("legendFont") != null && field("legendPercent") != null,
-      "the legend has position, percentage and font-size controls");
-    check([...field("legendCorner").querySelectorAll("option")].map((o) => o.value).join(",") === "tl,tr,bl,br",
-      "the legend can sit in any corner",
-      [...field("legendCorner").querySelectorAll("option")].map((o) => o.value).join(","));
+    check(field("legendPlacement") != null && field("legendFont") != null && field("legendPercent") != null,
+      "the legend has placement, percentage and size controls");
+    check([...field("legendPlacement").querySelectorAll("option")].map((o) => o.value).join(",") ===
+      "outside-right,outside-bottom,onmap-tl,onmap-tr,onmap-bl,onmap-br",
+      "the legend offers outside right/bottom plus the four on-map corners",
+      [...field("legendPlacement").querySelectorAll("option")].map((o) => o.value).join(","));
+    check([...field("legendPlacement").querySelectorAll("option")].map((o) => o.textContent).join("|") ===
+      "Outside right|Outside bottom|On map — top left|On map — top right|On map — bottom left|On map — bottom right",
+      "the placement options are labelled clearly",
+      [...field("legendPlacement").querySelectorAll("option")].map((o) => o.textContent).join("|"));
+    check(studio.getSettings().legend.placement === "outside-right",
+      "outside right is the default placement", studio.getSettings().legend.placement);
+    check(field("legendCorner") == null, "the old corner dropdown is gone");
+
+    // ---- item 5: outside placements enlarge the canvas, on-map ones cover it
+    {
+      const boxOf = () => studio.composeAt(1).canvas.width;
+      const legendAt = () => {
+        const canvas = studio.getCanvas();
+        const style = (canvas.__textStyles ?? []).find((entry) => entry.text === "Legend");
+        return style;
+      };
+      const image = { width: state().result.info.width, height: state().result.info.height };
+      const outsideWidth = preview().width;
+      const sourceRatio = image.width / image.height;
+      check(outsideWidth > image.width, "the outside legend widened the preview canvas",
+        `${outsideWidth} vs ${image.width}`);
+
+      const setPlacement = (key) => {
+        field("legendPlacement").value = key;
+        field("legendPlacement").dispatchEvent(new window.Event("change", { bubbles: true }));
+      };
+      // outside bottom: wider is gone, taller appears
+      setPlacement("outside-bottom");
+      const bottomWidth = preview().width;
+      const bottomHeight = preview().height;
+      check(bottomWidth < outsideWidth, "outside bottom gives the width back",
+        `${bottomWidth} vs ${outsideWidth}`);
+      check(bottomHeight > 0 && boxOf() === bottomWidth, "and grows downwards instead");
+
+      // on map: the canvas is back to the image plus the frame
+      setPlacement("onmap-br");
+      const onMapWidth = preview().width;
+      const onMapHeight = preview().height;
+      check(onMapWidth < outsideWidth && onMapHeight < bottomHeight,
+        "an on-map legend adds no space around the image",
+        `${onMapWidth}×${onMapHeight}`);
+      check(Math.abs(onMapWidth / onMapHeight - sourceRatio) < 0.2,
+        "the on-map canvas keeps the image's aspect",
+        `${onMapWidth}×${onMapHeight} vs ${image.width}×${image.height}`);
+      const cornerText = legendAt();
+      check(cornerText != null, "the legend title is drawn on map");
+      const frame = studio.composeAt(1).canvas;
+      const mapLeft = 0 + (frame.width - onMapWidth) / 2;
+      check(cornerText.x > frame.width / 2, "bottom right draws the legend right of centre",
+        `${cornerText.x} / ${frame.width}`);
+      void mapLeft;
+      setPlacement("outside-right");
+      check(preview().width === outsideWidth, "back to outside right",
+        `${preview().width} vs ${outsideWidth}`);
+    }
 
     // renaming a class in the composer updates the Clusters table
     const firstLegendName = document.querySelector(".map-legend-name");
@@ -969,12 +1025,13 @@ if (!bootFailed) {
       "a class recoloured in the table is recoloured in the composer",
       JSON.stringify(studio.getSettings().legend.rows[0].color));
 
-    // hiding the legend shrinks the canvas back to the image + frame
+    // hiding the legend gives the outside band back
     const withLegend = preview().width;
     field("legendVisible").checked = false;
     field("legendVisible").dispatchEvent(new window.Event("change", { bubbles: true }));
     check(studio.getSettings().legend.visible === false, "the legend can be hidden");
-    check(studio.getCanvas().width === withLegend, "hiding the legend re-renders the same canvas size");
+    check(studio.getCanvas().width < withLegend,
+      "hiding the outside legend shrinks the canvas back", `${studio.getCanvas().width} vs ${withLegend}`);
     check(!(studio.getCanvas().__texts ?? []).includes("Legend"),
       "the hidden legend is not painted");
     field("legendVisible").checked = true;
