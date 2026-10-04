@@ -403,6 +403,15 @@ if (!bootFailed) {
   check(document.querySelector(".chat-log") != null, "chat panel mounted");
   check(document.getElementById("chat-column").textContent.includes("plain text"),
     "chat explains that math is not rendered");
+  // item 15: the welcome points at the glossary answers, and the first
+  // suggested question is one the offline router can answer
+  const chatColumn = document.getElementById("chat-column");
+  check(chatColumn.textContent.includes("Ask me what any tool does"),
+    "the chat welcome says the assistant can explain any tool",
+    chatColumn.textContent.slice(0, 200));
+  const chatHints = [...chatColumn.querySelectorAll(".chat-hint, .hint-chip, button")].map((n) => n.textContent.trim());
+  check(chatHints.some((text) => /what does .*filter do\?/i.test(text)),
+    "the first chat hint is a tool question the glossary answers", chatHints.join(" | "));
 
   // STEP 2.5: before anything runs, the Result viewport explains what to do
   const bootResult = window.geocluster.viewers.result;
