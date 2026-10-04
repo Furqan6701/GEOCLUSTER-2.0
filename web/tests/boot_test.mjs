@@ -1666,125 +1666,73 @@ if (!bootFailed) {
       "the status line stays out of the way while an image is loaded",
       statusLine ? `hidden=${statusLine.hidden}` : "missing");
 
-    // --- five "?" buttons: the Filters heading, POINT OPERATIONS, 3 sliders
-    const helpButtons = [...section.querySelectorAll(".help-btn")];
-    check(helpButtons.length === 5, "five help buttons (Filters heading + POINT OPERATIONS + 3 sliders)",
-      `${helpButtons.length}: ${helpButtons.map((b) => b.getAttribute("aria-label")).join(", ")}`);
-    const singleTexts = [...section.querySelectorAll(".help-popover-text")].map((n) => n.textContent);
-    const expectedTexts = [
-      "Each filter is applied to the latest result, so filters can be combined. Use Undo to step back.",
-      "Shifts all pixel values by a constant amount from -255 to 255. Positive values brighten the image and negative values darken it. Results are limited to the valid 0 to 255 range.",
-      "Each color value (red, green, blue) above the threshold is set to its maximum, and all others are set to zero.",
-      "Smooths the image by averaging neighboring pixels.",
-    ];
-    check(expectedTexts.every((text) => singleTexts.includes(text)) &&
-      singleTexts.length === expectedTexts.length,
-      "Filters, Brightness, Threshold and Mean filter keep their own help texts verbatim",
-      singleTexts.join(" | "));
+    // --- item 15: no "?" buttons or popovers are left anywhere
+    check(section.querySelectorAll(".help-btn, .help-popover, .help, .help-list, .help-entry").length === 0,
+      "the Filters panel has no help buttons or popovers",
+      String(section.querySelectorAll(".help-btn, .help-popover").length));
+    check(document.querySelectorAll(".help-btn, .help-popover").length === 0,
+      "no help control exists anywhere in the page");
 
-    // --- the point-operation buttons are a clean 2 x 2 grid again
+    // --- …and every control explains itself in ONE native tooltip line
+    const tooltipOf = (node) => node?.getAttribute("title") ?? "";
     const pointGroup = [...section.querySelectorAll(".tool-group")].find(
       (node) => node.querySelector(".tool-group-title")?.textContent.trim() === "Point operations");
     check(Boolean(pointGroup), "the Point operations group exists");
     const grid = pointGroup?.querySelector(".btn-grid");
     check(grid != null && grid.children.length === 4 &&
       [...grid.children].every((node) => node.tagName === "BUTTON"),
-      "the four point-operation buttons are direct grid children (nothing wrapping them)",
+      "the four point-operation buttons are direct grid children",
       [...(grid?.children ?? [])].map((n) => n.tagName).join(","));
-    check(grid != null && !grid.querySelector(".help-btn"),
-      "no individual \"?\" is left next to Grayscale / Negative / Laplacian / Clear result");
-    check([...(grid?.children ?? [])].map((node) => node.textContent.trim()).join("|") ===
-      "Grayscale|Negative|Laplacian|Clear result",
-      "the grid holds exactly the four point operations in order",
-      [...(grid?.children ?? [])].map((n) => n.textContent.trim()).join("|"));
 
-    // --- ONE "?" next to the POINT OPERATIONS label, listing all four entries
-    const groupHelp = pointGroup?.querySelector(".help-btn");
-    check(groupHelp != null &&
-      groupHelp.closest(".help")?.parentElement === pointGroup.querySelector(".tool-group-actions") &&
-      pointGroup.querySelector(".tool-group-title")?.textContent.trim() === "Point operations",
-      "the grouped \"?\" sits next to the Point operations label (in the head actions)",
-      groupHelp?.closest(".help")?.parentElement?.className);
-    const groupPopover = groupHelp?.closest(".help")?.querySelector(".help-popover");
-    check(groupPopover != null && groupPopover.querySelector(".help-popover-text") == null,
-      "the grouped popover is not a single text paragraph");
-    const entries = [...(groupPopover?.querySelectorAll(".help-entry") ?? [])];
-    check(entries.length === 4, "the grouped popover lists four entries", String(entries.length));
-    const names = entries.map((node) => node.querySelector("strong")?.textContent);
-    check(names.join("|") === "Grayscale:|Negative:|Laplacian:|Clear result:",
-      "each entry names an operation in bold, one per line", names.join("|"));
-    check(entries.every((node) => node.tagName === "LI" && node.parentElement?.tagName === "UL"),
-      "the entries are list items built with DOM elements (no innerHTML)",
-      entries.map((n) => n.tagName).join(","));
-    const entryTexts = entries.map((node, index) =>
-      node.textContent.slice(names[index].length).trim());
-    check(entryTexts[0] === "Converts the image to a single-band grayscale image using a luminance-weighted combination of the color channels." &&
-      entryTexts[1] === "Inverts pixel values to produce a photographic negative." &&
-      entryTexts[2] === "Edge detection filter that highlights areas of rapid intensity change, such as boundaries and fine detail." &&
-      entryTexts[3] === "Clears the result viewport. The original image and the undo history are not affected.",
-      "the four grouped help texts are verbatim", entryTexts.join(" | "));
+    const buttons = [...(grid?.children ?? [])];
+    const titles = buttons.map((node) => tooltipOf(node));
+    check(titles.every((text) => text.length > 0),
+      "each point-operation button carries a tooltip", titles.join(" | "));
+    const expectedTooltips = [
+      "Converts the image to a single-band grayscale image using a luminance-weighted combination of the color channels.",
+      "Inverts pixel values to produce a photographic negative.",
+      "Edge detection filter that highlights areas of rapid intensity change, such as boundaries and fine detail.",
+      "Clears the result viewport. The original image and the undo history are not affected.",
+    ];
+    check(JSON.stringify(titles) === JSON.stringify(expectedTooltips),
+      "the four tooltips are the exact descriptions",
+      titles.join(" | "));
+    for (const text of titles) {
+      check(!/[\n\r\t]/.test(text) && text.length <= 200,
+        "a tooltip is a single short line", `${text.length} chars`);
+      check(!/<[a-z/]/i.test(text) && !/\\[()\[]/.test(text),
+        "a tooltip is plain text (no markup, no LaTeX)", text.slice(0, 60));
+    }
 
-    check(helpButtons.every((node) => node.getAttribute("aria-expanded") === "false" && node.textContent.trim() === "?"),
-      "every help button starts closed, labelled \"?\"", helpButtons.map((n) => n.textContent).join(","));
-    check([...section.querySelectorAll(".help-popover")].every((node) => node.hidden),
-      "popovers are hidden until asked for");
+    for (const operation of ["brightness", "threshold", "meanfilter"]) {
+      const row = sliderRow(operation);
+      const label = row.querySelector(".slider-label");
+      const expected = {
+        brightness: "Shifts all pixel values by a constant amount from -255 to 255; positive values brighten the image and negative values darken it; results are limited to the valid 0 to 255 range.",
+        threshold: "Each color value (red, green, blue) above the threshold is set to its maximum, and all others are set to zero.",
+        meanfilter: "Smooths the image by averaging neighboring pixels.",
+      }[operation];
+      check(tooltipOf(label) === expected,
+        `the ${operation} label carries the exact description as its tooltip`,
+        tooltipOf(label));
+      check(tooltipOf(row.querySelector("input[type=range]")) === "" ||
+        tooltipOf(row.querySelector("input[type=range]")) === expected,
+        `the ${operation} slider does not carry a second, different text`,
+        tooltipOf(row.querySelector("input[type=range]")));
+      check(tooltipOf(row.querySelector("input[type=number]")) === expected,
+        `the ${operation} value field repeats the same one-line tooltip`,
+        tooltipOf(row.querySelector("input[type=number]")));
+    }
 
-    // --- open / close behaviour
-    const brightnessHelp = section.querySelector('.tool-group[data-help="brightness"] .help-btn')
-      ?? [...helpButtons].find((node) => {
-        const group = node.closest(".tool-group");
-        return group?.textContent.includes("Brightness");
-      });
-    const popover = brightnessHelp.closest(".help").querySelector(".help-popover");
-    brightnessHelp.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
-    check(brightnessHelp.getAttribute("aria-expanded") === "true" && !popover.hidden,
-      "clicking \"?\" opens the popover and sets aria-expanded");
-    check(popover.parentElement === document.body && popover.classList.contains("open"),
-      "the open popover is portaled to <body> so the dock cannot clip it");
-    check(document.activeElement === popover, "focus moves into the popover",
-      String(document.activeElement?.className));
-    brightnessHelp.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
-    check(brightnessHelp.getAttribute("aria-expanded") === "false" && popover.hidden,
-      "a second click closes it");
-
-    // the grouped "?" behaves exactly like the single-text ones
-    groupHelp.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
-    check(groupHelp.getAttribute("aria-expanded") === "true" && !groupPopover.hidden &&
-      groupPopover.parentElement === document.body,
-      "the grouped \"?\" opens its popover (portaled, aria-expanded set)");
-    groupHelp.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
-    check(groupHelp.getAttribute("aria-expanded") === "false" && groupPopover.hidden,
-      "a second click closes the grouped popover");
-
-    // outside click
-    brightnessHelp.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
-    document.body.dispatchEvent(new window.Event("pointerdown", { bubbles: true }));
-    check(popover.hidden && brightnessHelp.getAttribute("aria-expanded") === "false",
-      "an outside click closes the popover");
-
-    // Escape returns focus to the button
-    brightnessHelp.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
-    popover.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-    check(popover.hidden && document.activeElement === brightnessHelp,
-      "Escape closes the popover and returns focus to \"?\"",
-      String(document.activeElement?.className));
-
-    // flip: no room above → below; room above → above
-    const anchor = brightnessHelp.getBoundingClientRect.bind(brightnessHelp);
-    const box = popover.getBoundingClientRect.bind(popover);
-    brightnessHelp.getBoundingClientRect = () => ({ top: 4, bottom: 20, left: 40, width: 15, height: 15 });
-    popover.getBoundingClientRect = () => ({ top: 0, bottom: 60, left: 0, width: 200, height: 60 });
-    brightnessHelp.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
-    check(popover.classList.contains("below"), "with no room above the popover flips below");
-    popover.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-    brightnessHelp.getBoundingClientRect = () => ({ top: 500, bottom: 516, left: 40, width: 15, height: 15 });
-    brightnessHelp.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
-    check(!popover.classList.contains("below"), "with room above the popover opens above");
-    check(Number.parseFloat(popover.style.top) + 60 <= 500, "the popover sits above its button",
-      popover.style.top);
-    popover.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-    brightnessHelp.getBoundingClientRect = anchor;
-    popover.getBoundingClientRect = box;
+    // the panel's own contract still exposes the texts (the assistant glossary
+    // ships the same sentences server-side)
+    const filtersPanel = window.geocluster.panels.get("filters");
+    const helpTexts = filtersPanel.actions.help;
+    check(typeof helpTexts === "function" && helpTexts("meanfilter") === "Smooths the image by averaging neighboring pixels.",
+      "the panel still exposes its descriptions as data");
+    check(JSON.stringify(filtersPanel.actions.pointHelp().map(([name]) => name)) ===
+      JSON.stringify(["Grayscale", "Negative", "Laplacian", "Clear result"]),
+      "the four point-operation descriptions are still listed as data");
 
     // --- sliders replace the Apply buttons
     const sliderOps = ["brightness", "threshold", "meanfilter"];

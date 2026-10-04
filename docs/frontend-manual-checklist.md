@@ -321,7 +321,30 @@ pointer behaviour, and layout at the two widths the user asked about.
     Copernicus Sentinel data." / "Place search by OpenStreetMap contributors."
     There is **no hostname, port or developer wording** in either dialog.
 
-## G. Wrap-up
+## G. AI-based help (item 15)
+
+48. **[both]** The Filters panel has **no "?" buttons and no popovers** — not on
+    the section head, not beside POINT OPERATIONS, not on the three sliders.
+    Hover each control instead: Grayscale, Negative, Laplacian and Clear result
+    each show **one line** with the exact description; the Brightness,
+    Threshold and Mean filter labels (and their number fields) do too; the
+    **Filters** section header shows the "each filter is applied to the latest
+    result…" line. Nothing wraps to two lines, nothing is cut off.
+49. **[chat]** Ask the assistant **"What is the mean filter?"** (or "What does
+    Grayscale do?", "How do I use threshold?"). The answer repeats the same
+    sentence as the tooltip, in the chat bubble, with **no LaTeX and no
+    markdown** (`**`, `#`, backticks). It must answer even with **no API key**
+    configured in `api/.env`, and while the provider is rate-limited — those
+    answers never touch the model.
+49a. **[chat]** Ask **"What is NDVI?"**: that one **does** need the model
+    (works with a key, friendly "assistant is unavailable" bubble without).
+    Type **`histogram`** or **`run k-means`**: those still run as commands, not
+    as questions.
+49b. **[both]** The chat welcome bubble mentions **"Ask me what any tool
+    does"**, and the first suggested hint is a question ("What does the Mean
+    filter do?") that answers offline.
+
+## H. Wrap-up
 
 51. **[both]** Walk the Console log: **0 errors** and no `[bus] listener … failed`
     warnings after all of the above.

@@ -1536,7 +1536,7 @@ test("slider values snap to the documented ranges", () => {
   assert.equal(paramsForValue("negative", 5), null);
 });
 
-test("the eight help texts are the verbatim strings from the brief", () => {
+test("the help descriptions are the verbatim strings from the brief", () => {
   assert.deepEqual(Object.keys(HELP_TEXTS).sort(),
     ["brightness", "clear", "filters", "grayscale", "laplacian", "meanfilter", "negative", "threshold"]);
   assert.equal(HELP_TEXTS.filters,
@@ -1547,7 +1547,7 @@ test("the eight help texts are the verbatim strings from the brief", () => {
   assert.equal(HELP_TEXTS.laplacian,
     "Edge detection filter that highlights areas of rapid intensity change, such as boundaries and fine detail.");
   assert.equal(HELP_TEXTS.brightness,
-    "Shifts all pixel values by a constant amount from -255 to 255. Positive values brighten the image and negative values darken it. Results are limited to the valid 0 to 255 range.");
+    "Shifts all pixel values by a constant amount from -255 to 255; positive values brighten the image and negative values darken it; results are limited to the valid 0 to 255 range.");
   assert.equal(HELP_TEXTS.threshold,
     "Each color value (red, green, blue) above the threshold is set to its maximum, and all others are set to zero.");
   assert.equal(HELP_TEXTS.meanfilter, "Smooths the image by averaging neighboring pixels.");
@@ -1559,7 +1559,7 @@ test("the eight help texts are the verbatim strings from the brief", () => {
 });
 
 test("the four point operations share one grouped help entry list", () => {
-  assert.equal(POINT_OPERATION_HELP.length, 4, "the grouped popover lists four entries");
+  assert.equal(POINT_OPERATION_HELP.length, 4, "the list holds four entries");
   assert.deepEqual(POINT_OPERATION_HELP.map(([name]) => name),
     ["Grayscale", "Negative", "Laplacian", "Clear result"]);
   assert.deepEqual(POINT_OPERATION_HELP.map(([, text]) => text), [
@@ -1573,14 +1573,36 @@ test("the four point operations share one grouped help entry list", () => {
     [HELP_TEXTS.grayscale, HELP_TEXTS.negative, HELP_TEXTS.laplacian, HELP_TEXTS.clear]);
 });
 
-test("ui.helpList builds bold names from DOM nodes and never markup", async () => {
-  const { helpList } = await import("../js/ui.js");
-  const source = await readFileAsync(new URL("../js/ui.js", import.meta.url), "utf8");
-  assert.match(source, /export function helpList\(entries\)/, "helpList is exported");
-  // the only mention is the guard that rejects markup, never an assignment
-  assert.equal(/innerHTML\s*=/.test(source), false, "ui.js never assigns innerHTML");
-  assert.equal(typeof helpList, "function");
-  // it needs a DOM to run in; the boot test exercises the rendered list
+test("item 15: no help popover machinery survives anywhere", async () => {
+  const ui = await readFileAsync(new URL("../js/ui.js", import.meta.url), "utf8");
+  const filters = await readFileAsync(new URL("../js/panels/operations.js", import.meta.url), "utf8");
+  const css = await readFileAsync(new URL("../css/styles.css", import.meta.url), "utf8");
+  for (const source of [ui, filters]) {
+    assert.equal(/helpPopover|helpList/.test(source), false, "no module mentions the popovers");
+    assert.equal(/innerHTML\s*=/.test(source), false, "no module assigns innerHTML");
+  }
+  for (const token of [".help-btn", ".help-popover", ".help-list", ".help-entry"]) {
+    assert.equal(css.includes(token), false, `${token} is gone from the stylesheet`);
+  }
+  // the descriptions survive as data, one entry per filter plus the panel note
+  assert.deepEqual(Object.keys(HELP_TEXTS).sort(),
+    ["brightness", "clear", "filters", "grayscale", "laplacian", "meanfilter", "negative", "threshold"]);
+});
+
+test("item 15: the same sentences ship in the assistant glossary", async () => {
+  // the tooltip texts and the offline answer texts are the same by construction:
+  // both are the six filter sentences from the brief
+  const glossary = JSON.parse(await readFileAsync(
+    new URL("../../api/geocluster/data/app_help.json", import.meta.url), "utf8"));
+  const byId = Object.fromEntries(glossary.tools.map((tool) => [tool.id, tool.description]));
+  assert.equal(byId.grayscale, HELP_TEXTS.grayscale);
+  assert.equal(byId.negative, HELP_TEXTS.negative);
+  assert.equal(byId.laplacian, HELP_TEXTS.laplacian);
+  assert.equal(byId.brightness, HELP_TEXTS.brightness);
+  assert.equal(byId.threshold, HELP_TEXTS.threshold);
+  assert.equal(byId.meanfilter, HELP_TEXTS.meanfilter);
+  assert.equal(byId["clear-result"], HELP_TEXTS.clear);
+  assert.equal(glossary.tools.length, 14, "one entry per tool");
 });
 
 test("dropEntry removes one step and keeps the pointer on the same entry", () => {

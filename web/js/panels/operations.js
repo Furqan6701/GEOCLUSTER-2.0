@@ -26,7 +26,7 @@
 import { humanizeError } from "../errors.js";
 import { SessionExpiredError } from "../session.js";
 import { activeImage } from "../state.js";
-import { button, createSection, el, helpList, helpPopover, numberInput, toast, toolGroup } from "../ui.js";
+import { button, createSection, el, numberInput, toast, toolGroup } from "../ui.js";
 import { preview as defaultPreview } from "../preview.js";
 
 export const OPERATION_LABELS = Object.freeze({
@@ -42,28 +42,28 @@ export const OPERATION_LABELS = Object.freeze({
 export const OPERATIONS_WITH_PARAMS = Object.freeze(["brightness", "threshold", "meanfilter"]);
 
 /**
- * Help texts. They sit next to the code that implements the behaviour so the
- * two can be compared; all four parameter/point texts now match the code:
- *   - brightness / threshold / mean filter mirror api/geocluster/filters.py;
- *   - "Clear result" says the viewport is cleared (which is what clearResult()
- *     does) and that the original and the undo history are untouched.
- * The four point-operation entries are listed together in one popover next to
- * the POINT OPERATIONS heading (see POINT_OPERATION_HELP below).
+ * One short description per filter — the SAME sentences the assistant's
+ * glossary ships (api/geocluster/data/app_help.json), so the tooltip under a
+ * control and the answer the AI gives can never drift apart.
+ *
+ * Item 15: they are now native tooltips (`title` on the control's label)
+ * instead of "?" buttons and popovers: the panel has no help controls left.
  */
 export const HELP_TEXTS = Object.freeze({
   filters: "Each filter is applied to the latest result, so filters can be combined. Use Undo to step back.",
   grayscale: "Converts the image to a single-band grayscale image using a luminance-weighted combination of the color channels.",
   negative: "Inverts pixel values to produce a photographic negative.",
   laplacian: "Edge detection filter that highlights areas of rapid intensity change, such as boundaries and fine detail.",
-  brightness: "Shifts all pixel values by a constant amount from -255 to 255. Positive values brighten the image and negative values darken it. Results are limited to the valid 0 to 255 range.",
+  brightness: "Shifts all pixel values by a constant amount from -255 to 255; positive values brighten the image and negative values darken it; results are limited to the valid 0 to 255 range.",
   threshold: "Each color value (red, green, blue) above the threshold is set to its maximum, and all others are set to zero.",
   meanfilter: "Smooths the image by averaging neighboring pixels.",
   clear: "Clears the result viewport. The original image and the undo history are not affected.",
 });
 
 /**
- * The entries of the single "?" next to the POINT OPERATIONS heading, one per
- * line, name first. Rendered by ui.helpList — DOM nodes, no markup.
+ * The four point operations, name first. Kept as data for the panel's own
+ * contract (and the tests that assert the tooltips carry the exact texts) —
+ * there is no grouped popover any more.
  */
 export const POINT_OPERATION_HELP = Object.freeze([
   ["Grayscale", HELP_TEXTS.grayscale],
@@ -343,7 +343,14 @@ export function createOperationsPanel(ctx) {
     const number = inputs[operation];
     number.classList.add("slider-number");
     number.setAttribute("aria-label", `${spec.label} value`);
-    const label = el("label", { class: "slider-label", for: sliderId, text: spec.label });
+    // one-line native tooltip from the same glossary the assistant answers with
+    const help = HELP_TEXTS[operation] ?? "";
+    if (help) {
+      number.title = help;
+    }
+    const label = el("label", {
+      class: "slider-label", for: sliderId, text: spec.label, title: help || null,
+    });
     const choice = spec.choice ? el("span", { class: "slider-choice", text: spec.choice(spec.value) }) : null;
     const node = el("div", { class: "slider-row", dataset: { slider: operation } }, [label, range, number, choice]);
 
@@ -554,7 +561,11 @@ export function createOperationsPanel(ctx) {
 
   // ------------------------------------------------------------------- DOM
   function makeButton(label, operation, extra = "") {
-    const node = button(label, () => run(operation), { size: "small", title: extra });
+    // the label's tooltip is the one-line description of what it does
+    const node = button(label, () => run(operation), {
+      size: "small",
+      title: extra || HELP_TEXTS[operation] || label,
+    });
     buttons.push(node);
     // one rule for the whole panel: the gate decides when this may be clicked
     ctx.gate.register(node, { requiresImage: true, label });
@@ -564,28 +575,24 @@ export function createOperationsPanel(ctx) {
   const grayscale = makeButton("Grayscale", "grayscale");
   const negative = makeButton("Negative", "negative");
   const laplacian = makeButton("Laplacian", "laplacian");
-  const clearButton = button("Clear result", () => clearResult(), { size: "small", variant: "ghost" });
+  const clearButton = button("Clear result", () => clearResult(), {
+    size: "small", variant: "ghost", title: HELP_TEXTS.clear,
+  });
   ctx.gate.register(clearButton, { requiresImage: true, label: "Clear result" });
 
   function sliderGroup(key, title) {
     const control = createSlider(key);
-    return toolGroup(title, [control.node], {
-      actions: [helpPopover(HELP_TEXTS[key], { label: `About ${title}` }).node],
-    });
+    return toolGroup(title, [control.node]);
   }
 
-  // one "?" for the whole group: the four buttons stay a clean 2 x 2 grid
   const pointOperations = toolGroup("Point operations", [
     el("div", { class: "btn-grid" }, [grayscale, negative, laplacian, clearButton]),
-  ], {
-    actions: [helpPopover(helpList(POINT_OPERATION_HELP), { label: "About the point operations" }).node],
-  });
+  ]);
 
   const section = createSection({
     id: "filters",
     title: "Filters",
     iconName: "filters",
-    actions: [helpPopover(HELP_TEXTS.filters, { label: "About the Filters panel" }).node],
     body: [
       pointOperations,
       sliderGroup("brightness", "Brightness"),
@@ -594,6 +601,10 @@ export function createOperationsPanel(ctx) {
       status,
     ],
   });
+
+  // the section header carries the same kind of one-line tooltip as the
+  // controls inside it (item 15: no "?" buttons anywhere)
+  section.head.title = HELP_TEXTS.filters;
 
   // ------------------------------------------------------------- bus wiring
   bus.on("image:loaded", ({ info }) => {

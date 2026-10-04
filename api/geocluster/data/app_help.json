@@ -1,0 +1,209 @@
+{
+  "version": 1,
+  "note": "Glossary of every tool in the web app: one entry per tool with a name, the words users type for it (aliases) and a short plain-text description. It feeds the assistant's system prompt and the offline fallback that answers 'what is ...' questions without the language model.",
+  "tools": [
+    {
+      "id": "grayscale",
+      "name": "Grayscale",
+      "aliases": [
+        "grayscale",
+        "greyscale",
+        "gray scale",
+        "grey scale",
+        "convert to gray",
+        "convert to grey",
+        "black and white",
+        "b&w",
+        "monochrome",
+        "desaturate",
+        "luminance"
+      ],
+      "description": "Converts the image to a single-band grayscale image using a luminance-weighted combination of the color channels."
+    },
+    {
+      "id": "negative",
+      "name": "Negative",
+      "aliases": [
+        "negative",
+        "invert",
+        "invert colors",
+        "invert colours",
+        "photo negative",
+        "photographic negative"
+      ],
+      "description": "Inverts pixel values to produce a photographic negative."
+    },
+    {
+      "id": "laplacian",
+      "name": "Laplacian",
+      "aliases": [
+        "laplacian",
+        "laplacian filter",
+        "edge detection",
+        "edge detect",
+        "detect edges",
+        "edges",
+        "edge filter"
+      ],
+      "description": "Edge detection filter that highlights areas of rapid intensity change, such as boundaries and fine detail."
+    },
+    {
+      "id": "brightness",
+      "name": "Brightness",
+      "aliases": [
+        "brightness",
+        "brighten",
+        "darken",
+        "brighter",
+        "darker",
+        "exposure",
+        "brightness adjustment"
+      ],
+      "description": "Shifts all pixel values by a constant amount from -255 to 255; positive values brighten the image and negative values darken it; results are limited to the valid 0 to 255 range."
+    },
+    {
+      "id": "threshold",
+      "name": "Threshold",
+      "aliases": [
+        "threshold",
+        "thresholding",
+        "binarize",
+        "binarise",
+        "binary image",
+        "threshold value"
+      ],
+      "description": "Each color value (red, green, blue) above the threshold is set to its maximum, and all others are set to zero."
+    },
+    {
+      "id": "meanfilter",
+      "name": "Mean filter",
+      "aliases": [
+        "mean filter",
+        "meanfilter",
+        "average filter",
+        "averaging filter",
+        "box filter",
+        "kernel size",
+        "window size",
+        "mean filter window",
+        "smoothing filter",
+        "blur"
+      ],
+      "description": "Smooths the image by averaging neighboring pixels."
+    },
+    {
+      "id": "clear-result",
+      "name": "Clear result",
+      "aliases": [
+        "clear result",
+        "clear the result",
+        "clear the result viewport",
+        "reset result"
+      ],
+      "description": "Clears the result viewport. The original image and the undo history are not affected."
+    },
+    {
+      "id": "kmeans",
+      "name": "K-Means",
+      "aliases": [
+        "k-means",
+        "kmeans",
+        "k means",
+        "cluster",
+        "clusters",
+        "clustering",
+        "colour clustering",
+        "color clustering",
+        "unsupervised classification"
+      ],
+      "description": "Groups the image's pixels into K clusters (2 to 20) by colour. Each cluster reports its grey range, its centroid colour and how much of the image it covers, and the run produces a clustered display image plus a raw label map."
+    },
+    {
+      "id": "classification",
+      "name": "Classification ranges and Generate map",
+      "aliases": [
+        "classification",
+        "classification editor",
+        "classification ranges",
+        "class ranges",
+        "classify",
+        "generate map",
+        "class map",
+        "classified map",
+        "land cover classes"
+      ],
+      "description": "The Clusters table lists each K-Means cluster with its greyscale range, name, colour and share of the image. You can rename a cluster, recolour it and edit its minimum and maximum; the ranges stay linked so neighbours follow each other and the two ends stay locked to 0 and 255. Generate map applies those ranges and colours to the image and opens the Map composer with the classified result."
+    },
+    {
+      "id": "map-composer",
+      "name": "Map composer",
+      "aliases": [
+        "map composer",
+        "composer",
+        "make a map",
+        "export a map",
+        "map export",
+        "map legend",
+        "legend",
+        "scale bar",
+        "north arrow",
+        "map png"
+      ],
+      "description": "Composes the image with its title, legend, scale bar, north arrow and credit line on one canvas. The preview is exactly what the exported PNG contains (1x, 2x or 3x), and the legend names and colours stay in sync with the Clusters table."
+    },
+    {
+      "id": "histogram",
+      "name": "Histogram",
+      "aliases": [
+        "histogram",
+        "histograms",
+        "intensity distribution",
+        "pixel distribution",
+        "grey level distribution"
+      ],
+      "description": "Shows how the pixel intensities of an image are distributed across 256 bins, with the minimum, maximum, mean, standard deviation and pixel count. Each window can switch between linear and log scale, smooth the bins, show the red, green or blue channel (or all three together), compare against another image and export the chart as a PNG."
+    },
+    {
+      "id": "distance",
+      "name": "Distance",
+      "aliases": [
+        "distance",
+        "measure distance",
+        "measurement",
+        "measure",
+        "ruler",
+        "length measurement"
+      ],
+      "description": "Measures the distance between the two points you click on a viewport. Choose pixels, millimetres, centimetres, metres, kilometres, inches, feet or miles, and give the ground length of one pixel when the image carries no scale; the measurement appears as one line in the Analysis section."
+    },
+    {
+      "id": "satellite-fetch",
+      "name": "Satellite fetch",
+      "aliases": [
+        "satellite fetch",
+        "fetch satellite",
+        "satellite",
+        "sentinel",
+        "sentinel-2",
+        "sentinel 2",
+        "satellite image",
+        "satellite imagery",
+        "satellite tile",
+        "copernicus"
+      ],
+      "description": "Fetches a Sentinel-2 true-colour crop either for a place name or for two corner coordinates, with optional start and end dates. Requests are limited to 5 km of ground and the imagery arrives at 10 m per pixel, so the distance tool and the map scale bar know its real ground size."
+    },
+    {
+      "id": "undo-redo",
+      "name": "Undo and Redo",
+      "aliases": [
+        "undo",
+        "redo",
+        "undo and redo",
+        "step back",
+        "history"
+      ],
+      "description": "Undo steps back through the last 15 operations and Redo repeats what you undid. Both live in the Edit menu and on Ctrl+Z and Ctrl+Y, and the result viewport is painted from a copy kept in the browser, so stepping back needs no new request."
+    }
+  ]
+}

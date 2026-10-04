@@ -461,7 +461,7 @@ def check_workstation_layout() -> None:
         "Converts the image to a single-band grayscale image using a luminance-weighted combination of the color channels.",
         "Inverts pixel values to produce a photographic negative.",
         "Edge detection filter that highlights areas of rapid intensity change, such as boundaries and fine detail.",
-        "Shifts all pixel values by a constant amount from -255 to 255. Positive values brighten the image and negative values darken it. Results are limited to the valid 0 to 255 range.",
+        "Shifts all pixel values by a constant amount from -255 to 255; positive values brighten the image and negative values darken it; results are limited to the valid 0 to 255 range.",
         "Each color value (red, green, blue) above the threshold is set to its maximum, and all others are set to zero.",
         "Smooths the image by averaging neighboring pixels.",
         "Clears the result viewport. The original image and the undo history are not affected.",
@@ -483,21 +483,27 @@ def check_workstation_layout() -> None:
               f"{module} renders no hint lines")
     check("paramRow" not in filters_js and '"Apply"' not in filters_js,
           "the parameterised filters have no Apply button any more")
-    for token in ["helpPopover", "aria-expanded", "aria-controls", "below"]:
-        check(token in ui_js, f"ui.js popovers handle {token}")
-    for token in [".help-btn", ".help-popover", ".help-popover.below", ".slider-row", ".slider-choice",
-                  ".help-list", ".help-entry", ".help-entry strong"]:
+    for token in [".slider-row", ".slider-choice", ".slider-label", ".slider-number"]:
         check(token in css, f"the STEP 3 styling exists: {token}")
-    check("export function helpPopover" in ui_js, "helpPopover is a reusable component")
-    check("export function helpList" in ui_js, "helpList builds the grouped popover from DOM nodes")
     check("op-cell" not in filters_js and "op-cell" not in css,
           "the per-button help cells are gone")
-    # three factories (the point-operations group, sliderGroup for the 3
-    # sliders, the section head) render the five "?" buttons the boot test counts
-    check(filters_js.count("helpPopover(") == 3 and "helpList(POINT_OPERATION_HELP)" in filters_js
-          and "HELP_TEXTS[key]" in filters_js and "HELP_TEXTS.filters" in filters_js,
-          "one grouped popover for the point operations plus one per slider and the section head",
+    # item 15: no "?" buttons and no popovers are left anywhere
+    # `aria-expanded` legitimately remains on the collapsible section heads and
+    # the menu buttons; the help popovers themselves are gone
+    for token in ["helpPopover", "helpList", "help-btn", "help-popover", "-popover"]:
+        check(token not in ui_js, f"ui.js no longer contains {token}")
+    for token in [".help-btn", ".help-popover", ".help-list", ".help-entry", ".help {"]:
+        check(token not in css, f"the help-button styling is gone from the stylesheet: {token}")
+    check("helpPopover(" not in filters_js and "helpList(" not in filters_js,
+          "the Filters panel builds no help popovers",
           str(filters_js.count("helpPopover(")))
+    check('"Help" not in filters_js and "Help" not in [action for action in ()]',
+          "filters panel code carries no help heading")
+    check(filters_js.count("HELP_TEXTS[") >= 3 and "title:" in filters_js,
+          "the exact descriptions survive as native tooltips",
+          str(filters_js.count("HELP_TEXTS[")))
+    check("POINT_OPERATION_HELP" in filters_js,
+          "the four point-operation descriptions are still data in the panel")
     check(filters_js.count("makeButton(\"Grayscale\"") == 1 and "helpCell" not in filters_js,
           "the point-operation buttons carry no individual \"?\" any more")
     check("grid-template-columns: 1fr 1fr" in css,

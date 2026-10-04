@@ -623,20 +623,22 @@ message. Raw JSON is never displayed.
 
 ## Filters panel (Step 3 of the redesign)
 
-* Grey hint lines under the controls are gone. There are **five** small
-  **"?"** buttons: one on the Filters section head (how filters combine), one
-  next to the **POINT OPERATIONS** label, and one each for Brightness,
-  Threshold and Mean filter. Each opens a popover above its heading (flipping
-  below when there is no room), with `aria-expanded` / `aria-controls`, focus
-  moved into the popover, and Escape (or a second click, or an outside click)
-  closing it and returning focus. The popover is portaled to `<body>` with
-  fixed coordinates so the scrolling toolbox cannot clip it.
-* The POINT OPERATIONS popover lists the four entries together, one per line
-  with the name in bold — Grayscale, Negative, Laplacian and Clear result —
-  built from DOM nodes by `ui.helpList` (a `<ul>` of `<li><strong>name:</strong>
-  text</li>`); no markup is ever parsed. Grayscale, Negative, Laplacian and
-  Clear result are therefore a clean 2 × 2 button grid at full width again,
-  with no individual "?" beside them.
+* Grey hint lines under the controls are gone, and so are the "?" buttons:
+  **item 15 removed every help popover** from the Filters panel (and from
+  `js/ui.js`, where `helpPopover`/`helpList` no longer exist). Each control
+  instead carries **one native tooltip line** (`title`): the four
+  point-operation buttons, the section header, the Brightness / Threshold /
+  Mean filter labels and their number fields, and the Clear-result button all
+  use the exact sentences from the brief — the same strings the assistant's
+  glossary ships in `api/geocluster/data/app_help.json`, so the tooltip and the
+  AI's offline answer can never drift apart (asserted on both sides).
+* Grayscale, Negative, Laplacian and Clear result are a clean 2 × 2 button grid
+  at full width, with no help control beside them.
+* **Ask the assistant instead:** the chat welcome prompt says "Ask me what any
+  tool does" and the first suggested hint is "What does the Mean filter do?".
+  The rule-based router answers those questions from the glossary with **no
+  LLM call**, so they work with no API key, while the provider is rate-limited
+  or down — see the assistant notes.
 * Brightness (−255…255), Threshold (0…255) and Mean filter (labelled **Kernel
   size**, odd 3…31, shown as "5 x 5") are sliders with a synced number field —
   no Apply button. Dragging paints a **browser-side preview** of the operation
@@ -656,6 +658,9 @@ message. Raw JSON is never displayed.
 * The preview is a downscaled approximation: OpenCV's 8-bit mean filter uses a
   fixed-point reciprocal per pass, so smoothing can differ from the committed
   result by one grey level. The committed pixels always come from the server.
+* **Tooltip check (item 15):** the Brightness sentence now uses the brief's
+  semicolons ("…from -255 to 255; positive values brighten…; results are
+  limited…"), and the six filter sentences are byte-identical to the glossary.
 * **Help-text check (resolved):** the Threshold text matches the implementation
   (`cv2.threshold(…, 255, THRESH_BINARY)` per BGR channel, alpha preserved,
   strictly `> value`). The Clear-result wording mismatch recorded in the Step 3
@@ -668,10 +673,11 @@ message. Raw JSON is never displayed.
 
 | Command | What it does |
 | --- | --- |
-| `node --test "web/tests/*.test.mjs"` | 148 logic tests: config resolution, error mapping, API client contract (URLs, bodies, multipart, session recovery), chat command mapping/execution, the satellite request shapes, the filter preview maths (reflect-101 box average, threshold/brightness clipping, the 512 px preview cap), the slider snapping/help texts, the grouped point-operation help list, the history `dropEntry` replacement rule, the linked classification ranges (item 11) and the histogram maths of item 13 (the OpenCV gray weights, channel counting with alpha, the 0…10 smoothing slider, the channel→series mapping), the product copy and the required credits (item 14). No browser needed. |
+| `node --test "web/tests/*.test.mjs"` | 149 logic tests: config resolution, error mapping, API client contract (URLs, bodies, multipart, session recovery), chat command mapping/execution, the satellite request shapes, the filter preview maths (reflect-101 box average, threshold/brightness clipping, the 512 px preview cap), the slider snapping/help texts, the item-15 rule that no help popover survives
+  anywhere and that the tooltip sentences equal the shipped assistant glossary, the history `dropEntry` replacement rule, the linked classification ranges (item 11) and the histogram maths of item 13 (the OpenCV gray weights, channel counting with alpha, the 0…10 smoothing slider, the channel→series mapping), the product copy and the required credits (item 14). No browser needed. |
 | `python web/tests/smoke_test.py` | Serves `web/` on 5173 (reuses a running server for the same root), checks assets + content types, that every relative module import resolves, that no key material exists under `web/`, that no `innerHTML` is used, the workstation layout contract (image workspace owns the flexible track, no `object-fit: cover`, technical corner radii), and that the API's CORS allows the frontend origin. |
 | `python web/tests/integration_check.py` | Live contract check against a running API: the exact call sequence the browser makes (session → upload → 6 filters → kmeans k=5 → classify → histogram → stats → GCH2 round trip → satellite validation and error paths → chat commands → 404/415). The three checks that need real Copernicus credentials report SKIP when the server has no `api/.env` instead of failing. Requires `uvicorn main:app --port 8000`. |
-| `node web/tests/boot_test.mjs --jsdom <dir>` | Boot test: loads `index.html` in jsdom, imports `js/app.js` and drives the UI through DOM events against the live API — 820 assertions covering the shell (menu bar, toolbar, status bar, dock collapse), viewport behaviour (pan, wheel zoom, pixel readout, distance measurement, sync mirroring), upload, the six filters, the Source panel's place/corner modes, the Filters panel's popovers and slider sessions (preview without requests, one request per release, replace-not-stack, Escape, arrow-key commits, one slider at a time), the rendered K-Means range table (item 11: live linked ranges, clamped commits, locked ends, the browser-side preview with zero requests/history entries, the boundary bar, "Generate map" = one undo step), the File menu's four image actions (item 12: exact compress tooltip, label-map entry, GCH2 compress → decompress through the menu and the toolbar), histogram windows (item 13: the active-viewport rule with its Active badge, the per-footer Histogram buttons, the smoothing slider, the Channel dropdown's per-image option list, the resize/min/max clamps on all four edges), the menus (item 14: the exact File/Edit/View/Processing/Analysis/Help contents, the conditional label-map entry, the New-session confirmation and its cancel path, the Help dialogs with their focus trap, Escape and credits, disabled reasons as tooltips and no inline notes anywhere), chat router commands, session-expiry recovery, and a clean browser console. jsdom is optional (not a dependency of the app); without it the test skips. |
+| `node web/tests/boot_test.mjs --jsdom <dir>` | Boot test: loads `index.html` in jsdom, imports `js/app.js` and drives the UI through DOM events against the live API — 820 assertions covering the shell (menu bar, toolbar, status bar, dock collapse), viewport behaviour (pan, wheel zoom, pixel readout, distance measurement, sync mirroring), upload, the six filters, the Source panel's place/corner modes, the Filters panel's tooltips (item 15: no popovers, one-line titles) and slider sessions (preview without requests, one request per release, replace-not-stack, Escape, arrow-key commits, one slider at a time), the rendered K-Means range table (item 11: live linked ranges, clamped commits, locked ends, the browser-side preview with zero requests/history entries, the boundary bar, "Generate map" = one undo step), the File menu's four image actions (item 12: exact compress tooltip, label-map entry, GCH2 compress → decompress through the menu and the toolbar), histogram windows (item 13: the active-viewport rule with its Active badge, the per-footer Histogram buttons, the smoothing slider, the Channel dropdown's per-image option list, the resize/min/max clamps on all four edges), the menus (item 14: the exact File/Edit/View/Processing/Analysis/Help contents, the conditional label-map entry, the New-session confirmation and its cancel path, the Help dialogs with their focus trap, Escape and credits, disabled reasons as tooltips and no inline notes anywhere), chat router commands, session-expiry recovery, and a clean browser console. jsdom is optional (not a dependency of the app); without it the test skips. |
 
 The boot test runs in both serving modes: the default (page on localhost →
 direct API calls) and hosted (`--page-host 5173-demo.e2b.app` → everything
@@ -701,6 +707,27 @@ are `0–80, 81–117, 118–155, 156–194, 195–255`, matching the desktop re
 * The AI **reply** path needs `FIREWORKS_API_KEY`; without it `/ai/chat`
   answers 503 for questions (commands still work). Verified by unit test with
   a stubbed client plus the user's local run.
+* **Item 15 — the assistant answers "what is …?" itself, with no LLM call.**
+  `api/geocluster/data/app_help.json` ships one entry per tool (id, name,
+  aliases, short description; the six filter sentences are exactly the brief's
+  wording) and two things read it: the system prompt embeds the whole glossary
+  (plus the plain-text/no-LaTeX/short-answers/"never claim to see the user's
+  image"/"say when unsure" rules), and `CommandRouter` matches "what is / what
+  does / how do I use <tool>" against the names and aliases and returns
+  `{"intent": "help", "tool": …, "answer": "Name - description."}` **before**
+  any provider check. The endpoint therefore returns 200 with the answer when
+  no key is configured or the provider is down or rate-limited — verified for
+  both cases. Bare commands (`histogram`, `run k-means`, `show me F-8`) stay
+  commands, and questions the glossary does not cover (`what is NDVI?`) still
+  reach the model; `show histogram` keeps its desktop-era `fetch_satellite`
+  quirk. The router matches whole words only, longest alias first, so "what is
+  the kernel size" finds the mean filter and "what is invert colors" finds
+  Negative.
+* **"FIREWORKS" naming** (second note): the provider settings are the owner's
+  Groq endpoint/model — base URL `https://api.groq.com/openai/v1`, model
+  `openai/gpt-oss-20b`, `max_tokens` 600, `extra_body` `{"reasoning_effort":
+  "low"}` — kept exactly as configured; the `FIREWORKS_*` identifiers are
+  unchanged and only the environment key name stays that way.
 * No browser automation runs in this environment, so the UI is verified by the
   module tests, the reference/import checks and the live API contract rather
   than by clicking. Serve it locally once to confirm the visuals.

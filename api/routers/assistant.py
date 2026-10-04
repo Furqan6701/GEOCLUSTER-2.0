@@ -1,4 +1,11 @@
-"""AI chat: rule-based routing plus the Fireworks-backed fallback."""
+"""
+AI chat: rule-based routing, the offline app glossary, then the model.
+
+Order matters (item 15). A tool question ("what does the mean filter do") is
+answered from `geocluster/data/app_help.json` and returns 200 with the glossary
+text even when no API key is configured or the provider is rate limited; only
+questions the glossary cannot answer reach the language model.
+"""
 
 from __future__ import annotations
 
@@ -30,6 +37,10 @@ def chat(request: schemas.ChatRequest, http_request: Request) -> schemas.ChatRes
     result = command_router.route(request.message)
     intent = str(result.get("intent", "ask_question"))
     commands = build_commands(result)
+
+    if intent == "help":
+        # offline: answered from the glossary above, never from the provider
+        return schemas.ChatResponse(intent="help", reply=str(result.get("answer") or ""), commands=[])
 
     if intent != "ask_question":
         return schemas.ChatResponse(intent=intent, reply=None, commands=commands)

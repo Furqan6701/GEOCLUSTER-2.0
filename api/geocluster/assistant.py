@@ -1,6 +1,6 @@
-"""Rule-based command router and the Fireworks AI wrapper.
+"""Rule-based command router, the app-help glossary and the LLM wrapper.
 
-Both are ported AS IS from the desktop:
+Both the router and the wrapper are ported AS IS from the desktop:
   * desktop/frontend/command_router.py  -> CommandRouter
   * desktop/frontend/ai_assistant.py    -> AIAssistant (model, provider base
     URL and prompts are unchanged; do not "fix" the known expired-credits
@@ -13,13 +13,20 @@ The only deliberate API-era changes:
     endpoint can answer 502 instead of returning "Error code: 404 ..." in a 200
   * `build_commands` turns router output into structured client commands for
     the operations the desktop never executed (histogram/compress/distance)
+  * APP HELP (item 15): every tool the app offers is described in
+    `data/app_help.json`. The glossary is part of the system prompt AND answers
+    "what is / what does / how do I use <tool>" directly, with no model call at
+    all - so tool questions keep working when the provider is down, rate
+    limited or not configured.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
+from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
@@ -34,7 +41,7 @@ logger = logging.getLogger("geocluster.assistant")
 FIREWORKS_BASE_URL = "https://api.groq.com/openai/v1"
 FIREWORKS_MODEL = "openai/gpt-oss-20b"
 
-SYSTEM_PROMPT = """You are GEOCLUSTER AI, an expert in GIS, Remote Sensing, Photogrammetry, and Earth Observation.
+SYSTEM_PROMPT_BASE = """You are GEOCLUSTER AI, an expert in GIS, Remote Sensing, Photogrammetry, and Earth Observation.
 
 CRITICAL RULES - YOU MUST FOLLOW:
 - NEVER include any reasoning, thinking process, or step-by-step analysis in your response
@@ -43,6 +50,9 @@ CRITICAL RULES - YOU MUST FOLLOW:
 - Keep answers concise (1-2 sentences for simple definitions)
 - Use bullet points only when listing multiple items
 - Provide practical, real-world GIS/Remote Sensing explanations
+- Answer in PLAIN TEXT only: no LaTeX, no math markup, no markdown (no **bold**, no #, no backticks, no links)
+- Never claim to see the user's image: you cannot look at it, so never describe what is in it
+- Say so when you are not sure instead of guessing
 
 EXAMPLES:
 GOOD: "NDVI measures vegetation health using near-infrared and red light reflectance. Values range from -1 to 1, with healthy vegetation above 0.3."
@@ -50,6 +60,123 @@ GOOD: "NDVI measures vegetation health using near-infrared and red light reflect
 BAD: "Let me think about this. First, I need to consider what NDVI means. NDVI stands for... The formula is... Here's my answer..."
 
 Remember: Direct answers only. No reasoning. No thinking process."""
+
+
+def help_data_path() -> Path:
+    """The glossary that ships with the package (one entry per app tool)."""
+    return Path(__file__).resolve().parent / "data" / "app_help.json"
+
+
+def load_app_help(path: Path | None = None) -> tuple[dict[str, Any], ...]:
+    """The glossary entries, in file order. A broken/missing file yields none."""
+    try:
+        with (path or help_data_path()).open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):  # pragma: no cover - the file ships with the package
+        logger.warning("app help glossary could not be read")
+        return ()
+    tools = data.get("tools") if isinstance(data, dict) else None
+    if not isinstance(tools, list):
+        return ()
+    entries: list[dict[str, Any]] = []
+    for tool in tools:
+        if not isinstance(tool, dict):
+            continue
+        name = str(tool.get("name") or "").strip()
+        description = str(tool.get("description") or "").strip()
+        if not name or not description:
+            continue
+        aliases = [str(alias).strip().lower() for alias in (tool.get("aliases") or []) if str(alias).strip()]
+        entries.append({
+            "id": str(tool.get("id") or name).strip().lower().replace(" ", "-"),
+            "name": name,
+            "aliases": aliases,
+            "description": description,
+        })
+    return tuple(entries)
+
+
+APP_HELP = load_app_help()
+
+
+def glossary_prompt_section(tools: tuple[dict[str, Any], ...] = APP_HELP) -> str:
+    """The glossary as the model sees it: one line per tool."""
+    if not tools:
+        return ""
+    lines = ["APP GLOSSARY - the tools this application offers:"]
+    lines.extend(f"- {tool['name']}: {tool['description']}" for tool in tools)
+    lines.append(
+        "When the user asks what a tool does or how to use one of them, answer with that "
+        "description in your own words; do not invent tools or settings that are not listed."
+    )
+    return "\n".join(lines)
+
+
+def _build_system_prompt(base: str = SYSTEM_PROMPT_BASE, tools: tuple[dict[str, Any], ...] = APP_HELP) -> str:
+    glossary = glossary_prompt_section(tools)
+    return f"{base}\n\n{glossary}" if glossary else base
+
+
+SYSTEM_PROMPT = _build_system_prompt()
+
+
+# ---------------------------------------------------------- offline app help
+
+# How a question about a tool starts. Deliberately narrow: a bare "histogram"
+# or "run k-means" is a COMMAND, while "what is a histogram" is a question.
+HELP_QUESTION_TRIGGERS = (
+    "what is", "what's", "whats", "what are", "what does", "what do", "what can",
+    "how do i use", "how do i", "how to use", "how can i use", "how does",
+    "explain", "tell me about", "describe", "define", "meaning of",
+)
+
+
+def help_question(text: str) -> bool:
+    """True when the text is shaped like a question about a tool."""
+    lower = str(text or "").strip().lower()
+    if not lower:
+        return False
+    return any(lower.startswith(trigger) for trigger in HELP_QUESTION_TRIGGERS) or any(
+        f" {trigger} " in f" {lower} " for trigger in ("what is", "what does", "explain", "meaning of")
+    )
+
+
+def match_app_help(text: str, tools: tuple[dict[str, Any], ...] = APP_HELP) -> dict[str, Any] | None:
+    """
+    The glossary entry a question is about, or None.
+
+    The longest alias wins, so "mean filter window" beats "mean" and
+    "satellite imagery" beats "satellite"; aliases are matched on word
+    boundaries so "classify" does not fire inside "classified".
+    """
+    lower = str(text or "").strip().lower()
+    if not lower:
+        return None
+    best: dict[str, Any] | None = None
+    best_length = 0
+    for tool in tools:
+        for alias in (tool["name"].lower(), *tool["aliases"]):
+            if len(alias) <= best_length:
+                continue
+            pattern = rf"(?<![a-z0-9]){re.escape(alias)}(?![a-z0-9])"
+            if re.search(pattern, lower):
+                best = tool
+                best_length = len(alias)
+    return best
+
+
+def help_answer(text: str, tools: tuple[dict[str, Any], ...] = APP_HELP) -> str | None:
+    """
+    The offline answer for a tool question, or None when the question is not
+    about one of the app's tools. No model call happens on this path.
+    """
+    if not help_question(text):
+        return None
+    tool = match_app_help(text, tools)
+    if tool is None:
+        return None
+    return f"{tool['name']} - {tool['description']}"
+
 
 
 def clean_response(text: str) -> str:
@@ -89,6 +216,16 @@ class CommandRouter:
             return {"intent": "ask_question", "question": ""}
 
         lower = text.lower()
+
+        # --------------------------------------------------- APP HELP (offline)
+        # "What is / what does / how do I use <tool>" is answered from the
+        # shipped glossary, so it works with no model, no key and no network.
+        # This runs FIRST: a question about a tool must never be executed as a
+        # command (the word "threshold" appears in both kinds of message).
+        answer = help_answer(text)
+        if answer is not None:
+            topic = match_app_help(text)
+            return {"intent": "help", "tool": (topic or {}).get("id", ""), "answer": answer}
 
         # --------------------------------------------------- SATELLITE REQUESTS
         satellite_verbs = ["show me", "show", "load", "fetch", "display", "open", "view", "get"]

@@ -18,10 +18,10 @@ import { describeCommand, executeCommands } from "../commands.js";
 import { button, el } from "../ui.js";
 
 const HINTS = [
+  { label: "What does Mean filter do?", text: "What does the mean filter do?" },
   { label: "Histogram", text: "Show histogram" },
   { label: "K-Means", text: "Run k-means" },
   { label: "Satellite", text: "Show me F-8 imagery" },
-  { label: "Compress", text: "Compress this image" },
 ];
 
 export function createChatPanel(ctx) {
@@ -162,9 +162,10 @@ export function createChatPanel(ctx) {
 
   append(
     "assistant",
-    "I can answer GIS questions and run GeoCluster commands. " +
-      'Try "Show me F-8 imagery", "Run k-means", "Histogram" or "Compress this image". ' +
-      "Replies are shown as plain text (math is not rendered).",
+    "Ask me what any tool does — for example \"What is the mean filter?\" or " +
+      "\"How do I use threshold?\" — and I will answer in plain text, even when the " +
+      "AI service is busy. I can also run commands and answer GIS questions: " +
+      'try "Show me F-8 imagery", "Run k-means" or "Compress this image".',
   );
 
   const node = el("div", { class: "assistant" }, [log, hintRow, form]);
