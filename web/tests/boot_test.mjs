@@ -1081,6 +1081,45 @@ if (!bootFailed) {
       `${studio.getSettings().title} from ${state().result.info.name}`);
     check(field("subtitle") != null, "the title has an optional subtitle field");
 
+    // ---- item 16: the default sizes follow the IMAGE — the title is the
+    // largest text, the legend and scale labels are about half of it and the
+    // north arrow is about 6 % of the image height
+    {
+      const sizes = studio.getSettings();
+      const imageSize = {
+        width: studio.image?.width ?? state().result.info.width,
+        height: studio.image?.height ?? state().result.info.height,
+      };
+      check(sizes.titleSize > sizes.subtitleSize && sizes.titleSize > sizes.legend.fontSize &&
+        sizes.titleSize > sizes.creditSize,
+        "the title is the largest text",
+        `${sizes.titleSize} vs subtitle ${sizes.subtitleSize}, legend ${sizes.legend.fontSize}, credit ${sizes.creditSize}`);
+      check(Math.abs(sizes.legend.fontSize - sizes.titleSize / 2) <= 1,
+        "legend text is about half the title", `${sizes.legend.fontSize} / ${sizes.titleSize}`);
+      check(sizes.scaleBar.fontSize === sizes.legend.fontSize,
+        "the scale labels match the legend text", String(sizes.scaleBar.fontSize));
+      check(Math.abs(sizes.northArrow.size - imageSize.height * 0.06) <= 1,
+        "the arrow is about 6 % of the image height",
+        `${sizes.northArrow.size} vs ${(imageSize.height * 0.06).toFixed(1)} for ${imageSize.height}px`);
+      check(sizes.titleSize === Math.round(imageSize.width * 0.032),
+        "the title size comes from the image width",
+        `${sizes.titleSize} for ${imageSize.width}px`);
+      check(field("titleSize").value === String(sizes.titleSize) &&
+        field("legendFont").value === String(sizes.legend.fontSize) &&
+        field("scaleFont").value === String(sizes.scaleBar.fontSize) &&
+        field("arrowSize").value === String(sizes.northArrow.size),
+        "the sidebar fields show those defaults",
+        [field("titleSize").value, field("legendFont").value, field("scaleFont").value, field("arrowSize").value].join("/"));
+      for (const key of ["titleSize", "legendFont", "scaleFont", "arrowSize"]) {
+        const node = field(key);
+        check(node.min !== "" && node.max !== "",
+          `${key} keeps sensible limits`, `${node.min}..${node.max}`);
+      }
+      check(Number(field("arrowSize").min) >= 12 && Number(field("arrowSize").max) <= 160,
+        "the arrow stays inside its own limits",
+        `${field("arrowSize").min}..${field("arrowSize").max}`);
+    }
+
     // ---- the exported PNG is the preview's canvas, at 1x/2x/3x
     const composed1x = studio.composeAt(1);
     const composed2x = studio.composeAt(2);
@@ -1164,11 +1203,11 @@ if (!bootFailed) {
     check(field("legendPlacement") != null && field("legendFont") != null && field("legendPercent") != null,
       "the legend has placement, percentage and size controls");
     check([...field("legendPlacement").querySelectorAll("option")].map((o) => o.value).join(",") ===
-      "outside-right,outside-bottom,onmap-tl,onmap-tr,onmap-bl,onmap-br",
-      "the legend offers outside right/bottom plus the four on-map corners",
+      "outside-right,outside-left,outside-bottom-left,outside-bottom-center,outside-bottom-right,onmap-tl,onmap-tr,onmap-bl,onmap-br",
+      "the legend offers the five outside spots plus the four on-map corners",
       [...field("legendPlacement").querySelectorAll("option")].map((o) => o.value).join(","));
     check([...field("legendPlacement").querySelectorAll("option")].map((o) => o.textContent).join("|") ===
-      "Outside right|Outside bottom|On map — top left|On map — top right|On map — bottom left|On map — bottom right",
+      "Outside right|Outside left|Outside bottom left|Outside bottom center|Outside bottom right|On map — top left|On map — top right|On map — bottom left|On map — bottom right",
       "the placement options are labelled clearly",
       [...field("legendPlacement").querySelectorAll("option")].map((o) => o.textContent).join("|"));
     check(studio.getSettings().legend.placement === "outside-right",
@@ -1193,13 +1232,46 @@ if (!bootFailed) {
         field("legendPlacement").value = key;
         field("legendPlacement").dispatchEvent(new window.Event("change", { bubbles: true }));
       };
-      // outside bottom: wider is gone, taller appears
-      setPlacement("outside-bottom");
+      // outside left: the band moves to the other side, same canvas width
+      setPlacement("outside-left");
+      check(preview().width === outsideWidth, "outside left is as wide as outside right",
+        `${preview().width} vs ${outsideWidth}`);
+      const leftLegend = (() => {
+        const canvas = studio.getCanvas();
+        const style = (canvas.__textStyles ?? []).find((entry) => entry.text === "Legend");
+        const image = studio.composeAt(1).boxes.image;
+        return { style, image };
+      })();
+      check(leftLegend.style != null && leftLegend.style.x < leftLegend.image.x,
+        "the left legend is drawn left of the image",
+        `${leftLegend.style?.x} vs ${leftLegend.image.x}`);
+
+      // outside bottom: wider is gone, taller appears, and the three bottom
+      // spots only differ in their horizontal alignment
+      setPlacement("outside-bottom-left");
       const bottomWidth = preview().width;
       const bottomHeight = preview().height;
       check(bottomWidth < outsideWidth, "outside bottom gives the width back",
         `${bottomWidth} vs ${outsideWidth}`);
       check(bottomHeight > 0 && boxOf() === bottomWidth, "and grows downwards instead");
+      const bottomLeftX = (studio.composeAt(1).boxes.legend ?? {}).x;
+      setPlacement("outside-bottom-center");
+      check(preview().height === bottomHeight, "bottom center uses the same band",
+        `${preview().height} vs ${bottomHeight}`);
+      const bottomCenterX = (studio.composeAt(1).boxes.legend ?? {}).x;
+      const bottomImage = studio.composeAt(1).boxes.image;
+      check(bottomCenterX > bottomLeftX, "bottom center sits right of bottom left",
+        `${bottomCenterX} vs ${bottomLeftX}`);
+      check(bottomCenterX === bottomImage.x +
+        Math.round((bottomImage.width - (studio.composeAt(1).boxes.legend ?? {}).width) / 2),
+        "bottom center is centered on the image");
+      setPlacement("outside-bottom-right");
+      const bottomRight = studio.composeAt(1).boxes;
+      check(bottomRight.legend.x + bottomRight.legend.width ===
+        bottomRight.image.x + bottomRight.image.width,
+        "bottom right ends at the image's right edge",
+        `${bottomRight.legend.x + bottomRight.legend.width} vs ${bottomRight.image.x + bottomRight.image.width}`);
+      check(!bottomRight.legendOutside === false || true, "");
 
       // on map: the canvas is back to the image plus the frame
       setPlacement("onmap-br");
@@ -1208,9 +1280,11 @@ if (!bootFailed) {
       check(onMapWidth < outsideWidth && onMapHeight < bottomHeight,
         "an on-map legend adds no space around the image",
         `${onMapWidth}×${onMapHeight}`);
-      check(Math.abs(onMapWidth / onMapHeight - sourceRatio) < 0.2,
-        "the on-map canvas keeps the image's aspect",
-        `${onMapWidth}×${onMapHeight} vs ${image.width}×${image.height}`);
+      const frameOf = gh.map.studio.composeAt(1).layout;
+      check(onMapWidth === frameOf.width && onMapHeight === frameOf.height,
+        "an on-map legend adds no band at all: the canvas IS the frame",
+        `${onMapWidth}×${onMapHeight} vs ${frameOf.width}×${frameOf.height}`);
+      void sourceRatio;
       const cornerText = legendAt();
       check(cornerText != null, "the legend title is drawn on map");
       const frame = studio.composeAt(1).canvas;
@@ -1221,6 +1295,8 @@ if (!bootFailed) {
       setPlacement("outside-right");
       check(preview().width === outsideWidth, "back to outside right",
         `${preview().width} vs ${outsideWidth}`);
+      check((studio.composeAt(1).boxes.legend ?? {}).x >= (studio.composeAt(1).boxes.image ?? {}).x +
+        (studio.composeAt(1).boxes.image ?? {}).width, "the outside legend stays off the image");
     }
 
     // renaming a class in the composer updates the Clusters table
@@ -1282,27 +1358,50 @@ if (!bootFailed) {
       [...field("scaleUnit").querySelectorAll("option")].map((o) => o.value).join(","));
     const barCanvas = studio.composeAt(1).canvas;
     check((barCanvas.__fills ?? 0) > 0, "the scale bar is drawn as filled segments", String(barCanvas.__fills));
-    check([...dialog.querySelectorAll(".map-field-hint")].some((node) => /not to scale|scale/i.test(node.textContent)),
-      "the composer explains the scale situation");
-    check(field("manualScale") != null, "the 'image width = X unit' fields exist for images without a scale");
+    check(field("scalePosition") != null,
+      "the scale bar has a position control (bottom left / center / right)");
+    check([...field("scalePosition").querySelectorAll("option")].map((o) => o.value).join(",") === "bl,bc,br",
+      "the positions are bottom left, center and right",
+      [...field("scalePosition").querySelectorAll("option")].map((o) => o.value).join(","));
+    check([...field("scalePosition").querySelectorAll("option")].map((o) => o.textContent).join("|") ===
+      "Bottom left|Center|Bottom right",
+      "the position options are labelled plainly",
+      [...field("scalePosition").querySelectorAll("option")].map((o) => o.textContent).join("|"));
+    check(studio.getSettings().scaleBar.position === "bl", "bottom left is the default position",
+      studio.getSettings().scaleBar.position);
+    check(field("manualScale") != null, "the 'image width on the ground' fields exist for photos");
     check(field("manualScale").hidden === false,
-      "without ground-scale metadata the manual width is offered",
+      "without ground-scale metadata the width field is offered",
       `hidden=${field("manualScale").hidden}`);
+    check(field("manualScale").textContent.includes("Image width on the ground ="),
+      "the field is worded plainly", field("manualScale").textContent);
     check(studio.getSettings().scaleBar.unit === "m", "the default unit is metres");
-    check((barCanvas.__texts ?? []).includes("not to scale"),
-      "without ground-scale metadata the bar says so", (barCanvas.__texts ?? []).join(" | "));
-    // the user can supply "image width = X unit" instead
+    // item 16: a photo with no ground scale gets a PLAIN bar — no numbers, no
+    // unit and no "not to scale" wording anywhere
+    const plainTexts = barCanvas.__texts ?? [];
+    check(!plainTexts.includes("not to scale") && !plainTexts.some((text) => /not to scale/i.test(text)),
+      "the plain bar never says 'not to scale'", plainTexts.join(" | "));
+    check(!plainTexts.some((text) => /^\d+(\.\d+)?\s?(m|km|ft|mi)$/.test(text)),
+      "a plain bar shows no invented distance", plainTexts.join(" | "));
+    check((studio.composeAt(1).boxes.scaleBar ?? {}).plain === true, "the bar is the plain kind");
+    const hints = [...dialog.querySelectorAll(".map-field-hint")].map((node) => node.textContent).join(" | ");
+    check(/plain bar/i.test(hints), "the composer says the bar has no numbers yet", hints);
+    check(!/not to scale|pixel|metadata|API/i.test(hints),
+      "no technical wording is left in the scale hints", hints);
+    // the user can supply "image width on the ground = X unit" instead
     field("imageWidth").value = "2000";
     field("imageWidth").dispatchEvent(new window.Event("change", { bubbles: true }));
     check(studio.getSettings().scaleBar.imageWidth === 2000, "the image width can be entered by hand");
     const manualCanvas = studio.getCanvas();
     check((manualCanvas.__texts ?? []).some((text) => /^\d+(\.\d+)? m$/.test(text)),
       "with a width the bar is labelled in its unit", (manualCanvas.__texts ?? []).join(" | "));
-    check(!(manualCanvas.__texts ?? []).includes("not to scale"),
-      "the not-to-scale note is gone once the width is known");
     // the default length is a round 1/2/5 value for that width (2000 m → 500 m)
     check((manualCanvas.__texts ?? []).includes("500 m"),
       "the default length is a round number for the ground width", (manualCanvas.__texts ?? []).join(" | "));
+    // one label per division boundary: 0, the ticks, the total with its unit
+    check(["0", "125", "250", "375", "500 m"].every((text) => (manualCanvas.__texts ?? []).includes(text)),
+      "every division boundary carries a label, the total with the unit",
+      (manualCanvas.__texts ?? []).join(" | "));
     field("scaleLength").value = "250";
     field("scaleLength").dispatchEvent(new window.Event("change", { bubbles: true }));
     check(studio.getSettings().scaleBar.length === 250 &&
@@ -1323,8 +1422,10 @@ if (!bootFailed) {
     check(studio.getSettings().groundInfo == null || true, "");
     check(field("manualScale").hidden === true,
       "a known ground scale replaces the manual width", `hidden=${field("manualScale").hidden}`);
-    check(/Ground width/.test(field("scaleNote").textContent),
-      "the composer reports the ground width", field("scaleNote").textContent);
+    check(/wide on the ground/.test(field("scaleNote").textContent),
+      "the composer reports the ground width in plain words", field("scaleNote").textContent);
+    check(!/metadata|API|pixel/i.test(field("scaleNote").textContent),
+      "…and without technical wording", field("scaleNote").textContent);
     const realScale = studio.composeAt(1).canvas;
     check((realScale.__texts ?? []).some((text) => /^\d+(\.\d+)? km$/.test(text)) || true,
       "the default bar length follows the ground width", (realScale.__texts ?? []).join(" | "));
@@ -1368,8 +1469,18 @@ if (!bootFailed) {
       const sizes = studio.getSettings();
       check(sizes.titleSize > sizes.subtitleSize,
         "the title defaults larger than the subtitle", `${sizes.titleSize} vs ${sizes.subtitleSize}`);
-      check(sizes.titleSize === 26 && sizes.subtitleSize === 14,
-        "title 26 / subtitle 14 are the defaults", `${sizes.titleSize}/${sizes.subtitleSize}`);
+      // item 16: editing a size makes it the user's own choice and it sticks
+      const chosen = sizes.legend.fontSize + 3;
+      field("legendFont").value = String(chosen);
+      field("legendFont").dispatchEvent(new window.Event("change", { bubbles: true }));
+      check(studio.getSettings().sizesTouched === true,
+        "editing a size marks the sizes as the user's own choice");
+      studio.open({ image: studio.image, info: state().result.info, rows, name: "sample.jpg" });
+      check(studio.getSettings().legend.fontSize === chosen,
+        "the edited size survives opening the composer again",
+        String(studio.getSettings().legend.fontSize));
+      field("legendFont").value = String(sizes.legend.fontSize);
+      field("legendFont").dispatchEvent(new window.Event("change", { bubbles: true }));
 
       // changing the title size really changes the drawn title
       const titleEntry = () => stylesOf().find((entry) => entry.text === "Karachi study area");

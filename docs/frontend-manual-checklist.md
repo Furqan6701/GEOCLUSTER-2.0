@@ -172,22 +172,40 @@ pointer behaviour, and layout at the two widths the user asked about.
     title, add a subtitle and change the credit line — the preview updates as
     you type.
 32. **[both]** Toggle the legend off/on and switch percentages off/on. The
-    **Placement** dropdown defaults to **Outside right** and the preview gets
-    WIDER so the legend sits beside the image; **Outside bottom** trades that
-    width for height; the four **On map — …** corners draw it over the image.
-    Nothing outside the image is ever covered. Change its text size too.
-33. **[both]** The scale bar is on with alternating black/white segments; edit
-    the total length, the divisions (1–10), the label size and the unit (m, km,
-    ft, mi). Without ground-scale metadata it says **not to scale** — type an
-    image width under “image width = X unit” and the bar becomes exact. For a
-    satellite fetch (item 5) it is exact immediately.
+    **Placement** dropdown defaults to **Outside right**: the preview gets WIDER
+    so the legend sits beside the image. **Outside left** grows to the other
+    side (same width), the three **Outside bottom …** spots trade that width for
+    height and line the legend up with the image's left edge, centre or right
+    edge; the four **On map — …** corners draw it over the image. Nothing
+    outside the image is ever covered, and no class name is ever cut off —
+    rename a class to something long and the legend box grows to fit it (no
+    “…” anywhere).
+32b. **[both]** The default sizes follow the image: the title is the biggest
+    text, the legend text and the scale labels are about half the title's size
+    and the north arrow is about 6 % of the image height. Edit any size (title,
+    subtitle, legend, scale label, credit, arrow) — the number stays where you
+    put it, within the field's limits, and every change repaints the preview.
+33. **[both]** The scale bar is on with alternating black/white segments and a
+    label at **every division boundary**: `0`, each tick, and the total with its
+    unit — numbers without trailing zeros (0.5, not 0.50). Edit the total
+    length, the divisions (1–10), the label size, the unit (m, km, ft, mi) and
+    the **Position** (Bottom left — the default, Center, Right): the preview
+    follows every keystroke.
+33b. **[both]** **Satellite fetch (or any image with ground metadata):** the bar
+    is exact from the start: its default length is a round number near a fifth
+    of the image width, and it never says “not to scale”.
+33c. **[both]** **Drone photo / plain upload (no ground scale):** the bar is a
+    plain black/white bar with **no numbers, no unit and no note at all** — no
+    invented distance. Type a value into **“Image width on the ground = […]
+    [unit]”** (or a total length) and the numbers appear; with the width entered
+    the bar is exact for that value.
 34. **[both]** The north arrow is **on for a satellite crop and off for an
     upload**; try the three styles, its **Size (px)** and another corner. There
     is no Rotation control any more (the arrow is drawn north-up).
 34b. **[both]** The **Font** dropdown (Arial, Times New Roman, Georgia,
     Verdana, Courier New, Trebuchet MS) changes EVERY text on the canvas —
     title, subtitle, legend, scale bar, credit, corner coordinates. Title size
-    (default 26) is larger than the subtitle's (14); each of subtitle, legend,
+    is the largest value on the panel by default; each of subtitle, legend,
     scale-bar label and credit has its own size field. The **Bold title** toggle
     and the **Title alignment** (left / center / right) work, and the title sits
     **centred at the top** by default.

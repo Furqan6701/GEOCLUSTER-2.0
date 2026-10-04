@@ -51,24 +51,43 @@ export const TITLE_ALIGNS = Object.freeze([
 export const TEXT_SIZE_RANGE = Object.freeze({ min: 8, max: 96 });
 
 /**
- * Where the legend goes. Two placements sit NEXT TO the image — the composed
- * canvas is enlarged so the legend never covers a pixel of the map — and four
- * overlay it in a corner.
+ * Where the legend goes — item 16. Five placements sit NEXT TO the image (the
+ * composed canvas grows by a band so the legend never covers a pixel of the
+ * map) and four overlay it in a corner.
+ *
+ *   edge   "left" | "right" | "bottom" — which side of the image the band is on
+ *   align  for the bottom band: "left" | "center" | "right" within the image
  */
 export const LEGEND_PLACEMENTS = Object.freeze([
-  { key: "outside-right", label: "Outside right", outside: true, corner: null },
-  { key: "outside-bottom", label: "Outside bottom", outside: true, corner: null },
-  { key: "onmap-tl", label: "On map — top left", outside: false, corner: "tl" },
-  { key: "onmap-tr", label: "On map — top right", outside: false, corner: "tr" },
-  { key: "onmap-bl", label: "On map — bottom left", outside: false, corner: "bl" },
-  { key: "onmap-br", label: "On map — bottom right", outside: false, corner: "br" },
+  { key: "outside-right", label: "Outside right", outside: true, edge: "right", align: null, corner: null },
+  { key: "outside-left", label: "Outside left", outside: true, edge: "left", align: null, corner: null },
+  { key: "outside-bottom-left", label: "Outside bottom left", outside: true, edge: "bottom", align: "left", corner: null },
+  { key: "outside-bottom-center", label: "Outside bottom center", outside: true, edge: "bottom", align: "center", corner: null },
+  { key: "outside-bottom-right", label: "Outside bottom right", outside: true, edge: "bottom", align: "right", corner: null },
+  { key: "onmap-tl", label: "On map — top left", outside: false, edge: null, align: null, corner: "tl" },
+  { key: "onmap-tr", label: "On map — top right", outside: false, edge: null, align: null, corner: "tr" },
+  { key: "onmap-bl", label: "On map — bottom left", outside: false, edge: null, align: null, corner: "bl" },
+  { key: "onmap-br", label: "On map — bottom right", outside: false, edge: null, align: null, corner: "br" },
 ]);
 
 export const DEFAULT_LEGEND_PLACEMENT = "outside-right";
 
+/** Placements stored by earlier builds keep working. */
+export const LEGACY_LEGEND_PLACEMENTS = Object.freeze({ "outside-bottom": "outside-bottom-left" });
+
+/** Where the scale bar sits across the bottom of the image (item 16). */
+export const SCALE_POSITIONS = Object.freeze([
+  { key: "bl", label: "Bottom left" },
+  { key: "bc", label: "Center" },
+  { key: "br", label: "Bottom right" },
+]);
+
+export const DEFAULT_SCALE_POSITION = "bl";
+
 /** The placement entry for a settings object (unknown values fall back). */
 export function legendPlacementOf(settings) {
-  const key = settings?.legend?.placement;
+  const raw = settings?.legend?.placement;
+  const key = LEGACY_LEGEND_PLACEMENTS[raw] ?? raw;
   return LEGEND_PLACEMENTS.find((entry) => entry.key === key)
     ?? LEGEND_PLACEMENTS.find((entry) => entry.key === DEFAULT_LEGEND_PLACEMENT);
 }
@@ -93,12 +112,15 @@ export const MAP_DEFAULTS = Object.freeze({
     fontSize: 14,
   }),
   scaleBar: Object.freeze({
-    visible: true,
+    visible: true,         // ON for every source: exact on satellite, plain on a photo
     unit: "m",
     length: null,          // null = the round default for the ground width
-    divisions: 4,
+    divisions: 4,          // 1..10, a label at every boundary
     fontSize: 12,
-    imageWidth: null,      // "image width = X unit" when the API has no scale
+    position: DEFAULT_SCALE_POSITION,
+    // "Image width on the ground = X unit" — the one entry that turns a plain
+    // bar into an exact one for an image whose API metadata has no scale
+    imageWidth: null,
     imageWidthUnit: "m",
   }),
   northArrow: Object.freeze({ visible: true, style: "classic", position: "tr", size: 36 }),
@@ -127,6 +149,28 @@ export function fontSpec(size, { font = DEFAULT_MAP_FONT, weight = "", style = "
   // and canvas silently keeps the previous font
   const prefix = [style, weight, `${px}px`].filter(Boolean).join(" ");
   return `${prefix} "${mapFont(font)}", system-ui, sans-serif`;
+}
+
+/**
+ * Default text/arrow sizes derived from the image (item 16): the title is the
+ * largest text, the legend text and the scale labels are about half the title,
+ * and the north arrow is about 6 % of the image height. The sidebar fields
+ * start at these values and stay editable inside TEXT_SIZE_RANGE.
+ */
+export function defaultSizes(imageWidth, imageHeight) {
+  const width = Math.max(1, Number(imageWidth) || 0);
+  const height = Math.max(1, Number(imageHeight) || 0);
+  const clamp = (value, min, max) => Math.max(min, Math.min(max, Math.round(value)));
+  const titleSize = clamp(width * 0.032, 14, TEXT_SIZE_RANGE.max);
+  const half = clamp(titleSize / 2, TEXT_SIZE_RANGE.min, TEXT_SIZE_RANGE.max);
+  return {
+    titleSize,
+    subtitleSize: clamp(titleSize * 0.55, TEXT_SIZE_RANGE.min, TEXT_SIZE_RANGE.max),
+    creditSize: clamp(titleSize * 0.45, TEXT_SIZE_RANGE.min, TEXT_SIZE_RANGE.max),
+    legendFontSize: half,
+    scaleFontSize: half,
+    northArrowSize: clamp(height * 0.06, 12, 160),
+  };
 }
 
 /**
@@ -175,17 +219,87 @@ export function niceRoundNumber(value) {
 }
 
 /**
- * A round total length for the scale bar: about a quarter of the ground width,
- * snapped to a 1/2/5 value in the chosen unit.
+ * A round total length for the scale bar: about a FIFTH of the ground width
+ * (item 16: roughly 20 % of the image), snapped to a 1/2/5 value in the
+ * chosen unit.
  */
 export function roundScaleLength(groundWidthMeters, unit = "m") {
   const ground = Number(groundWidthMeters);
   if (!Number.isFinite(ground) || ground <= 0) return 0;
   const inUnit = fromMeters(ground, unit);
-  const target = inUnit / 4;
+  const target = inUnit / 5;
   const rounded = niceRoundNumber(target);
   // never suggest something longer than the image itself
   return rounded > inUnit ? niceRoundNumber(inUnit) : rounded;
+}
+
+/** "1.5", "250", "0.25" — up to two decimals, never a trailing zero. */
+export function formatNumber(value) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return "—";
+  return String(Number(amount.toFixed(2)));
+}
+
+/** Default bar width for an image with no known ground scale (40 % of it). */
+export const PLAIN_BAR_WIDTH_RATIO = 0.4;
+
+/**
+ * Pure scale-bar computation — no canvas, no settings object (item 16).
+ *
+ * Three cases, in order:
+ *   1. a ground width (API metadata or the user's "image width on the ground")
+ *      → an exact bar, `length` or a round ≈20 % default, one label per
+ *      division boundary;
+ *   2. no ground width but a total length typed by the user → the labels show
+ *      exactly that value; the pixel width comes from the caller;
+ *   3. neither → `plain: true`: a plain alternating bar with NO numbers, NO
+ *      unit and no note. Nothing is invented.
+ *
+ * Labels: one per boundary, left edge first and the total last, each with the
+ * alignment the bar draws it with. The unit is printed on the total only, and
+ * every number is `formatNumber` (two decimals at most, no trailing zeros).
+ */
+export function scaleBarLayout({
+  groundWidthMeters: ground = null, metersPerPixel = null, imageWidth = null,
+  length = null, unit = "m", divisions = 4,
+} = {}) {
+  const rawDivisions = Number(divisions);
+  const count = Number.isFinite(rawDivisions)
+    ? Math.max(1, Math.min(10, Math.round(rawDivisions)))   // 1..10 divisions
+    : MAP_DEFAULTS.scaleBar.divisions;
+  let metres = Number(ground);
+  if (!Number.isFinite(metres) || metres <= 0) {
+    const mpp = Number(metersPerPixel);
+    const pixels = Number(imageWidth);
+    metres = Number.isFinite(mpp) && mpp > 0 && Number.isFinite(pixels) && pixels > 0 ? mpp * pixels : null;
+  }
+  if (!Number.isFinite(metres) || metres <= 0) metres = null;
+  const typed = Number(length);
+  const typedMetres = Number.isFinite(typed) && typed > 0 ? toMeters(typed, unit) : null;
+  let totalMetres = typedMetres ?? (metres != null ? toMeters(roundScaleLength(metres, unit), unit) : null);
+  // never label a bar longer than the image is wide on the ground
+  if (totalMetres != null && metres != null && totalMetres > metres) totalMetres = metres;
+  if (totalMetres == null || !(totalMetres > 0)) {
+    return {
+      plain: true, labels: [], total: null, unit: "", divisions: count,
+      groundMetres: null, exact: false,
+    };
+  }
+  const total = fromMeters(totalMetres, unit);
+  const labels = [];
+  for (let index = 0; index <= count; index += 1) {
+    const last = index === count;
+    const value = (total * index) / count;
+    labels.push({
+      value,
+      text: last ? `${formatNumber(value)} ${unit}` : formatNumber(value),
+      align: index === 0 ? "left" : last ? "right" : "center",
+    });
+  }
+  return {
+    plain: false, labels, total, unit, divisions: count,
+    groundMetres: metres, exact: true,
+  };
 }
 
 /** Compact label: "500 m", "1.5 km", "0.25 mi". */
@@ -259,6 +373,18 @@ export function normalizeSettings(saved, { name, source, info } = {}) {
   const merged = { ...base, ...(saved ?? {}) };
   merged.legend = { ...base.legend, ...(saved?.legend ?? {}), rows: saved?.legend?.rows ?? [] };
   merged.scaleBar = { ...base.scaleBar, ...(saved?.scaleBar ?? {}) };
+  // 1..10 divisions, a known position key, positive numbers only
+  const rawDivisions = Number(merged.scaleBar.divisions);
+  merged.scaleBar.divisions = Number.isFinite(rawDivisions)
+    ? Math.max(1, Math.min(10, Math.round(rawDivisions)))
+    : MAP_DEFAULTS.scaleBar.divisions;
+  if (!SCALE_POSITIONS.some((entry) => entry.key === merged.scaleBar.position)) {
+    merged.scaleBar.position = base.scaleBar.position;
+  }
+  if (merged.scaleBar.length != null && !(Number(merged.scaleBar.length) > 0)) merged.scaleBar.length = null;
+  if (merged.scaleBar.imageWidth != null && !(Number(merged.scaleBar.imageWidth) > 0)) merged.scaleBar.imageWidth = null;
+  if (!(merged.scaleBar.unit in SCALE_UNITS)) merged.scaleBar.unit = base.scaleBar.unit;
+  if (!(merged.scaleBar.imageWidthUnit in SCALE_UNITS)) merged.scaleBar.imageWidthUnit = base.scaleBar.imageWidthUnit;
   // an image wider than a kilometre on the ground reads better in km; a unit
   // the user picked (persisted in `saved`) always wins
   if (saved?.scaleBar?.unit == null) {
@@ -336,29 +462,65 @@ export function frameMetrics(imageWidth, imageHeight, {
   const creditSize = baseCredit * scale;
   // heights are computed at 1x and then multiplied, so 2x/3x are exact
   const baseTitleHeight = Math.round(basePad * 0.6 + baseTitle + (hasSubtitle ? baseSubtitle * 1.5 : 0));
-  const baseFooterHeight = Math.round(basePad * 0.8 + Math.max(baseCredit * 2.6, baseScale * 2.4));
+  // the footer carries the scale bar, the labels under it and the credit line
+  const baseBarHeight = Math.max(6, Math.round(baseScale * 0.7));
+  const baseFooterHeight = Math.round(
+    basePad * 0.7 + baseBarHeight + baseScale * 1.9 + baseCredit * 1.9,
+  );
   const titleHeight = baseTitleHeight * scale;
   const footerHeight = baseFooterHeight * scale;
   const width = Math.round(imageWidth * scale);
   const height = Math.round(imageHeight * scale);
-  const image = { x: pad, y: pad + titleHeight, width, height };
   const gap = Math.round(LEGEND_MARGIN * scale);
-  // an outside legend enlarges the canvas by its own band + a gap
-  const legendWidth = outsideLegend?.placement === "outside-right"
-    ? Math.round(outsideLegend.width * scale) + gap : 0;
-  const legendHeight = outsideLegend?.placement === "outside-bottom"
-    ? Math.round(outsideLegend.height * scale) + gap : 0;
-  const legendArea = outsideLegend?.placement === "outside-bottom"
-    ? { x: image.x, y: image.y + height + gap, width: Math.max(0, legendWidth), height: Math.max(0, legendHeight - gap) }
-    : { x: image.x + width + gap, y: image.y, width: Math.max(0, legendWidth - gap), height: Math.max(0, legendHeight) };
+  // an outside legend enlarges the canvas by its own band + a gap, whichever
+  // side it sits on (item 16: left, right and three bottom placements)
+  const edge = outsideLegend?.edge ?? (outsideLegend ? "right" : null);
+  // the reserved area is exactly as big as the box that will be drawn, so
+  // centre/right alignment lands where the box really is; the slack only makes
+  // the surrounding band a little wider than the box
+  const slack = Math.round((outsideLegend?.slack ?? 0) * scale);
+  const bandWidth = outsideLegend && edge !== "bottom"
+    ? Math.round(outsideLegend.width * scale) + gap + slack : 0;
+  const bandHeight = outsideLegend && edge === "bottom"
+    ? Math.round(outsideLegend.height * scale) + gap + slack : 0;
+  const leftBand = edge === "left" ? bandWidth : 0;
+  const rightBand = edge === "right" ? bandWidth : 0;
+  const image = { x: pad + leftBand, y: pad + titleHeight, width, height };
+  const boxWidth = Math.max(0, Math.round((outsideLegend?.width ?? 0) * scale));
+  const boxHeight = Math.max(0, Math.round((outsideLegend?.height ?? 0) * scale));
+  const align = outsideLegend?.align ?? "left";
+  // the horizontal offset is computed at 1x and then multiplied, so the 2x/3x
+  // canvases stay exact multiples (rounding twice would drift by a pixel)
+  const baseBoxWidth = Math.max(0, Math.round(outsideLegend?.width ?? 0));
+  const baseOffsetX = align === "center" ? Math.round((imageWidth - baseBoxWidth) / 2)
+    : align === "right" ? imageWidth - baseBoxWidth : 0;
+  const legendArea = !outsideLegend ? null
+    : edge === "bottom"
+      ? {
+        x: image.x + baseOffsetX * scale,
+        // the footer (scale bar + credit) sits between the image and the band,
+        // so the legend never lands on top of the bar
+        y: image.y + height + footerHeight + gap,
+        width: boxWidth,
+        height: boxHeight,
+      }
+      : {
+        x: edge === "left" ? pad : image.x + width + gap,
+        y: image.y + Math.max(0, Math.round((height - boxHeight) / 2)),
+        width: boxWidth,
+        height: boxHeight,
+      };
   return {
     pad, titleSize, subtitleSize, creditSize, titleHeight, footerHeight,
-    width: width + pad * 2 + legendWidth,
-    height: height + pad * 2 + titleHeight + footerHeight + legendHeight,
+    barHeight: baseBarHeight * scale,
+    width: width + pad * 2 + leftBand + rightBand,
+    height: height + pad * 2 + titleHeight + footerHeight + bandHeight,
     image,
     legendArea,
+    legendEdge: edge,
+    legendAlign: align,
     legendGap: gap,
-    outsideLegend: Boolean(legendWidth || legendHeight),
+    outsideLegend: Boolean(leftBand || rightBand || bandHeight),
   };
 }
 
@@ -388,31 +550,42 @@ export function fitToWidth(ctx, text, maxWidth) {
 }
 
 /**
- * Alternating black/white scale bar with its label, or a "not to scale" bar
- * when the image has no known ground scale.
+ * Alternating black/white scale bar (item 16).
+ *
+ * `labels` is what `scaleBarLayout` produced: one entry per division boundary,
+ * `{ text, align }`, drawn UNDER the bar at that boundary — the total carries
+ * the unit. A plain bar (`labels: []`) is exactly that: black/white stripes,
+ * no numbers, no unit and no note of any kind.
  */
 export function drawScaleBar(ctx, {
-  x, y, width, divisions = 4, label = "", unitSize = 12, notToScale = false, font = DEFAULT_MAP_FONT,
+  x, y, width, divisions = 4, labels = [], unitSize = 12, font = DEFAULT_MAP_FONT,
+  color = "#e8f1f5",
 }) {
   const height = Math.max(6, Math.round(unitSize * 0.7));
-  const count = Math.max(1, Math.round(divisions));
+  const count = Math.max(1, Math.min(10, Math.round(divisions)));
   const segment = width / count;
   ctx.save();
   ctx.textBaseline = "alphabetic";
   ctx.font = fontSpec(unitSize, { font });
-  ctx.textAlign = "center";
-  const labelText = notToScale ? "not to scale" : label;
-  ctx.fillStyle = "#e8f1f5";
-  ctx.fillText(labelText, x + width / 2, y - Math.round(unitSize * 0.45));
   for (let index = 0; index < count; index += 1) {
     ctx.fillStyle = index % 2 === 0 ? "#ffffff" : "#000000";
     ctx.fillRect(x + index * segment, y, Math.ceil(segment), height);
   }
-  ctx.strokeStyle = "#e8f1f5";
+  ctx.strokeStyle = color;
   ctx.lineWidth = 1;
   ctx.strokeRect(x, y, width, height);
+  // one label per boundary: 0 at the left edge, the total (with its unit) at
+  // the right edge, the ticks in between
+  const baseline = y + height + Math.round(unitSize * 1.15);
+  labels.forEach((entry, index) => {
+    const align = entry?.align ?? (index === 0 ? "left" : index === count ? "right" : "center");
+    const anchor = index === 0 ? x : index === count ? x + width : x + (width * index) / count;
+    ctx.fillStyle = color;
+    ctx.textAlign = align;
+    ctx.fillText(String(entry?.text ?? ""), Math.round(anchor), baseline);
+  });
   ctx.restore();
-  return { x, y, width, height };
+  return { x, y, width, height, labels: labels.length };
 }
 
 /** North arrow: three styles, north-up (no rotation control any more). */
@@ -469,19 +642,11 @@ export function drawLegendBox(ctx, {
   x, y, rows = [], title = "Legend", unitSize = 14, showPercentages = true,
   background = "rgba(10, 15, 19, 0.92)", font = DEFAULT_MAP_FONT,
 }) {
-  const pad = Math.max(6, Math.round(unitSize * 0.7));
-  const rowHeight = Math.round(unitSize * 1.9);
-  const swatch = Math.round(unitSize * 1.35);
-  const titleHeight = Math.round(unitSize * 2.1);
-  const percentWidth = showPercentages
-    ? Math.max(...rows.map((row) => ctx.measureText(percentTextFor(row)).width), unitSize * 3)
-    : 0;
-  const nameWidth = Math.max(
-    unitSize * 6,
-    ...rows.map((row) => ctx.measureText(String(row.name ?? "")).width),
-  );
-  const width = Math.round(pad * 2 + swatch + unitSize * 0.6 + nameWidth + (showPercentages ? unitSize * 0.8 + percentWidth : 0));
-  const height = titleHeight + rows.length * rowHeight + pad * 2;
+  // ONE measurement for the preview, the reserved band and the drawn box: the
+  // box is as wide as the longest class name (and the title), so nothing is
+  // ever cut off or ellipsised (item 16)
+  const { width, height, pad, rowHeight, swatch, titleHeight, percentWidth } =
+    legendBoxSize(ctx, rows, { unitSize, showPercentages, title, font });
 
   ctx.save();
   ctx.fillStyle = background;
@@ -494,7 +659,7 @@ export function drawLegendBox(ctx, {
   ctx.fillStyle = "#e8f1f5";
   ctx.font = fontSpec(Math.round(unitSize * 1.05), { font, weight: "600" });
   ctx.textAlign = "left";
-  ctx.fillText(fitToWidth(ctx, title, width - pad * 2), x + pad, y + pad + titleHeight / 2);
+  ctx.fillText(String(title ?? ""), x + pad, y + pad + titleHeight / 2);
   ctx.strokeStyle = "rgba(255, 255, 255, 0.16)";
   ctx.beginPath();
   ctx.moveTo(x + pad, y + pad + titleHeight);
@@ -513,8 +678,7 @@ export function drawLegendBox(ctx, {
     ctx.fillStyle = "#e8f1f5";
     ctx.textAlign = "left";
     const nameX = x + pad + swatch + unitSize * 0.6;
-    const availWidth = width - (nameX - x) - pad - (showPercentages ? percentWidth + unitSize * 0.8 : 0);
-    ctx.fillText(fitToWidth(ctx, String(row.name ?? ""), availWidth), nameX, middle);
+    ctx.fillText(String(row.name ?? ""), nameX, middle);
     if (showPercentages) {
       ctx.fillStyle = "#9fb3bd";
       ctx.textAlign = "right";
@@ -535,11 +699,16 @@ export function percentTextFor(row) {
   return `${value.toFixed(1)}%`;
 }
 
-/** Legend layout preview (used by the modal to keep the rows in sync). */
+/**
+ * Legend layout (used by the modal, the outside band and the box itself).
+ *
+ * Item 16: the box is as wide as the LONGEST class name needs — measured with
+ * the very font it is drawn with — so no name is ever cut off or ellipsised
+ * (the title and the percentage column are measured too).
+ */
 export function legendBoxSize(ctx, rows, {
   unitSize = 14, showPercentages = true, title = "Legend", font = DEFAULT_MAP_FONT,
 } = {}) {
-  // measure with the very font the box is drawn with, or the box will clip
   const previousFont = ctx?.font;
   const width = (text) => (typeof ctx?.measureText === "function"
     ? ctx.measureText(String(text)).width
@@ -553,10 +722,20 @@ export function legendBoxSize(ctx, rows, {
     ? Math.max(...rows.map((row) => width(percentTextFor(row))), unitSize * 3)
     : 0;
   const nameWidth = Math.max(unitSize * 6, ...rows.map((row) => width(row.name ?? "")));
+  // the title is drawn 5 % larger than the rows: measure it with its own font,
+  // so a long title widens the box instead of overflowing it
+  const headingFont = fontSpec(Math.round(unitSize * 1.05), { font, weight: "600" });
+  if (ctx?.font !== undefined) ctx.font = headingFont;
+  const headingWidth = width(title ?? "Legend");
   if (ctx?.font !== undefined && previousFont !== undefined) ctx.font = previousFont;
+  const bodyWidth = Math.max(
+    nameWidth, headingWidth - swatch - unitSize * 0.6,
+    ...rows.map((row) => width(row.name ?? "")),
+  );
   return {
-    width: Math.round(pad * 2 + swatch + unitSize * 0.6 + nameWidth + (showPercentages ? unitSize * 0.8 + percentWidth : 0)),
+    width: Math.round(pad * 2 + swatch + unitSize * 0.6 + bodyWidth + (showPercentages ? unitSize * 0.8 + percentWidth : 0)),
     height: titleHeight + rows.length * rowHeight + pad * 2,
+    pad, rowHeight, swatch, titleHeight, percentWidth, nameWidth: bodyWidth,
   };
 }
 
@@ -588,7 +767,7 @@ export function studioLayout({
       title: settings.legend.title,
       font: settings.font,
     });
-    legendBox = { width: box.width + 2, height: box.height + 2 };
+    legendBox = { width: box.width, height: box.height, slack: 2 };
   }
   const metrics = frameMetrics(imageWidth, imageHeight, {
     scale,
@@ -597,7 +776,9 @@ export function studioLayout({
     subtitleSize: settings?.subtitleSize,
     creditSize: settings?.creditSize,
     scaleBarSize: settings?.scaleBar?.fontSize,
-    outsideLegend: legendBox ? { placement: placement.key, ...legendBox } : null,
+    outsideLegend: legendBox
+      ? { placement: placement.key, edge: placement.edge, align: placement.align, ...legendBox }
+      : null,
   });
   return { metrics, placement, legendBox, legendUnit: unitSize, legendVisible, rows };
 }
@@ -698,10 +879,9 @@ export function drawStudioMap(ctx, {
     const outside = plan.placement.outside;
     let x;
     let y;
-    if (plan.placement.key === "outside-right") {
-      x = metrics.legendArea.x;
-      y = metrics.image.y + Math.max(0, Math.round((metrics.image.height - size.height) / 2));
-    } else if (plan.placement.key === "outside-bottom") {
+    if (outside) {
+      // the canvas grew by exactly this band, so the box goes where it was
+      // reserved — right, left or under the image, aligned as chosen
       x = metrics.legendArea.x;
       y = metrics.legendArea.y;
     } else {
@@ -734,31 +914,49 @@ export function drawStudioMap(ctx, {
   const footerTop = metrics.image.y + height;
   if (settings.scaleBar?.visible) {
     const unitSize = Math.max(8, Math.round((settings.scaleBar.fontSize ?? MAP_DEFAULTS.scaleBar.fontSize) * scale));
-    const barHeight = Math.max(6, Math.round(unitSize * 0.7));
-    const requested = settings.scaleBar.length == null
-      ? roundScaleLength(metres, settings.scaleBar.unit)
-      : Number(settings.scaleBar.length);
-    const maxWidth = Math.max(40, Math.round(width * 0.45));
-    const naturalWidth = metresPerPixel && requested > 0 ? requested / metresPerPixel : maxWidth * 0.4;
-    const barWidth = Math.max(30, Math.min(maxWidth, naturalWidth));
+    const layout = scaleBarLayout({
+      groundWidthMeters: metres,
+      metersPerPixel: metresPerPixel,
+      imageWidth: width,
+      length: settings.scaleBar.length,
+      unit: settings.scaleBar.unit,
+      divisions: settings.scaleBar.divisions,
+    });
+    // an exact bar is as long as the distance it labels; without a ground
+    // scale it is a plain bar at 40 % of the image (no numbers, no unit)
+    const barWidth = layout.plain || !metresPerPixel
+      ? Math.max(30, Math.round(width * PLAIN_BAR_WIDTH_RATIO))
+      : Math.max(30, Math.min(width, Math.round(toMeters(layout.total, layout.unit) / metresPerPixel)));
+    const position = SCALE_POSITIONS.some((entry) => entry.key === settings.scaleBar.position)
+      ? settings.scaleBar.position : DEFAULT_SCALE_POSITION;
+    const barX = position === "bc" ? metrics.image.x + Math.round((width - barWidth) / 2)
+      : position === "br" ? metrics.image.x + width - barWidth
+        : metrics.pad;
+    const barY = footerTop + Math.round((metrics.pad + metrics.barHeight) * 0.4);
     boxes.scaleBar = drawScaleBar(ctx, {
-      x: metrics.pad,
-      y: footerTop + Math.round(metrics.footerHeight * 0.55),
+      x: barX,
+      y: barY,
       width: barWidth,
-      divisions: settings.scaleBar.divisions ?? 4,
+      divisions: layout.divisions,
+      labels: layout.labels,
       unitSize,
-      label: formatLength(requested, settings.scaleBar.unit),
-      notToScale: !metresPerPixel,
       font,
     });
-    void barHeight;
+    boxes.scaleBar.plain = layout.plain;
+    boxes.scaleBar.position = position;
+    boxes.scaleBar.total = layout.total;
+    boxes.scaleBar.unit = layout.unit;
   }
   if (settings.credit) {
-    drawText(ctx, settings.credit, metrics.pad, metrics.height - Math.round(metrics.pad * 0.6), {
+    // the credit closes the footer strip. Anchoring it to the footer (and not
+    // to the canvas bottom) keeps it above a bottom legend band (item 16)
+    const creditY = footerTop + metrics.footerHeight - Math.round(metrics.pad * 0.6);
+    drawText(ctx, settings.credit, metrics.pad, creditY, {
       font: fontSpec(metrics.creditSize, { font }),
       color: "#8ea3ad",
       maxWidth: metrics.width - metrics.pad * 2,
     });
+    boxes.credit = { x: metrics.pad, y: creditY };
   }
   return boxes;
 }

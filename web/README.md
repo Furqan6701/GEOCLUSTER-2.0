@@ -54,6 +54,19 @@ rather than a dashboard:
   coordinates **on one canvas** — the preview *is* that canvas and the PNG
   export re-renders it at 1x/2x/3x. Legend names/colours are shared with the
   Clusters table.
+  * **Legend placement**: Outside right (default), Outside left, Outside bottom
+    left / center / right — every outside spot grows the canvas so the legend
+    never covers the image — or on the map in one of the four corners. The box
+    is measured for the longest class name, so nothing is ever truncated.
+  * **Scale bar**: a label at every division boundary (0 … total with its unit),
+    bottom left / center / right, 1–10 divisions, live. Exact when the image has
+    a ground scale (the default length is a round number near a fifth of the
+    width) or once you enter **Image width on the ground = …**; for an unscaled
+    photo it is a plain black/white bar with no numbers, no unit and no
+    invented distance.
+  * **Sizes** start from the image (title largest, legend/scale labels about
+    half the title, north arrow about 6 % of the image height) and every field
+    stays editable inside its own limits.
 * **Manual checks** — `docs/frontend-manual-checklist.md` lists what to confirm
   by hand in Chrome at 1366 px and 1920 px (rendering, downloads, gestures).
 * **Shortcuts** — `Ctrl+O` open, `Ctrl+S` export PNG, `Ctrl+Z`/`Ctrl+Y`

@@ -13,9 +13,10 @@
 import { downloadBlob, el, icon, setChildren, toggleButton } from "./ui.js";
 import { mapCanvasToBlob } from "./map.js";
 import {
-  CORNERS, EXPORT_SCALES, LEGEND_PLACEMENTS, MAP_DEFAULTS, MAP_FONTS, NORTH_STYLES, SCALE_UNITS,
-  TEXT_SIZE_RANGE, TITLE_ALIGNS, composeStudioMap,
-  formatLength, groundWidthMeters, hasGroundScale, normalizeSettings, roundScaleLength, titleFromName,
+  CORNERS, DEFAULT_SCALE_POSITION, EXPORT_SCALES, LEGEND_PLACEMENTS, MAP_DEFAULTS, MAP_FONTS,
+  NORTH_STYLES, SCALE_POSITIONS, SCALE_UNITS, TEXT_SIZE_RANGE, TITLE_ALIGNS, composeStudioMap,
+  defaultSizes, formatLength, groundWidthMeters, hasGroundScale, normalizeSettings,
+  roundScaleLength, titleFromName,
 } from "./mapstudio.js";
 
 const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -96,7 +97,7 @@ export class MapStudio {
     const footer = el("footer", { class: "map-modal-foot" }, [
       el("p", {
         class: "map-modal-note", id: "map-modal-note",
-        text: "The preview IS the exported canvas. Legend names and colours stay in sync with the Clusters table.",
+        text: "The preview is exactly what the PNG will contain. Legend names and colours follow the Clusters table.",
       }),
       el("div", { class: "map-export", role: "group", "aria-label": "Export the map as PNG" }, exportButtons),
     ]);
@@ -176,6 +177,7 @@ export class MapStudio {
   _titleControls() {
     const size = (key, fallback, set) => this._number(fallback, (value) => this._update((settings) => {
       set(settings, Math.max(TEXT_SIZE_RANGE.min, Math.min(TEXT_SIZE_RANGE.max, Math.round(Number(value) || fallback))));
+      settings.sizesTouched = true;   // the image-derived defaults stop here
     }), { key, min: TEXT_SIZE_RANGE.min, max: TEXT_SIZE_RANGE.max });
     return [
       this._field("Font", this._select(
@@ -222,6 +224,7 @@ export class MapStudio {
       this._checkbox("Show percentages", true, (value) => this._update((settings) => { settings.legend.showPercentages = value; }), "legendPercent"),
       this._field("Legend text size (px)", this._number(MAP_DEFAULTS.legend.fontSize, (value) => this._update((settings) => {
         settings.legend.fontSize = Math.max(TEXT_SIZE_RANGE.min, Math.min(TEXT_SIZE_RANGE.max, Math.round(Number(value) || MAP_DEFAULTS.legend.fontSize)));
+        settings.sizesTouched = true;
       }), { key: "legendFont", min: TEXT_SIZE_RANGE.min, max: TEXT_SIZE_RANGE.max })),
       el("p", { class: "map-field-hint", text: "Class names and colours are edited here or in the Clusters table — they stay in sync." }),
       rowsHost,
@@ -230,36 +233,52 @@ export class MapStudio {
 
   _scaleControls() {
     this.fields.scaleNote = el("p", { class: "map-field-hint", text: "" });
+    // "Image width on the ground = [value] [unit]" — the one entry that turns
+    // the plain bar of an unscaled photo into an exact one
+    const widthInput = this._number(null, (value) => this._update((settings) => {
+      settings.scaleBar.imageWidth = value;
+    }), { key: "imageWidth", min: 0, step: "any" });
+    const widthUnit = this._select(
+      Object.keys(SCALE_UNITS).map((unit) => ({ key: unit, label: unit })),
+      "m",
+      (value) => this._update((settings) => { settings.scaleBar.imageWidthUnit = value; }),
+      "imageWidthUnit",
+    );
     this.fields.manualScale = el("div", { class: "map-manual-scale", hidden: true }, [
-      this._field("Image width =", this._number(null, (value) => this._update((settings) => {
-        settings.scaleBar.imageWidth = value;
-      }), { key: "imageWidth", min: 0 }), "used when the image has no ground scale"),
-      this._field("Unit", this._select(
-        Object.keys(SCALE_UNITS).map((unit) => ({ key: unit, label: unit })),
-        "m",
-        (value) => this._update((settings) => { settings.scaleBar.imageWidthUnit = value; }),
-        "imageWidthUnit",
-      )),
+      el("div", { class: "map-inline-field" }, [
+        el("span", { class: "map-field-label", text: "Image width on the ground =" }),
+        widthInput,
+        widthUnit,
+      ]),
     ]);
     return [
       this._checkbox("Show scale bar", true, (value) => this._update((settings) => { settings.scaleBar.visible = value; }), "scaleVisible"),
       this._field("Total length", this._number(null, (value) => this._update((settings) => {
         settings.scaleBar.length = value == null ? null : Math.max(0, value);
-      }), { key: "scaleLength", min: 0, step: "any" }), "blank = a round length for this image"),
+      }), { key: "scaleLength", min: 0, step: "any" }), "leave empty for a round length"),
       this._field("Divisions", this._number(4, (value) => this._update((settings) => {
-        settings.scaleBar.divisions = Math.max(1, Math.min(10, Math.round(Number(value) || 4)));
-      }), { key: "scaleDivisions", min: 1, max: 10 })),
+        const raw = Number(value);
+        settings.scaleBar.divisions = Number.isFinite(raw) && raw > 0
+          ? Math.max(1, Math.min(10, Math.round(raw))) : 4;
+      }), { key: "scaleDivisions", min: 1, max: 10 }), "1 to 10, one label per division"),
       this._field("Unit", this._select(
         Object.keys(SCALE_UNITS).map((unit) => ({ key: unit, label: unit })),
         "m",
         (value) => this._update((settings) => { settings.scaleBar.unit = value; }),
         "scaleUnit",
       )),
+      this._field("Position", this._select(
+        SCALE_POSITIONS,
+        DEFAULT_SCALE_POSITION,
+        (value) => this._update((settings) => { settings.scaleBar.position = value; }),
+        "scalePosition",
+      )),
       this._field("Label size (px)", this._number(MAP_DEFAULTS.scaleBar.fontSize, (value) => this._update((settings) => {
         settings.scaleBar.fontSize = Math.max(TEXT_SIZE_RANGE.min, Math.min(TEXT_SIZE_RANGE.max, Math.round(Number(value) || MAP_DEFAULTS.scaleBar.fontSize)));
+        settings.sizesTouched = true;
       }), { key: "scaleFont", min: TEXT_SIZE_RANGE.min, max: TEXT_SIZE_RANGE.max })),
-      this.fields.scaleNote,
       this.fields.manualScale,
+      this.fields.scaleNote,
     ];
   }
 
@@ -272,6 +291,7 @@ export class MapStudio {
       this._field("Style", this._select(NORTH_STYLES, "classic", (value) => this._update((settings) => { settings.northArrow.style = value; }), "arrowStyle")),
       this._field("Size (px)", this._number(MAP_DEFAULTS.northArrow.size, (value) => this._update((settings) => {
         settings.northArrow.size = Math.max(12, Math.min(160, Math.round(Number(value) || MAP_DEFAULTS.northArrow.size)));
+        settings.sizesTouched = true;
       }), { key: "arrowSize", min: 12, max: 160 })),
       this._field("Position", this._select(CORNERS, "tr", (value) => this._update((settings) => { settings.northArrow.position = value; }), "arrowPosition")),
     ];
@@ -342,16 +362,16 @@ export class MapStudio {
     if (!note || !manual) return;
     if (metres) {
       note.textContent = hasGroundScale(this.info)
-        ? `Ground width ≈ ${formatLength(metres, "km")} (${formatLength(
-          metres / 1000 > 1 ? 1000 : 1, metres / 1000 > 1 ? "km" : "m")}).`
-        : "Using the width you entered (the API has no ground scale for this image).";
+        ? `The image is about ${formatLength(metres, metres >= 1000 ? "km" : "m")} wide on the ground.`
+        : "The bar uses the width you entered.";
       manual.hidden = true;
       const suggested = roundScaleLength(metres, this.settings.scaleBar.unit);
       if (this.fields.scaleLength && this.settings.scaleBar.length == null) {
         this.fields.scaleLength.placeholder = `${suggested}`;
       }
     } else {
-      note.textContent = "No ground scale for this image — enter its width, or the bar is labelled \"not to scale\".";
+      note.textContent = "Add the image's width on the ground to put numbers on the bar — "
+        + "until then it is a plain bar with no distances.";
       manual.hidden = false;
     }
     if (this.fields.coordToggle) {
@@ -437,6 +457,17 @@ export class MapStudio {
       { ...(persisted ?? {}), legend: { ...(persisted?.legend ?? {}), rows: rows.length ? rows : (persisted?.legend?.rows ?? this._savedLegendRows) } },
       { name: this.name, source: this.source, info: this.info },
     );
+    // item 16: the default text and arrow sizes follow the image until the
+    // user edits one of them in the sidebar
+    if (this.settings.sizesTouched !== true) {
+      const derived = defaultSizes(image?.width ?? this.info?.width, image?.height ?? this.info?.height);
+      this.settings.titleSize = derived.titleSize;
+      this.settings.subtitleSize = derived.subtitleSize;
+      this.settings.creditSize = derived.creditSize;
+      this.settings.legend.fontSize = derived.legendFontSize;
+      this.settings.scaleBar.fontSize = derived.scaleFontSize;
+      this.settings.northArrow.size = derived.northArrowSize;
+    }
     if (!rows.length && this.settings.legend.rows.length) this._savedLegendRows = this.settings.legend.rows;
     this.dialog.querySelector(".map-modal-sub").textContent = this.name ? `image: ${this.name}` : "";
     this._fitToViewport();
@@ -474,6 +505,7 @@ export class MapStudio {
     set(f.scaleLength, s.scaleBar.length == null ? "" : s.scaleBar.length);
     set(f.scaleDivisions, s.scaleBar.divisions);
     set(f.scaleFont, s.scaleBar.fontSize);
+    set(f.scalePosition, s.scaleBar.position);
     set(f.scaleUnit, s.scaleBar.unit);
     set(f.imageWidth, s.scaleBar.imageWidth == null ? "" : s.scaleBar.imageWidth);
     set(f.imageWidthUnit, s.scaleBar.imageWidthUnit);

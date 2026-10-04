@@ -316,8 +316,20 @@ def check_workstation_layout() -> None:
           "drawNorthArrow takes style and size only")
     check("legendPlacement" in ui_js and "legendCorner" not in ui_js,
           "the composer offers the placement dropdown, not the old corner one")
-    check("drawImage" in studio_js and "not to scale" in studio_js,
-          "the image is drawn in and unknown scales are labelled honestly")
+    check("drawImage" in studio_js and "not to scale" not in studio_js,
+          "the image is drawn in, and no bar is ever labelled \"not to scale\"")
+    # item 16: placements, a plain bar for unscaled photos, boundary labels
+    check('"outside-left"' in studio_js and '"outside-bottom-center"' in studio_js
+          and '"outside-bottom-right"' in studio_js,
+          "the five outside legend placements exist")
+    check("SCALE_POSITIONS" in studio_js and 'key: "bc"' in studio_js,
+          "the scale bar has bottom left / center / right positions")
+    check("export function scaleBarLayout(" in studio_js and "plain: true" in studio_js,
+          "one pure function computes the bar, and an unknown scale falls back to a plain bar")
+    check("export function defaultSizes(" in studio_js and "defaultSizes(" in ui_js,
+          "the text sizes are derived from the image and applied by the composer")
+    check("Image width on the ground =" in ui_js, "the ground-width field is worded plainly")
+    check("sizesTouched" in ui_js, "the derived sizes stop following the image once edited")
     # ---- item 3: the composer is opaque and clears the page toolbar
     # every var() the stylesheet uses has to be defined: `var(--panel)` was a
     # typo for --bg-panel, which made the dialog and its sidebar transparent

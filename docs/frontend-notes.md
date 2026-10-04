@@ -146,18 +146,28 @@ without ever recording a choice counts as that choice.) The arrow keeps Style,
 Size (px) and Position, and is drawn north-up — the Rotation control and
 `northArrow.rotation` setting are gone.
 
-### Legend placement (item 5)
+### Legend placement (items 5 and 16)
 
-* `legend.placement` replaces the old `legend.corner`. `LEGEND_PLACEMENTS`:
-  **Outside right (default)**, Outside bottom, On map — top left / top right /
-  bottom left / bottom right. `legendPlacementOf()` normalizes anything unknown
-  back to the default.
-* The two outside placements **enlarge the composed canvas** instead of drawing
+* `legend.placement` replaces the old `legend.corner`. `LEGEND_PLACEMENTS` now
+  holds **nine** entries — **Outside right (default)**, Outside left, Outside
+  bottom left / center / right, and On map — top left / top right / bottom left
+  / bottom right. Out-of-image placements carry `edge` (`left`/`right`/`bottom`)
+  and, for the bottom band, `align` (`left`/`center`/`right`);
+  `legendPlacementOf()` normalizes anything unknown back to the default, and the
+  old `outside-bottom` key still resolves (to `outside-bottom-left`).
+* The five outside placements **enlarge the composed canvas** instead of drawing
   over the image: `studioLayout()` measures the legend box at 1x, `frameMetrics()`
-  adds a band (width, for outside right; height, for outside bottom) plus a
-  12 px gap, and exposes `legendArea` for the drawing code. All numbers stay
-  integral at 1x and are multiplied by the export scale, so 2x/3x remain
-  **exact** multiples and the legend can never cover a pixel of the map.
+  adds a band (width for left/right, height for bottom) plus a 12 px gap, and
+  exposes `legendArea` for the drawing code. All numbers stay integral at 1x and
+  are multiplied by the export scale, so 2x/3x remain **exact** multiples and the
+  legend can never cover a pixel of the map. Bottom-area offsets are computed at
+  1x and then multiplied (rounding twice would drift a pixel at 3x).
+* The band is `legendBox + 2 px` of slack, but `legendArea` is exactly the drawn
+  box, so centre/right alignment lands where the box really is.
+* **No class name is ever truncated:** `legendBoxSize()` measures the longest
+  name with the very font the box is drawn with (the title and percentage column
+  too) and `drawLegendBox()` draws the strings unclipped — the ellipsis path is
+  gone from the legend.
   A legend that is hidden (or has no rows) reserves no space at all.
 * The measurement is text-metric based (the same `legendBoxSize()` used for
   drawing, with the chosen font), plus 2 px of slack so rounding cannot clip
@@ -369,7 +379,8 @@ image regardless of which pane is active.
 * The frontend keeps that metadata with every history state and re-applies it
   when an evicted image is re-uploaded (`carryGroundMetadata()`), so the Map
   composer's scale bar stays exact after a restore. Without metadata the
-  composer says “not to scale” and offers “image width = X unit”.
+  composer offers “Image width on the ground = [value] [unit]” instead of
+  inventing anything (item 16).
 
 ### Map composer (implemented)
 
@@ -391,12 +402,33 @@ image regardless of which pane is active.
   scale bar on with 4 alternating black/white divisions, north arrow on
   (classic style, 0°, top right), background `#0d1115`, border on, corner
   coordinates off. Settings persist for the session inside `MapStudio`.
-* **Scale:** the length defaults to a 1/2/5 round number for about a quarter
-  of the ground width, in m/km/ft/mi (auto-picking km above a kilometre when
-  the user has not chosen). With `meters_per_pixel`/`bbox` (item 5) the bar is
-  exact; without them it is labelled **not to scale** until the user types
-  “image width = X unit”. Satellite crops are north-up, so the arrow defaults
-  to 0°.
+* **Scale (item 16):** `scaleBarLayout()` is a pure function — no canvas, no
+  settings object — and it is what both the drawing code and the tests use:
+    * **ground scale known** (`meters_per_pixel`/`bbox` from item 5, or the
+      user's “Image width on the ground”): the bar is **exact**. The default
+      total length is a 1/2/5 round number near **a fifth** of the ground width
+      (`roundScaleLength`, auto-picking km above a kilometre until the user
+      chooses a unit); a **label sits at every division boundary** — `0`, each
+      tick, and the total with its unit — numbers formatted with at most two
+      decimals and no trailing zeros (`formatNumber`);
+    * **photo with no ground scale** (e.g. a drone shot): a **plain**
+      alternating black/white bar at 40 % of the image width with **no numbers,
+      no unit and no note** — never an invented distance;
+    * **a typed total length** turns the labels on; once a ground width exists
+      the pixel length is exact for it. A length longer than the image is capped
+      at the ground width so the bar cannot claim a distance the image does not
+      cover.
+  Position: **Bottom left (default), Center, Right** (`SCALE_POSITIONS`), which
+  only moves the bar along the footer — the labels travel with it. Divisions are
+  clamped to 1…10, and total length / divisions / unit / label size update the
+  preview live.
+* **Default sizes (item 16):** `defaultSizes(width, height)` derives the title
+  (3.2 % of the image width, 14…96), the subtitle (55 % of the title), the
+  credit (45 %), the legend text and the scale labels (**half** the title) and
+  the north arrow (**6 %** of the image height, 12…160). `MapStudio.open()`
+  applies them to the fields until the user edits any size (`sizesTouched`), so
+  the sidebar always starts from a sensible value for the image in front of it
+  and every field keeps its own min/max.
 * **Legend sync:** the composer's class names/colours and the Clusters table
   are two views of the same rows — edits in either one are pushed to the other
   over the bus (`map:legend-rows` / `clusters:changed`).
@@ -673,11 +705,11 @@ message. Raw JSON is never displayed.
 
 | Command | What it does |
 | --- | --- |
-| `node --test "web/tests/*.test.mjs"` | 149 logic tests: config resolution, error mapping, API client contract (URLs, bodies, multipart, session recovery), chat command mapping/execution, the satellite request shapes, the filter preview maths (reflect-101 box average, threshold/brightness clipping, the 512 px preview cap), the slider snapping/help texts, the item-15 rule that no help popover survives
-  anywhere and that the tooltip sentences equal the shipped assistant glossary, the history `dropEntry` replacement rule, the linked classification ranges (item 11) and the histogram maths of item 13 (the OpenCV gray weights, channel counting with alpha, the 0…10 smoothing slider, the channel→series mapping), the product copy and the required credits (item 14). No browser needed. |
+| `node --test "web/tests/*.test.mjs"` | 160 logic tests: config resolution, error mapping, API client contract (URLs, bodies, multipart, session recovery), chat command mapping/execution, the satellite request shapes, the filter preview maths (reflect-101 box average, threshold/brightness clipping, the 512 px preview cap), the slider snapping/help texts, the item-15 rule that no help popover survives
+  anywhere and that the tooltip sentences equal the shipped assistant glossary, the history `dropEntry` replacement rule, the linked classification ranges (item 11) and the histogram maths of item 13 (the OpenCV gray weights, channel counting with alpha, the 0…10 smoothing slider, the channel→series mapping), the product copy and the required credits (item 14), and the item-16 composer maths (the nine legend placements, `scaleBarLayout` for satellite/drone/typed lengths, boundary labels and number formatting, the legend box sized to the longest class name, the image-derived default sizes). No browser needed. |
 | `python web/tests/smoke_test.py` | Serves `web/` on 5173 (reuses a running server for the same root), checks assets + content types, that every relative module import resolves, that no key material exists under `web/`, that no `innerHTML` is used, the workstation layout contract (image workspace owns the flexible track, no `object-fit: cover`, technical corner radii), and that the API's CORS allows the frontend origin. |
 | `python web/tests/integration_check.py` | Live contract check against a running API: the exact call sequence the browser makes (session → upload → 6 filters → kmeans k=5 → classify → histogram → stats → GCH2 round trip → satellite validation and error paths → chat commands → 404/415). The three checks that need real Copernicus credentials report SKIP when the server has no `api/.env` instead of failing. Requires `uvicorn main:app --port 8000`. |
-| `node web/tests/boot_test.mjs --jsdom <dir>` | Boot test: loads `index.html` in jsdom, imports `js/app.js` and drives the UI through DOM events against the live API — 820 assertions covering the shell (menu bar, toolbar, status bar, dock collapse), viewport behaviour (pan, wheel zoom, pixel readout, distance measurement, sync mirroring), upload, the six filters, the Source panel's place/corner modes, the Filters panel's tooltips (item 15: no popovers, one-line titles) and slider sessions (preview without requests, one request per release, replace-not-stack, Escape, arrow-key commits, one slider at a time), the rendered K-Means range table (item 11: live linked ranges, clamped commits, locked ends, the browser-side preview with zero requests/history entries, the boundary bar, "Generate map" = one undo step), the File menu's four image actions (item 12: exact compress tooltip, label-map entry, GCH2 compress → decompress through the menu and the toolbar), histogram windows (item 13: the active-viewport rule with its Active badge, the per-footer Histogram buttons, the smoothing slider, the Channel dropdown's per-image option list, the resize/min/max clamps on all four edges), the menus (item 14: the exact File/Edit/View/Processing/Analysis/Help contents, the conditional label-map entry, the New-session confirmation and its cancel path, the Help dialogs with their focus trap, Escape and credits, disabled reasons as tooltips and no inline notes anywhere), chat router commands, session-expiry recovery, and a clean browser console. jsdom is optional (not a dependency of the app); without it the test skips. |
+| `node web/tests/boot_test.mjs --jsdom <dir>` | Boot test: loads `index.html` in jsdom, imports `js/app.js` and drives the UI through DOM events against the live API — 849 assertions covering the shell (menu bar, toolbar, status bar, dock collapse), viewport behaviour (pan, wheel zoom, pixel readout, distance measurement, sync mirroring), upload, the six filters, the Source panel's place/corner modes, the Filters panel's tooltips (item 15: no popovers, one-line titles) and slider sessions (preview without requests, one request per release, replace-not-stack, Escape, arrow-key commits, one slider at a time), the rendered K-Means range table (item 11: live linked ranges, clamped commits, locked ends, the browser-side preview with zero requests/history entries, the boundary bar, "Generate map" = one undo step), the File menu's four image actions (item 12: exact compress tooltip, label-map entry, GCH2 compress → decompress through the menu and the toolbar), histogram windows (item 13: the active-viewport rule with its Active badge, the per-footer Histogram buttons, the smoothing slider, the Channel dropdown's per-image option list, the resize/min/max clamps on all four edges), the composer's item-16 placements/scale bar/derived sizes, the menus (item 14: the exact File/Edit/View/Processing/Analysis/Help contents, the conditional label-map entry, the New-session confirmation and its cancel path, the Help dialogs with their focus trap, Escape and credits, disabled reasons as tooltips and no inline notes anywhere), chat router commands, session-expiry recovery, and a clean browser console. jsdom is optional (not a dependency of the app); without it the test skips. |
 
 The boot test runs in both serving modes: the default (page on localhost →
 direct API calls) and hosted (`--page-host 5173-demo.e2b.app` → everything

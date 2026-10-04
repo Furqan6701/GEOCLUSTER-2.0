@@ -111,33 +111,41 @@ import {
   CORNERS,
   DEFAULT_LEGEND_PLACEMENT,
   DEFAULT_MAP_FONT,
+  DEFAULT_SCALE_POSITION,
   EXPORT_SCALES,
+  LEGACY_LEGEND_PLACEMENTS,
   LEGEND_PLACEMENTS,
   MAP_DEFAULTS,
   MAP_FONTS,
   NORTH_STYLES,
+  PLAIN_BAR_WIDTH_RATIO,
+  SCALE_POSITIONS,
   SCALE_UNITS,
   TEXT_SIZE_RANGE,
   TITLE_ALIGNS,
   composeStudioMap,
   cornerAnchor,
   cornerLabels,
+  defaultSizes,
   drawNorthArrow,
   drawScaleBar,
   drawStudioMap,
   fitToWidth,
   fontSpec,
   formatLength,
+  formatNumber,
   frameMetrics,
   fromMeters,
   groundWidthMeters,
   hasGroundScale,
   legendPlacementOf,
+  legendBoxSize,
   mapFont,
   normalizeSettings,
   niceRoundNumber,
   percentTextFor,
   roundScaleLength,
+  scaleBarLayout,
   studioSize,
   titleFromName,
   toMeters,
@@ -759,8 +767,10 @@ test("a satellite info object drives the composer's scale bar", () => {
   const composed = composeStudioMap({
     image: { width: 800, height: 600 }, settings, info, documentRef: fakeDocument(),
   });
-  assert.ok(!composed.canvas.__texts.includes("not to scale"));
+  // a 10 km image gets a round 2 km bar (20 %) with a label per boundary
   assert.ok(composed.canvas.__texts.includes("2 km"), composed.canvas.__texts.join(" | "));
+  assert.ok(composed.canvas.__texts.includes("1.5"), composed.canvas.__texts.join(" | "));
+  assert.equal(composed.boxes.scaleBar.plain, false);
 });
 
 // ------------------------------------- STEP 4: the Map composer (mapstudio)
@@ -961,27 +971,41 @@ test("fitToWidth ellipsises to the available width", () => {
   assert.equal(fitToWidth(ctx, "", 100), "");
 });
 
-test("drawScaleBar alternates black and white segments and labels the total", () => {
+test("drawScaleBar alternates black and white segments and labels every boundary", () => {
   const documentStub = fakeDocument();
   const canvas = documentStub.createElement("canvas");
   const ctx = canvas.getContext("2d");
-  const fills = [];
   const colours = [];
+  const spots = [];
   ctx.fillRect = () => { colours.push(ctx.fillStyle); };
-  drawScaleBar(ctx, { x: 10, y: 20, width: 200, divisions: 4, unitSize: 12, label: "500 m" });
+  ctx.fillText = (text, x) => { canvas.__texts.push(text); spots.push({ text, x, align: ctx.textAlign }); };
+  const labels = scaleBarLayout({ groundWidthMeters: 2000, unit: "m", divisions: 4 }).labels;
+  drawScaleBar(ctx, { x: 10, y: 20, width: 200, divisions: 4, unitSize: 12, labels });
   assert.deepEqual(colours, ["#ffffff", "#000000", "#ffffff", "#000000"],
     "the segments alternate black/white");
-  assert.ok(canvas.__texts.includes("500 m"), "the total length is printed");
+  assert.deepEqual(canvas.__texts, ["0", "125", "250", "375", "500 m"],
+    "one label per boundary, the total carrying the unit");
+  assert.equal(spots[0].x, 10, "the first label starts at the left edge");
+  assert.equal(spots.at(-1).x, 210, "the total ends at the right edge");
+  assert.deepEqual(spots.map((spot) => spot.align), ["left", "center", "center", "center", "right"]);
   assert.equal(canvas.__strokes, 1, "the bar is outlined");
-  void fills;
 });
 
-test("drawScaleBar says 'not to scale' when the ground scale is unknown", () => {
+test("drawScaleBar with no labels is a plain bar: no numbers, no unit, no note", () => {
   const documentStub = fakeDocument();
   const canvas = documentStub.createElement("canvas");
-  drawScaleBar(canvas.getContext("2d"), { x: 0, y: 0, width: 100, label: "? m", notToScale: true });
-  assert.ok(canvas.__texts.includes("not to scale"));
-  assert.ok(!canvas.__texts.includes("? m"));
+  const colours = [];
+  const ctx = canvas.getContext("2d");
+  ctx.fillRect = () => { colours.push(ctx.fillStyle); };
+  const result = drawScaleBar(ctx, { x: 0, y: 0, width: 100, divisions: 5, labels: [] });
+  assert.deepEqual(canvas.__texts, [], "nothing is written on a plain bar");
+  assert.deepEqual(colours, ["#ffffff", "#000000", "#ffffff", "#000000", "#ffffff"]);
+  assert.equal(result.labels, 0);
+  const source = { scaleBar: { visible: true } };
+  const layout = scaleBarLayout({ unit: source.scaleBar.unit ?? "m", divisions: 4 });
+  assert.equal(layout.plain, true, "no ground scale and no typed length → plain");
+  assert.deepEqual(layout.labels, []);
+  assert.equal(layout.total, null);
 });
 
 test("drawNorthArrow draws each style with its own geometry", () => {
@@ -1021,7 +1045,9 @@ test("composeStudioMap draws image, legend, scale bar and north arrow on ONE can
   }
   assert.ok(texts.includes("sample") && texts.includes("k=3"), "title and subtitle are drawn");
   assert.ok(texts.includes("Legend"), "the legend title is drawn");
-  assert.ok(texts.includes("not to scale"), "without metadata the bar says so");
+  assert.equal(result.boxes.scaleBar.plain, true);
+  assert.ok(!texts.some((text) => /not to scale/i.test(text)),
+    "a bar without a ground scale says nothing at all: no numbers, no unit, no note");
   assert.ok(result.canvas.__fills > 0, "the bar segments are filled");
   assert.ok(result.canvas.__strokes > 0, "the legend/border are stroked");
 });
@@ -1859,17 +1885,34 @@ test("every text on the composed canvas uses the one selected font", () => {
 
 // ------------- item 5: legend placement, outside by default -----------------
 
-test("the placement dropdown offers outside right/bottom and the four on-map corners", () => {
-  assert.deepEqual(LEGEND_PLACEMENTS.map((entry) => entry.key),
-    ["outside-right", "outside-bottom", "onmap-tl", "onmap-tr", "onmap-bl", "onmap-br"]);
+test("the placement dropdown offers the five outside spots and the four on-map corners", () => {
+  assert.deepEqual(LEGEND_PLACEMENTS.map((entry) => entry.key), [
+    "outside-right", "outside-left",
+    "outside-bottom-left", "outside-bottom-center", "outside-bottom-right",
+    "onmap-tl", "onmap-tr", "onmap-bl", "onmap-br",
+  ]);
   assert.deepEqual(LEGEND_PLACEMENTS.map((entry) => entry.label), [
-    "Outside right", "Outside bottom",
+    "Outside right", "Outside left",
+    "Outside bottom left", "Outside bottom center", "Outside bottom right",
     "On map — top left", "On map — top right", "On map — bottom left", "On map — bottom right",
   ]);
   assert.equal(DEFAULT_LEGEND_PLACEMENT, "outside-right", "outside right is the default");
   assert.equal(MAP_DEFAULTS.legend.placement, "outside-right");
-  assert.ok(LEGEND_PLACEMENTS.filter((entry) => entry.outside).length === 2);
-  assert.ok(LEGEND_PLACEMENTS.filter((entry) => !entry.outside).length === 4);
+  assert.equal(LEGEND_PLACEMENTS.filter((entry) => entry.outside).length, 5);
+  assert.equal(LEGEND_PLACEMENTS.filter((entry) => !entry.outside).length, 4);
+  for (const entry of LEGEND_PLACEMENTS) {
+    if (entry.outside) {
+      assert.ok(["left", "right", "bottom"].includes(entry.edge), `${entry.key} has an edge`);
+      assert.equal(entry.corner, null);
+    } else {
+      assert.ok(["tl", "tr", "bl", "br"].includes(entry.corner), `${entry.key} has a corner`);
+      assert.equal(entry.edge, null);
+    }
+  }
+  // a placement stored by an earlier build still resolves
+  assert.equal(LEGACY_LEGEND_PLACEMENTS["outside-bottom"], "outside-bottom-left");
+  assert.equal(legendPlacementOf({ legend: { placement: "outside-bottom" } }).key,
+    "outside-bottom-left");
 });
 
 test("legendPlacementOf falls back for unknown or missing placements", () => {
@@ -1897,8 +1940,17 @@ test("an outside legend enlarges the composed canvas and never covers the image"
   assert.ok(right.boxes.legend.x + right.boxes.legend.width <= right.canvas.width,
     "and entirely inside the canvas");
 
+  const left = composeStudioMap({
+    image, settings: STUDIO_SETTINGS({ legend: { placement: "outside-left" } }), documentRef: documentStub,
+  });
+  assert.equal(left.canvas.height, rightPlain.height, "outside left does not change the height");
+  assert.equal(left.canvas.width, right.canvas.width, "the left band is as wide as the right one");
+  assert.ok(left.boxes.legend.x + left.boxes.legend.width <= left.boxes.image.x,
+    "the legend is entirely left of the image");
+  assert.ok(left.boxes.legend.x >= 0, "and inside the canvas");
+
   const bottom = composeStudioMap({
-    image, settings: STUDIO_SETTINGS({ legend: { placement: "outside-bottom" } }), documentRef: documentStub,
+    image, settings: STUDIO_SETTINGS({ legend: { placement: "outside-bottom-left" } }), documentRef: documentStub,
   });
   assert.equal(bottom.canvas.width, rightPlain.width, "outside bottom does not change the width");
   assert.ok(bottom.canvas.height > rightPlain.height, "the canvas grew downwards");
@@ -1906,6 +1958,29 @@ test("an outside legend enlarges the composed canvas and never covers the image"
     "the legend is entirely below the image");
   assert.ok(bottom.boxes.legend.y + bottom.boxes.legend.height <= bottom.canvas.height,
     "and entirely inside the canvas");
+  assert.equal(bottom.boxes.legend.x, bottom.boxes.image.x, "bottom left aligns with the image");
+
+  // the three bottom spots differ only in their horizontal alignment
+  const spots = {
+    left: bottom,
+    center: composeStudioMap({ image, settings: STUDIO_SETTINGS({ legend: { placement: "outside-bottom-center" } }), documentRef: documentStub }),
+    right: composeStudioMap({ image, settings: STUDIO_SETTINGS({ legend: { placement: "outside-bottom-right" } }), documentRef: documentStub }),
+  };
+  for (const [name, composed] of Object.entries(spots)) {
+    assert.equal(composed.canvas.height, bottom.canvas.height, `${name} uses the same band`);
+    const box = composed.boxes.legend;
+    const img = composed.boxes.image;
+    assert.ok(box.x >= img.x && box.x + box.width <= img.x + img.width,
+      `${name} stays within the image's width`);
+  }
+  assert.equal(spots.left.boxes.legend.x, spots.left.boxes.image.x, "bottom left");
+  assert.equal(spots.center.boxes.legend.x,
+    spots.center.boxes.image.x + Math.round((spots.center.boxes.image.width - spots.center.boxes.legend.width) / 2),
+    "bottom center is centered on the image");
+  assert.equal(spots.right.boxes.legend.x,
+    spots.right.boxes.image.x + spots.right.boxes.image.width - spots.right.boxes.legend.width,
+    "bottom right ends at the image's right edge");
+  assert.equal(spots.left.boxes.image.x, rightPlain.pad, "a bottom legend leaves the image where it was");
 
   // every on-map placement draws INSIDE the image rectangle
   for (const key of ["onmap-tl", "onmap-tr", "onmap-bl", "onmap-br"]) {
@@ -2449,5 +2524,291 @@ test("menu reasons read as tooltips, never as wrapped sentences", () => {
     assert.ok(reason.length <= 60, `too long for a tooltip: ${reason}`);
     assert.ok(!reason.includes("\n"), "a tooltip is one line");
     assert.ok(reason.trim() === reason, "no stray whitespace");
+  }
+});
+
+// ------------------------- item 16: scale bar, legend placement, sizes ------
+
+test("formatNumber prints at most two decimals and no trailing zeros", () => {
+  assert.equal(formatNumber(0), "0");
+  assert.equal(formatNumber(250), "250");
+  assert.equal(formatNumber(1.5), "1.5");
+  assert.equal(formatNumber(0.25), "0.25");
+  assert.equal(formatNumber(1 / 3), "0.33", "two decimals at most");
+  assert.equal(formatNumber(2.0000001), "2");
+  assert.equal(formatNumber(Number.NaN), "—");
+});
+
+test("scaleBarLayout: a satellite image gets an exact bar with a label per boundary", () => {
+  // 800 px at 10 m/px = 8 km on the ground → a round 2 km bar (about 20 %)
+  const layout = scaleBarLayout({ groundWidthMeters: 8000, unit: "m", divisions: 4 });
+  assert.equal(layout.plain, false);
+  assert.equal(layout.exact, true);
+  assert.equal(layout.total, 2000, "the default round length");
+  assert.deepEqual(layout.labels.map((entry) => entry.text),
+    ["0", "500", "1000", "1500", "2000 m"]);
+  assert.deepEqual(layout.labels.map((entry) => entry.align),
+    ["left", "center", "center", "center", "right"]);
+  assert.equal(layout.groundMetres, 8000);
+
+  // the unit is chosen by the caller; the same ground width reads in km
+  const inKm = scaleBarLayout({ groundWidthMeters: 8000, unit: "km", divisions: 4 });
+  assert.equal(inKm.total, 2);
+  assert.deepEqual(inKm.labels.map((entry) => entry.text), ["0", "0.5", "1", "1.5", "2 km"]);
+
+  // meters_per_pixel + imageWidth is the same input
+  const fromPixels = scaleBarLayout({ metersPerPixel: 10, imageWidth: 800, unit: "m", divisions: 4 });
+  assert.equal(fromPixels.total, layout.total);
+});
+
+test("scaleBarLayout: divisions are clamped to 1..10 and labelled individually", () => {
+  assert.equal(scaleBarLayout({ groundWidthMeters: 1000, divisions: 10 }).labels.length, 11);
+  assert.equal(scaleBarLayout({ groundWidthMeters: 1000, divisions: 1 }).labels.length, 2);
+  assert.equal(scaleBarLayout({ groundWidthMeters: 1000, divisions: 0 }).labels.length, 2,
+    "0 falls back to one division");
+  assert.equal(scaleBarLayout({ groundWidthMeters: 1000, divisions: 99 }).labels.length, 11,
+    "99 is capped at ten divisions");
+  const one = scaleBarLayout({ groundWidthMeters: 1000, divisions: 1 });
+  assert.deepEqual(one.labels.map((entry) => entry.text), ["0", "200 m"]);
+});
+
+test("scaleBarLayout: a drone photo gets a plain bar until a width is entered", () => {
+  // no ground scale, no typed length → nothing but stripes
+  const plain = scaleBarLayout({ unit: "m", divisions: 4 });
+  assert.equal(plain.plain, true);
+  assert.equal(plain.total, null);
+  assert.equal(plain.unit, "");
+  assert.equal(plain.exact, false);
+  assert.deepEqual(plain.labels, [], "no numbers and no unit on a plain bar");
+
+  // the user enters "image width on the ground = 200 m" → exact for that value
+  const entered = scaleBarLayout({ groundWidthMeters: 200, unit: "m", divisions: 4 });
+  assert.equal(entered.plain, false);
+  assert.equal(entered.total, 50, "a fifth of the 200 m width");
+  assert.deepEqual(entered.labels.map((entry) => entry.text), ["0", "12.5", "25", "37.5", "50 m"]);
+
+  // …or types a total length directly: those labels appear, and nothing is
+  // invented beyond the image
+  const typed = scaleBarLayout({ length: 120, unit: "m", divisions: 3 });
+  assert.equal(typed.plain, false);
+  assert.equal(typed.exact, true);
+  assert.deepEqual(typed.labels.map((entry) => entry.text), ["0", "40", "80", "120 m"]);
+  const typedInKm = scaleBarLayout({ length: 1, unit: "km", divisions: 2 });
+  assert.deepEqual(typedInKm.labels.map((entry) => entry.text), ["0", "0.5", "1 km"],
+    "values are printed in the chosen unit, without trailing zeros");
+
+  // a typed length longer than the image is capped at the ground width, so the
+  // bar never claims a distance the image does not cover
+  const capped = scaleBarLayout({ groundWidthMeters: 2000, length: 50, unit: "km", divisions: 2 });
+  assert.equal(capped.total, 2, "2 km is the whole image");
+  assert.deepEqual(capped.labels.map((entry) => entry.text), ["0", "1", "2 km"]);
+});
+
+test("roundScaleLength suggests about a fifth of the ground width", () => {
+  assert.equal(roundScaleLength(2000, "m"), 500);
+  assert.equal(roundScaleLength(10000, "km"), 2);
+  assert.equal(roundScaleLength(1000, "m"), 200, "200 m is a fifth of a kilometre");
+  assert.equal(roundScaleLength(0, "m"), 0);
+  assert.equal(roundScaleLength(undefined, "m"), 0);
+  assert.ok(roundScaleLength(30, "m") <= 30, "never longer than the image itself");
+});
+
+test("the scale bar has a position: bottom left (default), center or right", () => {
+  assert.deepEqual(SCALE_POSITIONS.map((entry) => entry.key), ["bl", "bc", "br"]);
+  assert.deepEqual(SCALE_POSITIONS.map((entry) => entry.label),
+    ["Bottom left", "Center", "Bottom right"]);
+  assert.equal(DEFAULT_SCALE_POSITION, "bl");
+  assert.equal(MAP_DEFAULTS.scaleBar.position, "bl");
+  assert.equal(normalizeSettings(null, { name: "x.jpg" }).scaleBar.position, "bl");
+  assert.equal(normalizeSettings({ scaleBar: { position: "nowhere" } }, { name: "x.jpg" })
+    .scaleBar.position, "bl", "an unknown position falls back");
+
+  const info = { width: 800, height: 600, meters_per_pixel: 1 };   // 800 m wide → metres
+  const settings = normalizeSettings(null, { name: "crop.png", source: "satellite", info });
+  const bars = {};
+  for (const key of ["bl", "bc", "br"]) {
+    bars[key] = composeStudioMap({
+      image: { width: 800, height: 600 }, info,
+      settings: { ...settings, scaleBar: { ...settings.scaleBar, position: key } },
+      documentRef: fakeDocument(),
+    }).boxes.scaleBar;
+  }
+  const image = composeStudioMap({
+    image: { width: 800, height: 600 }, info, settings, documentRef: fakeDocument(),
+  }).boxes.image;
+  const pad = frameMetrics(800, 600, { scale: 1 }).pad;
+  assert.equal(bars.bl.x, pad, "bottom left starts at the image's left edge");
+  assert.equal(bars.bc.x + bars.bc.width / 2, image.x + image.width / 2, "center is centered");
+  assert.equal(bars.br.x + bars.br.width, image.x + image.width, "right ends at the right edge");
+  assert.equal(bars.bl.y, bars.br.y, "the three sit on the same line");
+  assert.equal(bars.bl.plain, false);
+  assert.equal(bars.bl.unit, "m");
+  assert.equal(bars.bl.total, 200, "a fifth of the 800 m ground width");
+});
+
+test("the legend box is as wide as the longest class name, with no ellipsis", () => {
+  const documentStub = fakeDocument();
+  const ctx = documentStub.createElement("canvas").getContext("2d");
+  const rows = [
+    { name: "Water", color: [0, 0, 255], percentage: 40 },
+    { name: "Shadows, dark trees / forest", color: [10, 20, 30], percentage: 35 },
+  ];
+  const size = legendBoxSize(ctx, rows, { unitSize: 14, font: "Arial" });
+  const nameWidth = (text) => String(text).length * 7; // the stub's metric
+  const needed = size.width - (42 /* pad*2 */);
+  assert.ok(needed >= nameWidth("Shadows, dark trees / forest"),
+    `the box leaves room for the longest name: ${size.width}`);
+  assert.ok(nameWidth("Shadows, dark trees / forest") > nameWidth("Water"));
+
+  const composed = composeStudioMap({
+    image: { width: 800, height: 600 },
+    settings: STUDIO_SETTINGS({
+      legend: { rows, placement: "onmap-bl" },
+    }),
+    documentRef: documentStub,
+  });
+  const texts = composed.canvas.__texts;
+  assert.ok(texts.includes("Shadows, dark trees / forest"),
+    `the full class name is drawn: ${texts.join(" | ")}`);
+  assert.ok(!texts.some((text) => text.includes("…")),
+    "nothing on the composed canvas is ellipsised");
+  assert.ok(composed.boxes.legend.width >= nameWidth("Shadows, dark trees / forest"),
+    "the drawn box is at least as wide as the name");
+
+  // a longer name always widens the box (no truncation, ever)
+  const longer = legendBoxSize(ctx, [...rows, { name: "x".repeat(60), color: [0, 0, 0], percentage: 1 }], { unitSize: 14 });
+  assert.ok(longer.width > size.width);
+});
+
+test("the legend title and the names are never cut, even outside the image", () => {
+  const documentStub = fakeDocument();
+  const rows = [{ name: "Category with a very long descriptive name", color: [1, 2, 3], percentage: 100 }];
+  for (const placement of ["outside-right", "outside-left", "outside-bottom-center"]) {
+    const composed = composeStudioMap({
+      image: { width: 800, height: 600 },
+      settings: STUDIO_SETTINGS({ legend: { rows, placement } }),
+      documentRef: documentStub,
+    });
+    const texts = composed.canvas.__texts;
+    assert.ok(texts.includes("Category with a very long descriptive name"), placement);
+    assert.ok(composed.boxes.legend.x >= 0, `${placement} stays on the canvas`);
+    assert.ok(composed.boxes.legend.x + composed.boxes.legend.width <= composed.canvas.width,
+      `${placement} fits inside the canvas`);
+    assert.ok(composed.boxes.legendOutside, `${placement} is an outside band`);
+  }
+});
+
+test("defaultSizes scales with the image: title largest, legend ≈ half, arrow ≈ 6 %", () => {
+  for (const [width, height] of [[800, 600], [1920, 1080], [256, 256]]) {
+    const sizes = defaultSizes(width, height);
+    assert.ok(sizes.titleSize > sizes.subtitleSize, `title above subtitle at ${width}px`);
+    assert.ok(sizes.titleSize > sizes.legendFontSize, `title is the largest text at ${width}px`);
+    assert.ok(Math.abs(sizes.legendFontSize - sizes.titleSize / 2) <= 1,
+      `legend text is about half the title at ${width}px`);
+    assert.equal(sizes.scaleFontSize, sizes.legendFontSize);
+    assert.ok(Math.abs(sizes.northArrowSize - height * 0.06) <= 1,
+      `the arrow is about 6 % of the height at ${width}x${height}`);
+  }
+  assert.ok(defaultSizes(1920, 1080).titleSize > defaultSizes(800, 600).titleSize,
+    "a bigger image gets a bigger title");
+  // sensible limits, and never outside what the sidebar accepts
+  for (const sizes of [defaultSizes(1, 1), defaultSizes(100000, 100000)]) {
+    for (const value of Object.values(sizes)) {
+      assert.ok(value >= TEXT_SIZE_RANGE.min || value === sizes.northArrowSize,
+        `inside the control range: ${value}`);
+      assert.ok(value <= 160, `within the arrow/text caps: ${value}`);
+    }
+  }
+  assert.equal(defaultSizes(256, 256).titleSize, 14, "a tiny image gets the smallest title");
+  assert.equal(defaultSizes(100000, 100000).titleSize, TEXT_SIZE_RANGE.max, "and the largest is capped");
+});
+
+test("every placement, and both bar kinds, scale exactly at 2x and 3x", () => {
+  for (const entry of LEGEND_PLACEMENTS) {
+    const settings = STUDIO_SETTINGS({ legend: { placement: entry.key } });
+    const one = composeStudioMap({ image: { width: 800, height: 600 }, settings, scale: 1, documentRef: fakeDocument() });
+    const three = composeStudioMap({ image: { width: 800, height: 600 }, settings, scale: 3, documentRef: fakeDocument() });
+    assert.equal(three.canvas.width, one.canvas.width * 3, `${entry.key} is exactly 3x wide`);
+    assert.equal(three.canvas.height, one.canvas.height * 3, `${entry.key} is exactly 3x tall`);
+    // an OUTSIDE legend sits in the band that frameMetrics reserved, so its
+    // position is an exact multiple; an on-map box is measured at the scaled
+    // font size and may differ by a rounding pixel (it is drawn, not reserved)
+    if (entry.outside) {
+      assert.equal(three.boxes.legend.x, one.boxes.legend.x * 3, `${entry.key} legend x scales`);
+      assert.equal(three.boxes.legend.y, one.boxes.legend.y * 3, `${entry.key} legend y scales`);
+    } else {
+      assert.ok(Math.abs(three.boxes.legend.x - one.boxes.legend.x * 3) <= 6,
+        `${entry.key} legend x is within a pixel or two: ${three.boxes.legend.x} vs ${one.boxes.legend.x * 3}`);
+    }
+    assert.equal(three.boxes.scaleBar.x, one.boxes.scaleBar.x * 3, `${entry.key} bar x scales`);
+    assert.equal(three.boxes.scaleBar.width, one.boxes.scaleBar.width * 3, `${entry.key} bar width scales`);
+  }
+});
+
+test("the plain bar covers a fixed share of the image and the exact bar the ground", () => {
+  const documentStub = fakeDocument();
+  const plain = composeStudioMap({
+    image: { width: 1000, height: 700 },
+    settings: normalizeSettings(null, { name: "photo.jpg", source: "upload" }),
+    documentRef: documentStub,
+  });
+  assert.equal(plain.boxes.scaleBar.plain, true);
+  assert.equal(plain.boxes.scaleBar.width, Math.round(1000 * PLAIN_BAR_WIDTH_RATIO),
+    "a plain bar is a fixed share of the image, since no distance is known");
+
+  // satellite: the round default is about a fifth of the image width in pixels
+  const info = { width: 1000, height: 700, meters_per_pixel: 2 };   // 2 km on the ground
+  const base = normalizeSettings(null, { name: "crop.png", source: "satellite", info });
+  const settings = { ...base, scaleBar: { ...base.scaleBar, unit: "m" } };
+  const exact = composeStudioMap({
+    image: { width: 1000, height: 700 }, settings, info, documentRef: documentStub,
+  });
+  assert.equal(exact.boxes.scaleBar.plain, false);
+  assert.ok(Math.abs(exact.boxes.scaleBar.width / exact.boxes.image.width - 0.2) <= 0.06,
+    `the default bar is about 20 % of the image: ${exact.boxes.scaleBar.width}px of ${exact.boxes.image.width}px`);
+  assert.equal(exact.boxes.scaleBar.total, 500, "a round number near a fifth of the 2 km width");
+
+  // the bar follows the divisions the user picks, live
+  for (const divisions of [1, 3, 10]) {
+    const many = composeStudioMap({
+      image: { width: 1000, height: 700 }, info, documentRef: documentStub,
+      settings: { ...settings, scaleBar: { ...settings.scaleBar, divisions } },
+    });
+    const labels = (many.canvas.__texts ?? []).filter((text) => /^\d+(\.\d+)?( m| km)?$/.test(text));
+    assert.equal(labels.length, divisions + 1,
+      `${divisions} divisions → ${divisions + 1} labels: ${labels.join(" | ")}`);
+  }
+});
+
+test("an outside legend never touches the image, the footer bar or the credit", () => {
+  const documentStub = fakeDocument();
+  const rows = [
+    { name: "Water", color: [0, 0, 255], percentage: 40 },
+    { name: "Very long class name that must not be cut off", color: [1, 2, 3], percentage: 60 },
+  ];
+  const info = { width: 800, height: 600, meters_per_pixel: 10 };
+  for (const entry of LEGEND_PLACEMENTS.filter((item) => item.outside)) {
+    const settings = normalizeSettings({ legend: { rows, placement: entry.key } },
+      { name: "crop.png", source: "satellite", info });
+    const composed = composeStudioMap({ image: { width: 800, height: 600 }, settings, info, documentRef: documentStub });
+    const { legend, image, scaleBar, credit } = composed.boxes;
+    const footerBottom = image.y + image.height + composed.layout.footerHeight;
+    const overlapsImage = legend.x < image.x + image.width && legend.x + legend.width > image.x &&
+      legend.y < image.y + image.height && legend.y + legend.height > image.y;
+    assert.equal(overlapsImage, false, `${entry.key} keeps the legend off the image`);
+    assert.ok(credit != null && credit.y <= footerBottom,
+      `${entry.key} keeps the credit line inside the footer`,
+      `credit ${credit?.y} vs footer ends ${footerBottom}`);
+    if (entry.edge === "bottom") {
+      assert.ok(legend.y >= footerBottom,
+        `${entry.key} puts the band below the whole footer`,
+        `legend ${legend.y} vs footer ends ${footerBottom}`);
+    }
+    assert.ok(scaleBar.y >= image.y + image.height && scaleBar.y + scaleBar.height <= footerBottom,
+      `${entry.key} keeps the scale bar inside the footer`);
+    assert.ok(legend.x >= 0 && legend.y >= 0 &&
+      legend.x + legend.width <= composed.canvas.width &&
+      legend.y + legend.height <= composed.canvas.height,
+      `${entry.key} keeps the legend inside the canvas`);
   }
 });
