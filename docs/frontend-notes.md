@@ -396,6 +396,18 @@ image regardless of which pane is active.
   to the opener, and the backdrop closes on click. The toolbar **Map** button,
   **Analysis → Map composer…**, **View → Map composer…** and a Classify run
   all open it; **Analysis → Map legend** toggles the legend without opening it.
+* **Typing (item 17).** Every sidebar control goes through `_update()` →
+  `renderPreview()`, which recomposes the canvas and repaints **only the
+  preview**. The legend rows are patched **in place** by `_syncLegendRows()`
+  (nodes are rebuilt only when the row COUNT changes) and a field that
+  currently has focus is never overwritten — by the composer or by the
+  incoming Clusters-table rows (`setLegendRows()` keeps the focused value).
+  The Clusters panel's own `setLegendRows()` skips its focused name/colour
+  input for the same reason. No path is left where a keystroke rebuilds (or
+  blurs) the field being typed in. Regression: the boot test types a whole
+  string into each text and number field one character at a time and asserts
+  the same node is still focused, still connected and holds the full value (it
+  fails against the old code).
 * **Defaults:** title = the image name without its extension, subtitle blank,
   credit “Contains modified Copernicus Sentinel data” for satellite images
   (blank for uploads), legend on with percentages and the "Legend" title,
@@ -422,6 +434,27 @@ image regardless of which pane is active.
   only moves the bar along the footer — the labels travel with it. Divisions are
   clamped to 1…10, and total length / divisions / unit / label size update the
   preview live.
+* **Item 17 changes to the composer:**
+  * the ground-width field is labelled **“Real image width”**, with the tooltip
+    “How wide the whole image is on the ground, from its left edge to its right
+    edge. Used to put distances on the scale bar.” The unit dropdown beside it
+    stays. The row is hidden only when the API already knows the ground scale —
+    never while a width is being typed;
+  * **Total length** is **disabled** with the tooltip “Enter the real image
+    width first” while no ground scale is known; with one it is enabled (“How
+    long the bar is, in the unit you picked”) and the bar's pixel length
+    follows exactly. `scaleBarLayout()` ignores a typed length when no ground
+    scale exists, so nothing can be invented;
+  * the north arrow uses **`ARROW_PLACEMENTS`** — On map: top left / top right
+    (default) / bottom left / bottom right, plus Outside: top right / top left /
+    top center. Outside spots reserve an `arrowBand` **above the title line**
+    (inside the title strip, so the canvas grows while the subtitle and footer
+    metrics stay put) and are aligned left/center/right across the image width.
+    `arrowPlacementOf()` migrates the old bare corner keys (`tr` → `onmap-tr`);
+  * the **“Border around the image” checkbox is gone**: the border is always
+    drawn in `settings.borderColor` (`cssColor()` normalizes it, default
+    `#e8f1f5`), and a persisted `border: false` is dropped by
+    `normalizeSettings()`.
 * **Default sizes (item 16):** `defaultSizes(width, height)` derives the title
   (3.2 % of the image width, 14…96), the subtitle (55 % of the title), the
   credit (45 %), the legend text and the scale labels (**half** the title) and
@@ -705,11 +738,11 @@ message. Raw JSON is never displayed.
 
 | Command | What it does |
 | --- | --- |
-| `node --test "web/tests/*.test.mjs"` | 160 logic tests: config resolution, error mapping, API client contract (URLs, bodies, multipart, session recovery), chat command mapping/execution, the satellite request shapes, the filter preview maths (reflect-101 box average, threshold/brightness clipping, the 512 px preview cap), the slider snapping/help texts, the item-15 rule that no help popover survives
-  anywhere and that the tooltip sentences equal the shipped assistant glossary, the history `dropEntry` replacement rule, the linked classification ranges (item 11) and the histogram maths of item 13 (the OpenCV gray weights, channel counting with alpha, the 0…10 smoothing slider, the channel→series mapping), the product copy and the required credits (item 14), and the item-16 composer maths (the nine legend placements, `scaleBarLayout` for satellite/drone/typed lengths, boundary labels and number formatting, the legend box sized to the longest class name, the image-derived default sizes). No browser needed. |
+| `node --test "web/tests/*.test.mjs"` | 166 logic tests: config resolution, error mapping, API client contract (URLs, bodies, multipart, session recovery), chat command mapping/execution, the satellite request shapes, the filter preview maths (reflect-101 box average, threshold/brightness clipping, the 512 px preview cap), the slider snapping/help texts, the item-15 rule that no help popover survives
+  anywhere and that the tooltip sentences equal the shipped assistant glossary, the history `dropEntry` replacement rule, the linked classification ranges (item 11) and the histogram maths of item 13 (the OpenCV gray weights, channel counting with alpha, the 0…10 smoothing slider, the channel→series mapping), the product copy and the required credits (item 14), and the item-16 composer maths (the nine legend placements, `scaleBarLayout` for satellite/drone/typed lengths, boundary labels and number formatting, the legend box sized to the longest class name, the image-derived default sizes, and the item-17 arrow placements/border/typed-length rules). No browser needed. |
 | `python web/tests/smoke_test.py` | Serves `web/` on 5173 (reuses a running server for the same root), checks assets + content types, that every relative module import resolves, that no key material exists under `web/`, that no `innerHTML` is used, the workstation layout contract (image workspace owns the flexible track, no `object-fit: cover`, technical corner radii), and that the API's CORS allows the frontend origin. |
 | `python web/tests/integration_check.py` | Live contract check against a running API: the exact call sequence the browser makes (session → upload → 6 filters → kmeans k=5 → classify → histogram → stats → GCH2 round trip → satellite validation and error paths → chat commands → 404/415). The three checks that need real Copernicus credentials report SKIP when the server has no `api/.env` instead of failing. Requires `uvicorn main:app --port 8000`. |
-| `node web/tests/boot_test.mjs --jsdom <dir>` | Boot test: loads `index.html` in jsdom, imports `js/app.js` and drives the UI through DOM events against the live API — 851 assertions covering the shell (menu bar, toolbar, status bar, dock collapse), viewport behaviour (pan, wheel zoom, pixel readout, distance measurement, sync mirroring), upload, the six filters, the Source panel's place/corner modes, the Filters panel's tooltips (item 15: no popovers, one-line titles) and slider sessions (preview without requests, one request per release, replace-not-stack, Escape, arrow-key commits, one slider at a time), the rendered K-Means range table (item 11: live linked ranges, clamped commits, locked ends, the browser-side preview with zero requests/history entries, the boundary bar, "Generate map" = one undo step), the File menu's four image actions (item 12: exact compress tooltip, label-map entry, GCH2 compress → decompress through the menu and the toolbar), histogram windows (item 13: the active-viewport rule with its Active badge, the per-footer Histogram buttons, the smoothing slider, the Channel dropdown's per-image option list, the resize/min/max clamps on all four edges), the composer's item-16 placements/scale bar/derived sizes, the menus (item 14: the exact File/Edit/View/Processing/Analysis/Help contents, the conditional label-map entry, the New-session confirmation and its cancel path, the Help dialogs with their focus trap, Escape and credits, disabled reasons as tooltips and no inline notes anywhere), chat router commands, session-expiry recovery, and a clean browser console. jsdom is optional (not a dependency of the app); without it the test skips. |
+| `node web/tests/boot_test.mjs --jsdom <dir>` | Boot test: loads `index.html` in jsdom, imports `js/app.js` and drives the UI through DOM events against the live API — 938 assertions covering the shell (menu bar, toolbar, status bar, dock collapse), viewport behaviour (pan, wheel zoom, pixel readout, distance measurement, sync mirroring), upload, the six filters, the Source panel's place/corner modes, the Filters panel's tooltips (item 15: no popovers, one-line titles) and slider sessions (preview without requests, one request per release, replace-not-stack, Escape, arrow-key commits, one slider at a time), the rendered K-Means range table (item 11: live linked ranges, clamped commits, locked ends, the browser-side preview with zero requests/history entries, the boundary bar, "Generate map" = one undo step), the File menu's four image actions (item 12: exact compress tooltip, label-map entry, GCH2 compress → decompress through the menu and the toolbar), histogram windows (item 13: the active-viewport rule with its Active badge, the per-footer Histogram buttons, the smoothing slider, the Channel dropdown's per-image option list, the resize/min/max clamps on all four edges), the composer's item-16 placements/scale bar/derived sizes and its item-17 typing fix (a whole string typed into every text/number field, with focus and value checked after each keystroke), the menus (item 14: the exact File/Edit/View/Processing/Analysis/Help contents, the conditional label-map entry, the New-session confirmation and its cancel path, the Help dialogs with their focus trap, Escape and credits, disabled reasons as tooltips and no inline notes anywhere), chat router commands, session-expiry recovery, and a clean browser console. jsdom is optional (not a dependency of the app); without it the test skips. |
 
 The boot test runs in both serving modes: the default (page on localhost →
 direct API calls) and hosted (`--page-host 5173-demo.e2b.app` → everything

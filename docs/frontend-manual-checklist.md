@@ -171,6 +171,15 @@ pointer behaviour, and layout at the two widths the user asked about.
 31. **[both]** Title defaults to the image name without its extension; edit the
     title, add a subtitle and change the credit line — the preview updates as
     you type.
+31a. **[both]** **Typing (item 17):** type a full sentence into each of these and
+    watch every character land, with the caret never jumping out of the field:
+    **Title**, **Subtitle (optional)**, **Credit line**, **Legend title**, each
+    **class name** in the legend list, **Total length**, **Divisions** and
+    **Real image width**. Nothing may keep only the first character, and no
+    field may disappear, blink or lose focus while you type. The same holds for
+    the **Land cover** fields in the Clusters panel: typing there must not lose
+    characters either, and the composer's legend (and vice versa) follows when
+    you pause — never mid-keystroke.
 32. **[both]** Toggle the legend off/on and switch percentages off/on. The
     **Placement** dropdown defaults to **Outside right**: the preview gets WIDER
     so the legend sits beside the image. **Outside left** grows to the other
@@ -196,12 +205,29 @@ pointer behaviour, and layout at the two widths the user asked about.
     of the image width, and it never says “not to scale”.
 33c. **[both]** **Drone photo / plain upload (no ground scale):** the bar is a
     plain black/white bar with **no numbers, no unit and no note at all** — no
-    invented distance. Type a value into **“Image width on the ground = […]
-    [unit]”** (or a total length) and the numbers appear; with the width entered
-    the bar is exact for that value.
+    invented distance. **Total length is greyed out** and its tooltip says
+    exactly **“Enter the real image width first”**: a typed length is not a
+    ground scale and never invents distances. Hover **Real image width** (or
+    its field) and read the tooltip: “How wide the whole image is on the ground,
+    from its left edge to its right edge. Used to put distances on the scale
+    bar.” Type the width (the unit dropdown beside it stays) — the row does not
+    vanish, the numbers appear, the bar becomes exact for that value and
+    **Total length** switches on with the tooltip “How long the bar is, in the
+    unit you picked”. Clearing the width greys it out again.
+33d. **[both]** With a scale known, type a **Total length** and confirm the bar
+    grows/shrinks to exactly that distance (measure against the image: the
+    length in the chosen unit maps onto the ground scale).
 34. **[both]** The north arrow is **on for a satellite crop and off for an
-    upload**; try the three styles, its **Size (px)** and another corner. There
-    is no Rotation control any more (the arrow is drawn north-up).
+    upload**; try the three styles and its **Size (px)**. The **Position**
+    dropdown offers **On map: top left / top right (the default) / bottom left /
+    bottom right** and **Outside: top right / top left / top center**. An
+    outside arrow sits in a margin **above the image, beside the title**: the
+    export canvas grows taller and the arrow never touches the title, the
+    legend, the scale bar or the image. There is no Rotation control any more
+    (the arrow is drawn north-up).
+34a2. **[both]** There is **no “Border around the image” checkbox**: the border is
+    always drawn. Only **Border colour** is editable — pick a colour and the
+    image border changes; nothing in the panel can remove it.
 34b. **[both]** The **Font** dropdown (Arial, Times New Roman, Georgia,
     Verdana, Courier New, Trebuchet MS) changes EVERY text on the canvas —
     title, subtitle, legend, scale bar, credit, corner coordinates. Title size

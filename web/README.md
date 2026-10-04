@@ -67,6 +67,14 @@ rather than a dashboard:
   * **Sizes** start from the image (title largest, legend/scale labels about
     half the title, north arrow about 6 % of the image height) and every field
     stays editable inside its own limits.
+  * **North arrow placement**: on the map in one of the four corners (top right
+    by default) or outside — top right / top left / top center in the margin
+    above the image, beside the title, which grows the export canvas. It never
+    covers the title, the legend or the scale bar.
+  * **Border**: always drawn; only its colour is a setting.
+  * **Typing is safe**: the sidebar updates the model and repaints the canvas
+    without rebuilding the field being typed in, so no keystroke is lost — in
+    the composer's fields and in the Clusters table's class names alike.
 * **Manual checks** — `docs/frontend-manual-checklist.md` lists what to confirm
   by hand in Chrome at 1366 px and 1920 px (rendering, downloads, gestures).
 * **Shortcuts** — `Ctrl+O` open, `Ctrl+S` export PNG, `Ctrl+Z`/`Ctrl+Y`

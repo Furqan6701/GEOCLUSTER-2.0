@@ -85,6 +85,8 @@ export function sharePercentage(count, total) {
 
 export function createClustersPanel(ctx) {
   const { session, bus, state } = ctx;
+  // the document the panel was mounted in (jsdom tests pass their own)
+  const doc = ctx.doc ?? globalThis.document;
 
   const kInput = numberInput({ value: 5, min: KMEANS_MIN_K, max: KMEANS_MAX_K, step: 1 });
   const runButton = button("Run K-Means", runKMeans, { variant: "primary", size: "small" });
@@ -534,11 +536,14 @@ export function createClustersPanel(ctx) {
       if (!row) continue;
       const name = String(incoming.name ?? "");
       const hex = rgbToHex(incoming.color);
-      if (name && row.nameInput.value !== name) {
+      // item 17: never write into the field the user is typing in right now —
+      // that would move the caret (or drop a character) mid-word
+      const active = (node) => doc.activeElement === node;
+      if (name && row.nameInput.value !== name && !active(row.nameInput)) {
         row.nameInput.value = name;
         changed = true;
       }
-      if (hex && row.colorInput.value !== hex) {
+      if (hex && row.colorInput.value !== hex && !active(row.colorInput)) {
         row.colorInput.value = hex;
         recoloured = true;
         changed = true;

@@ -10,16 +10,19 @@
  * inert to the pointer.
  */
 
-import { downloadBlob, el, icon, setChildren, toggleButton } from "./ui.js";
+import { downloadBlob, el, icon, setChildren } from "./ui.js";
 import { mapCanvasToBlob } from "./map.js";
 import {
-  CORNERS, DEFAULT_SCALE_POSITION, EXPORT_SCALES, LEGEND_PLACEMENTS, MAP_DEFAULTS, MAP_FONTS,
+  ARROW_PLACEMENTS, DEFAULT_SCALE_POSITION, EXPORT_SCALES, LEGEND_PLACEMENTS, MAP_DEFAULTS, MAP_FONTS,
   NORTH_STYLES, SCALE_POSITIONS, SCALE_UNITS, TEXT_SIZE_RANGE, TITLE_ALIGNS, composeStudioMap,
-  defaultSizes, formatLength, groundWidthMeters, hasGroundScale, normalizeSettings,
+  cssColor, defaultSizes, formatLength, groundWidthMeters, hasGroundScale, normalizeSettings,
   roundScaleLength, titleFromName,
 } from "./mapstudio.js";
 
 const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/** Item 17: what "Real image width" means, word for word. */
+export const REAL_WIDTH_TOOLTIP = "How wide the whole image is on the ground, from its left edge to its right edge. Used to put distances on the scale bar.";
 
 export class MapStudio {
   constructor({ bus = null, doc = globalThis.document, previewHost = null, mount = null } = {}) {
@@ -129,13 +132,29 @@ export class MapStudio {
     ]);
   }
 
-  _field(labelText, control, hint = null) {
+  _field(labelText, control, hint = null, { key = null } = {}) {
     const label = el("label", { class: "map-field" }, [
       el("span", { class: "map-field-label", text: labelText }),
       control,
     ]);
     if (hint) label.append(el("span", { class: "map-field-hint", text: hint }));
+    if (key) this.fields[key] = label;
     return label;
+  }
+
+  /**
+   * Item 17: the total length only means something once the image's ground
+   * scale is known — without one the field is disabled and says why, and a
+   * typed value can never be mistaken for a ground scale.
+   */
+  _lengthField() {
+    const input = this._number(null, (value) => this._update((settings) => {
+      settings.scaleBar.length = value == null ? null : Math.max(0, value);
+    }), { key: "scaleLength", min: 0, step: "any" });
+    return this._field(
+      "Total length", input, "sets how long the bar is",
+      { key: "scaleLengthField" },
+    );
   }
 
   _select(options, value, onChange, key) {
@@ -238,24 +257,22 @@ export class MapStudio {
     const widthInput = this._number(null, (value) => this._update((settings) => {
       settings.scaleBar.imageWidth = value;
     }), { key: "imageWidth", min: 0, step: "any" });
+    widthInput.title = REAL_WIDTH_TOOLTIP;
     const widthUnit = this._select(
       Object.keys(SCALE_UNITS).map((unit) => ({ key: unit, label: unit })),
       "m",
       (value) => this._update((settings) => { settings.scaleBar.imageWidthUnit = value; }),
       "imageWidthUnit",
     );
-    this.fields.manualScale = el("div", { class: "map-manual-scale", hidden: true }, [
-      el("div", { class: "map-inline-field" }, [
-        el("span", { class: "map-field-label", text: "Image width on the ground =" }),
-        widthInput,
-        widthUnit,
-      ]),
+    const widthLabel = el("span", {
+      class: "map-field-label", text: "Real image width", title: REAL_WIDTH_TOOLTIP,
+    });
+    this.fields.manualScale = el("div", { class: "map-manual-scale", hidden: true, title: REAL_WIDTH_TOOLTIP }, [
+      el("div", { class: "map-inline-field" }, [widthLabel, widthInput, widthUnit]),
     ]);
     return [
       this._checkbox("Show scale bar", true, (value) => this._update((settings) => { settings.scaleBar.visible = value; }), "scaleVisible"),
-      this._field("Total length", this._number(null, (value) => this._update((settings) => {
-        settings.scaleBar.length = value == null ? null : Math.max(0, value);
-      }), { key: "scaleLength", min: 0, step: "any" }), "leave empty for a round length"),
+      this._lengthField(),
       this._field("Divisions", this._number(4, (value) => this._update((settings) => {
         const raw = Number(value);
         settings.scaleBar.divisions = Number.isFinite(raw) && raw > 0
@@ -293,7 +310,12 @@ export class MapStudio {
         settings.northArrow.size = Math.max(12, Math.min(160, Math.round(Number(value) || MAP_DEFAULTS.northArrow.size)));
         settings.sizesTouched = true;
       }), { key: "arrowSize", min: 12, max: 160 })),
-      this._field("Position", this._select(CORNERS, "tr", (value) => this._update((settings) => { settings.northArrow.position = value; }), "arrowPosition")),
+      this._field("Position", this._select(
+        ARROW_PLACEMENTS,
+        MAP_DEFAULTS.northArrow.position,
+        (value) => this._update((settings) => { settings.northArrow.position = value; }),
+        "arrowPosition",
+      )),
     ];
   }
 
@@ -312,7 +334,10 @@ export class MapStudio {
     this.fields.coordsWrap = coordsWrap;
     return [
       this._field("Background", this._color("#0d1115", (value) => this._update((settings) => { settings.background = value; }), "background")),
-      this._checkbox("Border around the image", true, (value) => this._update((settings) => { settings.border = value; }), "border"),
+      // item 17: the border is always drawn — no checkbox, colour only
+      this._field("Border colour", this._color(MAP_DEFAULTS.borderColor, (value) => this._update((settings) => {
+        settings.borderColor = cssColor(value, MAP_DEFAULTS.borderColor);
+      }), "borderColor"), "the border is always drawn"),
       coordsWrap,
     ];
   }
@@ -327,8 +352,12 @@ export class MapStudio {
     return this.root != null && !this.root.hidden;
   }
 
-  /** Compose the preview canvas from the current settings. */
-  render() {
+  /**
+   * Item 17: the REDRAW path. It composes the canvas again and paints nothing
+   * but the preview — it never rebuilds a sidebar field, so an input the user
+   * is typing in keeps its value, its caret and its focus.
+   */
+  renderPreview() {
     if (!this.settings) return null;
     const image = this.image;
     if (!image) {
@@ -341,38 +370,53 @@ export class MapStudio {
       image, settings: this.settings, info: this.info, scale: 1, documentRef: this.doc,
     });
     this.canvas = canvas;
-    this._paintPreview(canvas);
-    return canvas;
-  }
-
-  _paintPreview(canvas) {
     const host = this.previewHost ?? this.root.querySelector(".map-preview-host");
     setChildren(host, canvas);
     canvas.className = "map-preview-canvas";
     canvas.setAttribute("role", "img");
     canvas.setAttribute("aria-label", `Map preview: ${titleFromName(this.name)}`);
+    // the note and the legend list only get their TEXT updated, never rebuilt
     this._syncNote();
-    this._renderLegendRows();
+    this._syncLegendRows();
+    return canvas;
+  }
+
+  /** The full render: the preview plus the fields that read from the model. */
+  render() {
+    const canvas = this.renderPreview();
+    this._syncLegendRows({ rebuild: true });
+    return canvas;
   }
 
   _syncNote() {
+    const hasMetadata = hasGroundScale(this.info);
     const metres = groundWidthMeters({ info: this.info, settings: this.settings });
     const note = this.fields.scaleNote;
     const manual = this.fields.manualScale;
     if (!note || !manual) return;
     if (metres) {
-      note.textContent = hasGroundScale(this.info)
+      note.textContent = hasMetadata
         ? `The image is about ${formatLength(metres, metres >= 1000 ? "km" : "m")} wide on the ground.`
-        : "The bar uses the width you entered.";
-      manual.hidden = true;
+        : "The bar uses the real image width you entered.";
       const suggested = roundScaleLength(metres, this.settings.scaleBar.unit);
       if (this.fields.scaleLength && this.settings.scaleBar.length == null) {
         this.fields.scaleLength.placeholder = `${suggested}`;
       }
     } else {
-      note.textContent = "Add the image's width on the ground to put numbers on the bar — "
-        + "until then it is a plain bar with no distances.";
-      manual.hidden = false;
+      note.textContent = "The bar has no numbers until the real image width is known — "
+        + "enter it below and the distances appear.";
+    }
+    // item 17: the width fields disappear only when the API already knows the
+    // ground scale — NEVER while the user is typing a width into them
+    manual.hidden = hasMetadata;
+    // …and the total length can only do its job once a scale is known
+    const length = this.fields.scaleLength;
+    if (length) {
+      length.disabled = !metres;
+      const title = metres ? "How long the bar is, in the unit you picked"
+        : "Enter the real image width first";
+      length.title = title;
+      this.fields.scaleLengthField?.setAttribute("title", title);
     }
     if (this.fields.coordToggle) {
       const hasBox = hasGroundScale(this.info);
@@ -381,55 +425,96 @@ export class MapStudio {
     }
   }
 
-  /** Legend rows: colour + name editable, synced with the Clusters table. */
-  _renderLegendRows() {
+  /**
+   * Legend rows: colour + name editable, synced with the Clusters table.
+   *
+   * Item 17: this UPDATES the existing row nodes in place and never re-creates
+   * them, so typing a class name keeps focus, caret and every character. A
+   * rebuild happens only when the number of rows changed (or the list appears
+   * for the first time), and even then a field that currently has focus is
+   * left alone.
+   */
+  _syncLegendRows({ rebuild = false } = {}) {
     const host = this.fields.legendRows;
     if (!host || !this.settings) return;
     const rows = this.settings.legend?.rows ?? [];
     if (!rows.length) {
-      setChildren(host, el("p", { class: "empty-note", text: "No classes yet — run K-Means and Generate map." }));
+      this._legendRowNodes = [];
+      if (host.querySelector(".empty-note") == null || host.childElementCount !== 1) {
+        setChildren(host, el("p", { class: "empty-note", text: "No classes yet — run K-Means and Generate map." }));
+      }
       return;
     }
-    setChildren(host, rows.map((row, index) => {
-      const color = el("input", { type: "color", class: "map-legend-color", value: rgbToHex(row.color) });
-      color.addEventListener("input", () => this._editLegendRow(index, { color: hexToRgb(color.value) }));
-      const name = el("input", { type: "text", class: "map-legend-name", value: String(row.name ?? "") });
-      name.addEventListener("input", () => this._editLegendRow(index, { name: name.value }));
-      return el("div", { class: "map-legend-row" }, [
-        color,
-        name,
-        el("span", { class: "map-legend-pct", text: percentLabel(row.percentage) }),
-      ]);
-    }));
+    const nodes = this._legendRowNodes ?? [];
+    if (rebuild || nodes.length !== rows.length || host.querySelector(".empty-note")) {
+      this._legendRowNodes = rows.map((row, index) => this._legendRowNode(index, row));
+      setChildren(host, this._legendRowNodes.map((node) => node.wrapper));
+      return;
+    }
+    rows.forEach((row, index) => {
+      const node = nodes[index];
+      if (!node) return;
+      // never overwrite what the user is typing into right now
+      if (this.doc.activeElement !== node.name) node.name.value = String(row.name ?? "");
+      if (this.doc.activeElement !== node.color) node.color.value = rgbToHex(row.color);
+      node.percent.textContent = percentLabel(row.percentage);
+    });
+  }
+
+  /** One legend row: the colour field, the class name and its percentage. */
+  _legendRowNode(index, row) {
+    const color = el("input", { type: "color", class: "map-legend-color", value: rgbToHex(row.color) });
+    color.addEventListener("input", () => this._editLegendRow(index, { color: hexToRgb(color.value) }));
+    const name = el("input", { type: "text", class: "map-legend-name", value: String(row.name ?? "") });
+    name.addEventListener("input", () => this._editLegendRow(index, { name: name.value }));
+    const percent = el("span", { class: "map-legend-pct", text: percentLabel(row.percentage) });
+    const wrapper = el("div", { class: "map-legend-row" }, [color, name, percent]);
+    return { wrapper, color, name, percent };
   }
 
   _editLegendRow(index, patch) {
     const rows = this.settings.legend.rows;
     if (!rows[index]) return;
     rows[index] = { ...rows[index], ...patch };
-    this.render();
+    // item 17: redraw the canvas only — the field being typed in stays exactly
+    // where it is, so no keystroke is ever lost
+    this.renderPreview();
     // tell the Clusters table so the two editors cannot drift apart
     this.bus?.emit?.("map:legend-rows", { rows: rows.map((row) => ({ ...row })) });
   }
 
   /** Called with the clusters table's rows when the user edits them. */
+  /**
+   * The Clusters table edited its rows: adopt them WITHOUT disturbing the
+   * composer's own editor. A class name the user is typing here wins over the
+   * incoming (trimmed) copy, and the row inputs are patched in place.
+   */
   setLegendRows(rows) {
     if (!this.settings || !Array.isArray(rows)) return;
-    const next = rows.map((row) => ({
-      cluster: row.cluster,
-      name: row.name,
-      color: Array.isArray(row.color) ? row.color : hexToRgb(row.color),
-      percentage: Number(row.percentage) || 0,
-    }));
-    if (JSON.stringify(next) === JSON.stringify(this.settings.legend.rows)) return;
+    const current = this.settings.legend.rows ?? [];
+    const nodes = this._legendRowNodes ?? [];
+    const next = rows.map((row, index) => {
+      const mine = current[index];
+      const node = nodes[index];
+      const typing = node && this.doc.activeElement === node.name;
+      return {
+        cluster: row.cluster,
+        // what is in the focused field right now IS the truth
+        name: typing ? node.name.value : (row.name ?? mine?.name ?? ""),
+        color: Array.isArray(row.color) ? row.color : hexToRgb(row.color),
+        percentage: Number(row.percentage) || 0,
+      };
+    });
+    if (JSON.stringify(next) === JSON.stringify(current)) return;
     this.settings.legend.rows = next;
-    if (this.isOpen()) this.render();
+    if (this.isOpen()) this.renderPreview();
   }
 
+  /** Every sidebar control funnels through here: model first, canvas second. */
   _update(mutate) {
     if (!this.settings) return;
     mutate(this.settings);
-    this.render();
+    this.renderPreview();
   }
 
   // -------------------------------------------------------------------- open
@@ -514,7 +599,7 @@ export class MapStudio {
     set(f.arrowSize, s.northArrow.size);
     set(f.arrowPosition, s.northArrow.position);
     set(f.background, s.background);
-    if (f.border) f.border.checked = Boolean(s.border);
+    set(f.borderColor, cssColor(s.borderColor, MAP_DEFAULTS.borderColor));
     if (f.coords) f.coords.checked = Boolean(s.cornerCoordinates);
   }
 

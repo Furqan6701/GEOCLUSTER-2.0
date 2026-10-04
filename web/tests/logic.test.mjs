@@ -108,11 +108,13 @@ import {
 } from "../js/histowindow.js";
 import { formatPercentage, mapCanvasToBlob, mapFileName } from "../js/map.js";
 import {
-  CORNERS,
+  ARROW_PLACEMENTS,
+  DEFAULT_ARROW_PLACEMENT,
   DEFAULT_LEGEND_PLACEMENT,
   DEFAULT_MAP_FONT,
   DEFAULT_SCALE_POSITION,
   EXPORT_SCALES,
+  LEGACY_ARROW_PLACEMENTS,
   LEGACY_LEGEND_PLACEMENTS,
   LEGEND_PLACEMENTS,
   MAP_DEFAULTS,
@@ -123,6 +125,7 @@ import {
   SCALE_UNITS,
   TEXT_SIZE_RANGE,
   TITLE_ALIGNS,
+  arrowPlacementOf,
   composeStudioMap,
   cornerAnchor,
   cornerLabels,
@@ -917,7 +920,8 @@ test("normalizeSettings gives the documented defaults", () => {
   assert.equal(settings.scaleBar.divisions, 4);
   assert.equal(settings.northArrow.visible, true, "the north arrow is ON by default");
   assert.equal(settings.northArrow.style, "classic");
-  assert.equal(settings.border, true);
+  assert.equal(settings.northArrow.position, "onmap-tr", "the arrow sits on the map, top right");
+  assert.equal(settings.borderColor, "#e8f1f5", "the border always has a colour");
   assert.equal(settings.cornerCoordinates, false);
   const plain = normalizeSettings(null, { name: "photo.jpg", source: "upload" });
   assert.equal(plain.credit, "", "uploads carry no default credit");
@@ -927,10 +931,39 @@ test("normalizeSettings gives the documented defaults", () => {
   assert.equal(saved.legend.showPercentages, true, "partially saved legend keeps the rest");
 });
 
-test("CORNERS, NORTH_STYLES and EXPORT_SCALES are the documented choices", () => {
-  assert.deepEqual(CORNERS.map((corner) => corner.key), ["tl", "tr", "bl", "br"]);
+test("NORTH_STYLES and EXPORT_SCALES are the documented choices", () => {
   assert.deepEqual(NORTH_STYLES.map((style) => style.key), ["classic", "compass", "triangle"]);
   assert.deepEqual(EXPORT_SCALES, [1, 2, 3]);
+});
+
+test("item 17: the arrow placement list has four on-map and three outside spots", () => {
+  assert.deepEqual(ARROW_PLACEMENTS.map((entry) => entry.key), [
+    "onmap-tl", "onmap-tr", "onmap-bl", "onmap-br",
+    "outside-tr", "outside-tl", "outside-tc",
+  ]);
+  assert.deepEqual(ARROW_PLACEMENTS.map((entry) => entry.label), [
+    "On map: top left", "On map: top right", "On map: bottom left", "On map: bottom right",
+    "Outside: top right", "Outside: top left", "Outside: top center",
+  ]);
+  assert.equal(DEFAULT_ARROW_PLACEMENT, "onmap-tr");
+  assert.equal(MAP_DEFAULTS.northArrow.position, "onmap-tr");
+  for (const entry of ARROW_PLACEMENTS) {
+    if (entry.outside) {
+      assert.equal(entry.corner, null, `${entry.key} is not a corner`);
+      assert.ok(["left", "center", "right"].includes(entry.align), `${entry.key} has an alignment`);
+    } else {
+      assert.equal(entry.align, null);
+      assert.ok(["tl", "tr", "bl", "br"].includes(entry.corner), `${entry.key} has a corner`);
+    }
+  }
+  // a position stored by an earlier build ("tr") still resolves
+  assert.equal(LEGACY_ARROW_PLACEMENTS.tr, "onmap-tr");
+  assert.equal(arrowPlacementOf({ northArrow: { position: "bl" } }).key, "onmap-bl");
+  assert.equal(arrowPlacementOf({ northArrow: { position: "nowhere" } }).key, "onmap-tr");
+  assert.equal(arrowPlacementOf({}).key, "onmap-tr");
+  assert.equal(arrowPlacementOf(null).key, "onmap-tr");
+  assert.equal(normalizeSettings({ northArrow: { position: "br" } }, { name: "x.jpg" })
+    .northArrow.position, "onmap-br", "normalizeSettings migrates the old keys");
 });
 
 test("cornerAnchor puts a box in the requested corner", () => {
@@ -1109,7 +1142,7 @@ test("the north arrow and the credit line follow the image source", () => {
 test("the arrow keeps style/size/position and is north-up", () => {
   const settings = MAP_DEFAULTS.northArrow;
   assert.equal(settings.style, "classic");
-  assert.equal(settings.position, "tr");
+  assert.equal(settings.position, "onmap-tr");
   assert.equal(settings.size, 36);
   assert.equal(settings.rotation, undefined, "no rotation setting is left");
   const documentStub = fakeDocument();
@@ -1204,23 +1237,47 @@ test("corner coordinates are drawn only for images with a bbox", () => {
   assert.ok(!without.canvas.__texts.some((text) => /°[NS]/.test(text)));
 });
 
-test("the title, subtitle and credit are drawn, and the border can be turned off", () => {
+test("the title, subtitle and credit are drawn, and the border is always there", () => {
+  const documentStub = fakeDocument();
   const withExtras = composeStudioMap({
     image: { width: 800, height: 600 },
     settings: STUDIO_SETTINGS({
-      title: "Karachi", subtitle: "study area", credit: "Sentinel-2 L2A", creditTouched: true, border: true,
+      title: "Karachi", subtitle: "study area", credit: "Sentinel-2 L2A", creditTouched: true,
     }),
-    documentRef: fakeDocument(),
+    documentRef: documentStub,
   });
   assert.ok(withExtras.canvas.__texts.includes("Karachi"));
   assert.ok(withExtras.canvas.__texts.includes("study area"));
   assert.ok(withExtras.canvas.__texts.includes("Sentinel-2 L2A"));
-  const noBorder = composeStudioMap({
+
+  // item 17: no setting can switch the border off — only its colour changes
+  const colours = [];
+  const canvas = documentStub.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  const strokeRect = ctx.strokeRect.bind(ctx);
+  ctx.strokeRect = (...args) => { colours.push(ctx.strokeStyle); strokeRect(...args); };
+  const inked = composeStudioMap({
     image: { width: 800, height: 600 },
-    settings: STUDIO_SETTINGS({ title: "Karachi", border: false }),
-    documentRef: fakeDocument(),
+    settings: STUDIO_SETTINGS({ border: false, borderColor: "#ff0000", background: "#0d1115" }),
+    documentRef: documentStub,
   });
-  assert.ok(noBorder.canvas.__strokes < withExtras.canvas.__strokes, "one less stroke without the border");
+  void inked;
+  drawStudioMap(ctx, {
+    image: null,
+    settings: normalizeSettings({ borderColor: "#ff0000" }, { name: "x.jpg" }),
+    imageWidth: 800, imageHeight: 600, scale: 1,
+  });
+  assert.ok(colours.includes("#ff0000"), `the border uses its colour: ${colours.join(", ")}`);
+  assert.ok(colours.length > 0, "the border is stroked even when border=false is passed");
+
+  const legacy = normalizeSettings({ border: false }, { name: "x.jpg" });
+  assert.equal(legacy.borderColor, "#e8f1f5", "border=false no longer removes anything");
+  assert.equal(legacy.border, undefined, "the old switch is gone from the settings");
+
+  const plain = normalizeSettings({ borderColor: "not-a-colour" }, { name: "x.jpg" });
+  assert.equal(plain.borderColor, "#e8f1f5", "an invalid colour falls back");
+  const upper = normalizeSettings({ borderColor: "#AABBCC" }, { name: "x.jpg" });
+  assert.equal(upper.borderColor, "#aabbcc", "colours are normalized to lower case");
 });
 
 test("mapCanvasToBlob falls back when toBlob is missing", async () => {
@@ -2587,13 +2644,19 @@ test("scaleBarLayout: a drone photo gets a plain bar until a width is entered", 
   assert.equal(entered.total, 50, "a fifth of the 200 m width");
   assert.deepEqual(entered.labels.map((entry) => entry.text), ["0", "12.5", "25", "37.5", "50 m"]);
 
-  // …or types a total length directly: those labels appear, and nothing is
-  // invented beyond the image
-  const typed = scaleBarLayout({ length: 120, unit: "m", divisions: 3 });
+  // item 17: a typed total length is NOT a ground scale — on its own it cannot
+  // put numbers on the bar (the sidebar disables the field instead)
+  const typedAlone = scaleBarLayout({ length: 120, unit: "m", divisions: 3 });
+  assert.equal(typedAlone.plain, true, "a typed length alone leaves the bar plain");
+  assert.deepEqual(typedAlone.labels, []);
+  assert.equal(typedAlone.total, null);
+  // …but with a ground width it sets exactly how long the bar is
+  const typed = scaleBarLayout({ groundWidthMeters: 2000, length: 120, unit: "m", divisions: 3 });
   assert.equal(typed.plain, false);
   assert.equal(typed.exact, true);
+  assert.equal(typed.total, 120);
   assert.deepEqual(typed.labels.map((entry) => entry.text), ["0", "40", "80", "120 m"]);
-  const typedInKm = scaleBarLayout({ length: 1, unit: "km", divisions: 2 });
+  const typedInKm = scaleBarLayout({ groundWidthMeters: 2000, length: 1, unit: "km", divisions: 2 });
   assert.deepEqual(typedInKm.labels.map((entry) => entry.text), ["0", "0.5", "1 km"],
     "values are printed in the chosen unit, without trailing zeros");
 
@@ -2811,4 +2874,141 @@ test("an outside legend never touches the image, the footer bar or the credit", 
       legend.y + legend.height <= composed.canvas.height,
       `${entry.key} keeps the legend inside the canvas`);
   }
+});
+
+// --------------------------------- item 17: arrows outside, border always ----
+
+test("an outside arrow enlarges the canvas above the title and never covers it", () => {
+  const info = { width: 800, height: 600, meters_per_pixel: 10 };
+  const make = (position, extra = {}) => normalizeSettings(
+    { northArrow: { visible: true, position, size: 40 }, northArrowTouched: true, title: "Karachi", ...extra },
+    { name: "crop.png", source: "satellite", info },
+  );
+
+  // a recorder: the boxes the drawing code returns AND where each text lands
+  function compose(settings) {
+    const texts = [];
+    const canvas = { width: 0, height: 0 };
+    const context = {
+      canvas, font: "", fillStyle: "", strokeStyle: "", textAlign: "", textBaseline: "", lineWidth: 1,
+      globalAlpha: 1, save() {}, restore() {}, translate() {}, rotate() {}, scale() {},
+      beginPath() {}, moveTo() {}, lineTo() {}, arc() {}, closePath() {}, fill() {}, stroke() {},
+      fillRect() {}, strokeRect() {}, clearRect() {}, drawImage() {},
+      measureText: (text) => ({ width: String(text).length * 7 }),
+      fillText: (text, x, y) => texts.push({ text, x, y }),
+    };
+    canvas.getContext = () => context;
+    const composed = composeStudioMap({
+      image: { width: 800, height: 600 }, settings, info,
+      documentRef: { createElement: () => { const next = { ...canvas }; next.getContext = () => context; return next; } },
+    });
+    return { composed, texts };
+  }
+
+  const onMap = compose(make("onmap-tr"));
+  assert.equal(onMap.composed.boxes.northArrowOutside, false, "the default draws the arrow on the map");
+
+  for (const key of ["outside-tr", "outside-tl", "outside-tc"]) {
+    const { composed, texts } = compose(make(key));
+    assert.equal(composed.boxes.northArrowOutside, true, `${key} is drawn outside`);
+    assert.ok(composed.canvas.height > onMap.composed.canvas.height,
+      `${key} adds a band above the title`,
+      `${composed.canvas.height} vs ${onMap.composed.canvas.height}`);
+    assert.equal(composed.canvas.width, onMap.composed.canvas.width, `${key} keeps the width`);
+    const arrow = composed.boxes.northArrow;
+    const title = texts.find((entry) => entry.text === "Karachi");
+    assert.ok(title != null, `${key} still draws the title`);
+    assert.ok(arrow.y + arrow.size <= title.y,
+      `${key} keeps the arrow above the title`, `arrow ends ${arrow.y + arrow.size}, title at ${title.y}`);
+    assert.ok(arrow.y + arrow.size <= composed.boxes.image.y,
+      `${key} keeps the arrow above the image`);
+    assert.ok(arrow.y >= 0 && arrow.x >= 0 &&
+      arrow.x + arrow.size <= composed.canvas.width &&
+      arrow.y + arrow.size <= composed.canvas.height,
+      `${key} keeps the arrow on the canvas`);
+    if (composed.boxes.legend) {
+      const box = composed.boxes.legend;
+      const overlaps = arrow.x < box.x + box.width && arrow.x + arrow.size > box.x &&
+        arrow.y < box.y + box.height && arrow.y + arrow.size > box.y;
+      assert.equal(overlaps, false, `${key} never overlaps the legend`);
+    }
+    const bar = composed.boxes.scaleBar;
+    const overlapsBar = arrow.x < bar.x + bar.width && arrow.x + arrow.size > bar.x &&
+      arrow.y < bar.y + bar.height && arrow.y + arrow.size > bar.y;
+    assert.equal(overlapsBar, false, `${key} never overlaps the scale bar`);
+  }
+
+  // left / center / right really differ, and center is centered on the image
+  const spots = {};
+  for (const key of ["outside-tl", "outside-tc", "outside-tr"]) {
+    const composed = compose(make(key)).composed;
+    spots[key] = { x: composed.boxes.northArrow.x, size: composed.boxes.northArrow.size, image: composed.boxes.image };
+  }
+  assert.ok(spots["outside-tl"].x < spots["outside-tc"].x && spots["outside-tc"].x < spots["outside-tr"].x,
+    `left < center < right: ${JSON.stringify(spots)}`);
+  assert.equal(spots["outside-tc"].x + spots["outside-tc"].size / 2,
+    spots["outside-tc"].image.x + spots["outside-tc"].image.width / 2,
+    "top center is centered on the image");
+  assert.equal(spots["outside-tl"].x, spots["outside-tl"].image.x, "top left lines up with the image");
+  assert.equal(spots["outside-tr"].x + spots["outside-tr"].size,
+    spots["outside-tr"].image.x + spots["outside-tr"].image.width,
+    "top right ends at the image's right edge");
+});
+
+test("the arrow band is reserved only when the arrow is visible", () => {
+  const info = { width: 800, height: 600, meters_per_pixel: 10 };
+  const base = normalizeSettings({ northArrow: { position: "outside-tr" }, northArrowTouched: true },
+    { name: "crop.png", source: "satellite", info });
+  const shown = composeStudioMap({ image: { width: 800, height: 600 }, info, settings: base, documentRef: fakeDocument() });
+  const hidden = composeStudioMap({
+    image: { width: 800, height: 600 }, info, documentRef: fakeDocument(),
+    settings: { ...base, northArrow: { ...base.northArrow, visible: false } },
+  });
+  assert.ok(hidden.canvas.height < shown.canvas.height,
+    "hiding the arrow gives the band back", `${hidden.canvas.height} vs ${shown.canvas.height}`);
+  assert.equal(hidden.boxes.northArrow, undefined);
+});
+
+test("every arrow placement scales exactly at 2x and 3x", () => {
+  const info = { width: 800, height: 600, meters_per_pixel: 10 };
+  for (const entry of ARROW_PLACEMENTS) {
+    const settings = normalizeSettings(
+      { northArrow: { visible: true, position: entry.key, size: 36 }, northArrowTouched: true },
+      { name: "crop.png", source: "satellite", info });
+    const one = composeStudioMap({ image: { width: 800, height: 600 }, settings, info, scale: 1, documentRef: fakeDocument() });
+    const three = composeStudioMap({ image: { width: 800, height: 600 }, settings, info, scale: 3, documentRef: fakeDocument() });
+    assert.equal(three.canvas.width, one.canvas.width * 3, `${entry.key} is exactly 3x wide`);
+    assert.equal(three.canvas.height, one.canvas.height * 3, `${entry.key} is exactly 3x tall`);
+    assert.equal(three.boxes.northArrow.x, one.boxes.northArrow.x * 3, `${entry.key} arrow x scales`);
+    assert.equal(three.boxes.northArrow.y, one.boxes.northArrow.y * 3, `${entry.key} arrow y scales`);
+  }
+});
+
+test("a typed total length cannot put numbers on a bar without a ground scale", () => {
+  // the contract the sidebar's disabled field enforces
+  const drone = normalizeSettings({ scaleBar: { length: 250, imageWidthUnit: "m" } },
+    { name: "photo.jpg", source: "upload" });
+  const composed = composeStudioMap({
+    image: { width: 1000, height: 700 }, settings: drone, info: { width: 1000, height: 700 },
+    documentRef: fakeDocument(),
+  });
+  assert.equal(composed.boxes.scaleBar.plain, true, "the bar stays plain");
+  assert.equal(composed.boxes.scaleBar.total, null);
+  assert.ok(!(composed.canvas.__texts ?? []).some((text) => /250 m/.test(text)),
+    "the typed length is not drawn as a distance");
+
+  // entering the real width makes the same typed length real
+  const measured = normalizeSettings(
+    { scaleBar: { length: 250, imageWidth: 2000, imageWidthUnit: "m", unit: "m" } },
+    { name: "photo.jpg", source: "upload" });
+  const exact = composeStudioMap({
+    image: { width: 1000, height: 700 }, settings: measured, info: { width: 1000, height: 700 },
+    documentRef: fakeDocument(),
+  });
+  assert.equal(exact.boxes.scaleBar.plain, false);
+  assert.equal(exact.boxes.scaleBar.total, 250);
+  assert.ok((exact.canvas.__texts ?? []).includes("250 m"));
+  // the pixel length follows the ground scale exactly: 250 m of 2000 m over
+  // 1000 px is 125 px
+  assert.equal(exact.boxes.scaleBar.width, 125);
 });

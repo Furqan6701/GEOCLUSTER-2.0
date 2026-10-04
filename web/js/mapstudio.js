@@ -75,6 +75,37 @@ export const DEFAULT_LEGEND_PLACEMENT = "outside-right";
 /** Placements stored by earlier builds keep working. */
 export const LEGACY_LEGEND_PLACEMENTS = Object.freeze({ "outside-bottom": "outside-bottom-left" });
 
+/**
+ * Where the north arrow goes (item 17). Four placements sit ON the map in a
+ * corner; three sit OUTSIDE, in the margin above the image beside the title
+ * (the title strip grows by an arrow band, so the canvas enlarges and the
+ * arrow never covers the title, the legend or the scale bar).
+ */
+export const ARROW_PLACEMENTS = Object.freeze([
+  { key: "onmap-tl", label: "On map: top left", outside: false, corner: "tl", align: null },
+  { key: "onmap-tr", label: "On map: top right", outside: false, corner: "tr", align: null },
+  { key: "onmap-bl", label: "On map: bottom left", outside: false, corner: "bl", align: null },
+  { key: "onmap-br", label: "On map: bottom right", outside: false, corner: "br", align: null },
+  { key: "outside-tr", label: "Outside: top right", outside: true, corner: null, align: "right" },
+  { key: "outside-tl", label: "Outside: top left", outside: true, corner: null, align: "left" },
+  { key: "outside-tc", label: "Outside: top center", outside: true, corner: null, align: "center" },
+]);
+
+export const DEFAULT_ARROW_PLACEMENT = "onmap-tr";
+
+/** Corner keys stored by earlier builds keep working. */
+export const LEGACY_ARROW_PLACEMENTS = Object.freeze({
+  tl: "onmap-tl", tr: "onmap-tr", bl: "onmap-bl", br: "onmap-br",
+});
+
+/** The arrow placement for a settings object (unknown values fall back). */
+export function arrowPlacementOf(settings) {
+  const raw = settings?.northArrow?.position;
+  const key = LEGACY_ARROW_PLACEMENTS[raw] ?? raw;
+  return ARROW_PLACEMENTS.find((entry) => entry.key === key)
+    ?? ARROW_PLACEMENTS.find((entry) => entry.key === DEFAULT_ARROW_PLACEMENT);
+}
+
 /** Where the scale bar sits across the bottom of the image (item 16). */
 export const SCALE_POSITIONS = Object.freeze([
   { key: "bl", label: "Bottom left" },
@@ -123,16 +154,26 @@ export const MAP_DEFAULTS = Object.freeze({
     imageWidth: null,
     imageWidthUnit: "m",
   }),
-  northArrow: Object.freeze({ visible: true, style: "classic", position: "tr", size: 36 }),
+  northArrow: Object.freeze({
+    visible: true, style: "classic", position: DEFAULT_ARROW_PLACEMENT, size: 36,
+  }),
   // set when the user picks the arrow/credit themselves, so opening another
   // image can re-apply the source default it did not choose
   northArrowTouched: false,
   creditTouched: false,
   credit: "",
   cornerCoordinates: false,
-  border: true,
+  // item 17: the border is always drawn — there is no switch to remove it,
+  // only the colour it is drawn in
+  borderColor: "#e8f1f5",
   background: "#0d1115",
 });
+
+/** A #rrggbb colour from a colour input, or the fallback for anything else. */
+export function cssColor(value, fallback) {
+  const text = String(value ?? "").trim();
+  return /^#[0-9a-f]{6}$/i.test(text) ? text.toLowerCase() : fallback;
+}
 
 /** A family name from the Font dropdown, or the default for anything else. */
 export function mapFont(font) {
@@ -246,14 +287,13 @@ export const PLAIN_BAR_WIDTH_RATIO = 0.4;
 /**
  * Pure scale-bar computation — no canvas, no settings object (item 16).
  *
- * Three cases, in order:
- *   1. a ground width (API metadata or the user's "image width on the ground")
- *      → an exact bar, `length` or a round ≈20 % default, one label per
- *      division boundary;
- *   2. no ground width but a total length typed by the user → the labels show
- *      exactly that value; the pixel width comes from the caller;
- *   3. neither → `plain: true`: a plain alternating bar with NO numbers, NO
- *      unit and no note. Nothing is invented.
+ * Two cases:
+ *   1. a ground width (API metadata or the user's "Real image width") → an
+ *      exact bar, `length` or a round ≈20 % default, one label per division
+ *      boundary;
+ *   2. no ground width → `plain: true`: a plain alternating bar with NO
+ *      numbers, NO unit and no note. A typed total length does NOT count as a
+ *      ground scale, so it cannot turn the labels on.
  *
  * Labels: one per boundary, left edge first and the total last, each with the
  * alignment the bar draws it with. The unit is printed on the total only, and
@@ -275,7 +315,9 @@ export function scaleBarLayout({
   }
   if (!Number.isFinite(metres) || metres <= 0) metres = null;
   const typed = Number(length);
-  const typedMetres = Number.isFinite(typed) && typed > 0 ? toMeters(typed, unit) : null;
+  // item 17: a typed length is NOT a ground scale. Without one the bar stays
+  // plain and the typed number is ignored (the field is disabled in the UI).
+  const typedMetres = metres != null && Number.isFinite(typed) && typed > 0 ? toMeters(typed, unit) : null;
   let totalMetres = typedMetres ?? (metres != null ? toMeters(roundScaleLength(metres, unit), unit) : null);
   // never label a bar longer than the image is wide on the ground
   if (totalMetres != null && metres != null && totalMetres > metres) totalMetres = metres;
@@ -424,6 +466,11 @@ export function normalizeSettings(saved, { name, source, info } = {}) {
   }
   merged.scaleBar.fontSize = clamp(merged.scaleBar.fontSize, base.scaleBar.fontSize);
   merged.northArrow.size = Math.max(12, Math.min(160, Math.round(Number(merged.northArrow.size) || base.northArrow.size)));
+  merged.northArrow.position = arrowPlacementOf(merged).key;
+  merged.borderColor = cssColor(merged.borderColor, base.borderColor);
+  // a "border" flag persisted by an earlier build is dropped: the border is
+  // always drawn now (item 17)
+  delete merged.border;
   return merged;
 }
 
@@ -447,6 +494,7 @@ export function frameMetrics(imageWidth, imageHeight, {
   creditSize: creditSizeIn = MAP_DEFAULTS.creditSize,
   scaleBarSize = MAP_DEFAULTS.scaleBar.fontSize,
   outsideLegend = null,
+  outsideArrow = null,
 } = {}) {
   // the base numbers are integers and every one of them is multiplied by the
   // scale, so 2x and 3x are exactly 2x and 3x of the 1x canvas (no drift).
@@ -461,7 +509,12 @@ export function frameMetrics(imageWidth, imageHeight, {
   const subtitleSize = baseSubtitle * scale;
   const creditSize = baseCredit * scale;
   // heights are computed at 1x and then multiplied, so 2x/3x are exact
-  const baseTitleHeight = Math.round(basePad * 0.6 + baseTitle + (hasSubtitle ? baseSubtitle * 1.5 : 0));
+  // item 17: an outside arrow gets its own band ABOVE the title line, so it can
+  // never cover the title, the subtitle or anything drawn on the image
+  const baseArrowBand = outsideArrow
+    ? Math.round(Math.max(0, Number(outsideArrow.size) || 0) + LEGEND_MARGIN * 0.8) : 0;
+  const baseTitleTop = Math.round(basePad * 0.6);
+  const baseTitleHeight = Math.round(baseTitleTop + baseArrowBand + baseTitle + (hasSubtitle ? baseSubtitle * 1.5 : 0));
   // the footer carries the scale bar, the labels under it and the credit line
   const baseBarHeight = Math.max(6, Math.round(baseScale * 0.7));
   const baseFooterHeight = Math.round(
@@ -510,8 +563,20 @@ export function frameMetrics(imageWidth, imageHeight, {
         width: boxWidth,
         height: boxHeight,
       };
+  // the arrow band, in canvas coordinates (the title sits below it)
+  const arrowArea = outsideArrow
+    ? {
+      x: pad,
+      y: pad + baseTitleTop * scale,
+      width: width,
+      // a touch of slack so the arrow's own stroke can never touch the title
+      height: Math.round((baseArrowBand - LEGEND_MARGIN * 0.8 * 0.5) * scale),
+    }
+    : null;
   return {
     pad, titleSize, subtitleSize, creditSize, titleHeight, footerHeight,
+    arrowBand: baseArrowBand * scale,
+    arrowArea,
     barHeight: baseBarHeight * scale,
     width: width + pad * 2 + leftBand + rightBand,
     height: height + pad * 2 + titleHeight + footerHeight + bandHeight,
@@ -769,6 +834,8 @@ export function studioLayout({
     });
     legendBox = { width: box.width, height: box.height, slack: 2 };
   }
+  const arrow = arrowPlacementOf(settings);
+  const arrowVisible = settings?.northArrow?.visible === true;
   const metrics = frameMetrics(imageWidth, imageHeight, {
     scale,
     hasSubtitle: Boolean(settings?.subtitle),
@@ -779,8 +846,11 @@ export function studioLayout({
     outsideLegend: legendBox
       ? { placement: placement.key, edge: placement.edge, align: placement.align, ...legendBox }
       : null,
+    outsideArrow: arrowVisible && arrow.outside
+      ? { size: Math.round(settings?.northArrow?.size ?? MAP_DEFAULTS.northArrow.size) }
+      : null,
   });
-  return { metrics, placement, legendBox, legendUnit: unitSize, legendVisible, rows };
+  return { metrics, placement, arrow, arrowVisible, legendBox, legendUnit: unitSize, legendVisible, rows };
 }
 
 /** A throwaway 2D context used for text measurement (falls back to none). */
@@ -817,14 +887,15 @@ export function drawStudioMap(ctx, {
   const titleX = align === "left" ? metrics.pad
     : align === "right" ? metrics.width - metrics.pad
       : metrics.width / 2;
-  drawText(ctx, settings.title, titleX, metrics.pad + metrics.titleSize * 0.95, {
+  drawText(ctx, settings.title, titleX, metrics.pad + metrics.arrowBand + metrics.titleSize * 0.95, {
     font: fontSpec(metrics.titleSize, { font, weight: settings.titleBold === false ? "" : "700" }),
     color: "#f2f7f9",
     align,
     maxWidth: metrics.width - metrics.pad * 2,
   });
   if (settings.subtitle) {
-    drawText(ctx, settings.subtitle, titleX, metrics.pad + metrics.titleSize + metrics.subtitleSize * 1.5, {
+    drawText(ctx, settings.subtitle, titleX, metrics.pad + metrics.arrowBand
+      + metrics.titleSize + metrics.subtitleSize * 1.5, {
       font: fontSpec(metrics.subtitleSize, { font }),
       color: "#9fb3bd",
       align,
@@ -834,12 +905,15 @@ export function drawStudioMap(ctx, {
 
   if (image) ctx.drawImage(image, metrics.image.x, metrics.image.y, width, height);
 
-  if (settings.border) {
+  // item 17: the border is ALWAYS drawn — only its colour is a setting
+  {
     ctx.save();
-    ctx.strokeStyle = "rgba(232, 241, 245, 0.5)";
+    ctx.strokeStyle = cssColor(settings.borderColor, MAP_DEFAULTS.borderColor);
+    ctx.globalAlpha = 0.6;
     ctx.lineWidth = Math.max(1, scale);
     ctx.strokeRect(metrics.image.x + 0.5, metrics.image.y + 0.5, width - 1, height - 1);
     ctx.restore();
+    boxes.border = { x: metrics.image.x, y: metrics.image.y, width, height };
   }
 
   // corner coordinates (satellite crops only)
@@ -900,14 +974,28 @@ export function drawStudioMap(ctx, {
     boxes.legendOutside = outside;
   }
 
-  // north arrow at its corner
-  if (settings.northArrow?.visible) {
+  // north arrow: on the map in a corner, or outside in the band above the
+  // title (item 17) — either way it is never drawn over the title or the legend
+  if (plan.arrowVisible && plan.arrow) {
     const size = Math.round((settings.northArrow.size ?? MAP_DEFAULTS.northArrow.size) * scale);
     const margin = Math.round(12 * scale);
-    const anchor = cornerAnchor(settings.northArrow.position ?? "tr", metrics.image, { width: size, height: size }, margin);
+    let x;
+    let y;
+    if (plan.arrow.outside && metrics.arrowArea) {
+      const area = metrics.arrowArea;
+      x = plan.arrow.align === "center" ? area.x + Math.round((area.width - size) / 2)
+        : plan.arrow.align === "right" ? area.x + area.width - size
+          : area.x;
+      y = area.y;
+    } else {
+      const anchor = cornerAnchor(plan.arrow.corner, metrics.image, { width: size, height: size }, margin);
+      x = anchor.x;
+      y = anchor.y;
+    }
     boxes.northArrow = drawNorthArrow(ctx, {
-      x: anchor.x, y: anchor.y, size, style: settings.northArrow.style,
+      x, y, size, style: settings.northArrow.style,
     });
+    boxes.northArrowOutside = Boolean(plan.arrow.outside);
   }
 
   // scale bar + credit live in the footer strip

@@ -1378,12 +1378,22 @@ if (!bootFailed) {
       [...field("scalePosition").querySelectorAll("option")].map((o) => o.textContent).join("|"));
     check(studio.getSettings().scaleBar.position === "bl", "bottom left is the default position",
       studio.getSettings().scaleBar.position);
-    check(field("manualScale") != null, "the 'image width on the ground' fields exist for photos");
+    check(field("manualScale") != null, "the real image width field exists for photos");
     check(field("manualScale").hidden === false,
       "without ground-scale metadata the width field is offered",
       `hidden=${field("manualScale").hidden}`);
-    check(field("manualScale").textContent.includes("Image width on the ground ="),
-      "the field is worded plainly", field("manualScale").textContent);
+    // item 17: the label and its tooltip are the exact requested wording
+    const WIDTH_TOOLTIP = "How wide the whole image is on the ground, from its left edge to its right edge. Used to put distances on the scale bar.";
+    check(field("manualScale").textContent.includes("Real image width"),
+      "the field is labelled \"Real image width\"", field("manualScale").textContent);
+    check(field("imageWidth").title === WIDTH_TOOLTIP,
+      "the width field carries the exact tooltip", field("imageWidth").title);
+    check(field("manualScale").title === WIDTH_TOOLTIP,
+      "and so does the whole row", field("manualScale").title);
+    check(field("imageWidthUnit") != null &&
+      [...field("imageWidthUnit").querySelectorAll("option")].map((o) => o.value).join(",") === "m,km,ft,mi",
+      "the unit dropdown stays next to the width",
+      [...(field("imageWidthUnit")?.querySelectorAll("option") ?? [])].map((o) => o.value).join(","));
     check(studio.getSettings().scaleBar.unit === "m", "the default unit is metres");
     // item 16: a photo with no ground scale gets a PLAIN bar — no numbers, no
     // unit and no "not to scale" wording anywhere
@@ -1394,9 +1404,28 @@ if (!bootFailed) {
       "a plain bar shows no invented distance", plainTexts.join(" | "));
     check((studio.composeAt(1).boxes.scaleBar ?? {}).plain === true, "the bar is the plain kind");
     const hints = [...dialog.querySelectorAll(".map-field-hint")].map((node) => node.textContent).join(" | ");
-    check(/plain bar/i.test(hints), "the composer says the bar has no numbers yet", hints);
-    check(!/not to scale|pixel|metadata|API/i.test(hints),
+    check(/no numbers until the real image width is known/i.test(hints),
+      "the composer says the bar has no numbers yet", hints);
+    check(!/not to scale|pixel|metadata|API|byte/i.test(hints),
       "no technical wording is left in the scale hints", hints);
+    // item 17: while no ground scale is known the total length is disabled and
+    // says exactly why; a typed length can never stand in for a ground scale
+    check(field("scaleLength").disabled === true,
+      "Total length is disabled without a real image width",
+      `disabled=${field("scaleLength").disabled}`);
+    check(field("scaleLength").title === "Enter the real image width first",
+      "…with the exact tooltip", field("scaleLength").title);
+    check(field("scaleLengthField")?.title === "Enter the real image width first",
+      "…and the same tooltip on the whole row", field("scaleLengthField")?.title);
+    field("scaleLength").value = "250";
+    field("scaleLength").dispatchEvent(new window.Event("change", { bubbles: true }));
+    check((studio.getCanvas().__texts ?? []).filter((text) => /250 m/.test(text)).length === 0,
+      "a value typed into the disabled field invents nothing",
+      (studio.getCanvas().__texts ?? []).join(" | "));
+    // put the model back so the checks below start from a clean slate
+    field("scaleLength").value = "";
+    field("scaleLength").dispatchEvent(new window.Event("change", { bubbles: true }));
+    check(studio.getSettings().scaleBar.length == null, "clearing the field leaves no length");
     // the user can supply "image width on the ground = X unit" instead
     field("imageWidth").value = "2000";
     field("imageWidth").dispatchEvent(new window.Event("change", { bubbles: true }));
@@ -1404,6 +1433,11 @@ if (!bootFailed) {
     const manualCanvas = studio.getCanvas();
     check((manualCanvas.__texts ?? []).some((text) => /^\d+(\.\d+)? m$/.test(text)),
       "with a width the bar is labelled in its unit", (manualCanvas.__texts ?? []).join(" | "));
+    check(field("scaleLength").disabled === false,
+      "knowing the real image width enables Total length",
+      `disabled=${field("scaleLength").disabled}`);
+    check(field("scaleLength").title === "How long the bar is, in the unit you picked",
+      "…and it explains what it now does", field("scaleLength").title);
     // the default length is a round 1/2/5 value for that width (2000 m → 500 m)
     check((manualCanvas.__texts ?? []).includes("500 m"),
       "the default length is a round number for the ground width", (manualCanvas.__texts ?? []).join(" | "));
@@ -1582,13 +1616,249 @@ if (!bootFailed) {
     field("arrowVisible").checked = true;
     field("arrowVisible").dispatchEvent(new window.Event("change", { bubbles: true }));
 
+    // ---- item 17: four on-map corners, three outside spots above the title
+    {
+      const options = [...field("arrowPosition").querySelectorAll("option")];
+      check(options.map((o) => o.value).join(",") ===
+        "onmap-tl,onmap-tr,onmap-bl,onmap-br,outside-tr,outside-tl,outside-tc",
+        "the arrow offers four on-map corners and three outside spots",
+        options.map((o) => o.value).join(","));
+      check(options.map((o) => o.textContent).join("|") ===
+        "On map: top left|On map: top right|On map: bottom left|On map: bottom right|" +
+        "Outside: top right|Outside: top left|Outside: top center",
+        "the arrow options are labelled as asked", options.map((o) => o.textContent).join("|"));
+      check(field("arrowPosition").value === "onmap-tr",
+        "on map: top right is the default", field("arrowPosition").value);
+      check(field("arrowPosition").value !== "tr",
+        "the old bare corner keys are migrated", field("arrowPosition").value);
+
+      const setArrow = (key) => {
+        field("arrowPosition").value = key;
+        field("arrowPosition").dispatchEvent(new window.Event("change", { bubbles: true }));
+      };
+      setArrow("onmap-br");
+      const onMapHeight = preview().height;
+      const onMapWidth = preview().width;
+      const onMapArrow = studio.composeAt(1).boxes.northArrow;
+      check(onMapArrow.y > studio.composeAt(1).boxes.image.y,
+        "an on-map arrow sits inside the image", `${onMapArrow.y}`);
+      for (const key of ["outside-tr", "outside-tl", "outside-tc"]) {
+        setArrow(key);
+        const composed = studio.composeAt(1);
+        check(preview().height > onMapHeight,
+          `${key} enlarges the canvas above the title`, `${preview().height} vs ${onMapHeight}`);
+        check(preview().width === onMapWidth,
+          `${key} keeps the canvas width`, `${preview().width} vs ${onMapWidth}`);
+        check(composed.boxes.northArrowOutside === true, `${key} is drawn outside`);
+        const arrow = composed.boxes.northArrow;
+        check(arrow.y + arrow.size <= composed.boxes.image.y,
+          `${key} keeps the arrow above the image`,
+          `${arrow.y + arrow.size} vs ${composed.boxes.image.y}`);
+        const titleEntry = (studio.getCanvas().__textStyles ?? [])
+          .find((entry) => entry.text === studio.getSettings().title);
+        check(titleEntry == null || arrow.y + arrow.size <= titleEntry.y,
+          `${key} never touches the title`,
+          `${arrow.y + arrow.size} vs ${titleEntry?.y}`);
+        const legend = composed.boxes.legend;
+        if (legend) {
+          const overlaps = arrow.x < legend.x + legend.width && arrow.x + arrow.size > legend.x &&
+            arrow.y < legend.y + legend.height && arrow.y + arrow.size > legend.y;
+          check(!overlaps, `${key} never overlaps the legend`);
+        }
+        const bar = composed.boxes.scaleBar;
+        const overlapsBar = arrow.x < bar.x + bar.width && arrow.x + arrow.size > bar.x &&
+          arrow.y < bar.y + bar.height && arrow.y + arrow.size > bar.y;
+        check(!overlapsBar, `${key} never overlaps the scale bar`);
+      }
+      const tops = {};
+      for (const key of ["outside-tl", "outside-tc", "outside-tr"]) {
+        setArrow(key);
+        tops[key] = studio.composeAt(1).boxes.northArrow.x;
+      }
+      check(tops["outside-tl"] < tops["outside-tc"] && tops["outside-tc"] < tops["outside-tr"],
+        "outside left / center / right really differ", JSON.stringify(tops));
+      setArrow("onmap-tr");
+      check(preview().height === onMapHeight, "back to the default gives the band back",
+        `${preview().height} vs ${onMapHeight}`);
+    }
+
     // ---- border, background, corner coordinates, credit default
-    check(studio.getSettings().border === true, "the border is on by default");
+    // item 17: the border is always drawn — no checkbox, colour only
+    check(field("border") == null, "the \"Border around the image\" checkbox is gone");
+    check(document.querySelectorAll(".map-props .map-check-row").length >= 3,
+      "the other sidebar checkboxes are still there",
+      String(document.querySelectorAll(".map-props .map-check-row").length));
+    check(field("borderColor") != null, "the border colour control stays");
+    check(studio.getSettings().borderColor === "#e8f1f5", "the border starts light",
+      studio.getSettings().borderColor);
+    check(studio.getSettings().border === undefined, "no setting can turn the border off");
+    const borderStrokes = () => {
+      const canvas = studio.getCanvas();
+      return (canvas.__strokes ?? 0);
+    };
+    const strokesWithBorder = borderStrokes();
+    field("borderColor").value = "#ff0000";
+    field("borderColor").dispatchEvent(new window.Event("input", { bubbles: true }));
+    check(studio.getSettings().borderColor === "#ff0000", "the border colour is editable");
+    check(borderStrokes() > 0 && strokesWithBorder > 0, "the border is always stroked", "");
     check(field("background") != null, "the background colour is editable");
     const coordsWrap = field("coordsWrap");
     check(coordsWrap != null, "corner coordinates are offered for satellite images");
     check(studio.getSettings().credit === "Sentinel-2 L2A" || studio.getSettings().credit === "",
       "the credit line reflects the image source", studio.getSettings().credit);
+
+    // ---- item 17: typing must never lose a character or the focus
+    // The bug: every keystroke rebuilt the sidebar (the legend row list was
+    // re-created on each input event), so the field lost focus after one
+    // character. This walks a whole string into each field, one key at a time,
+    // exactly like a browser does, and checks the element survives.
+    {
+      const typeInto = (node, text, label) => {
+        if (!node) {
+          check(false, `${label} exists`);
+          return false;
+        }
+        node.focus?.();
+        check(document.activeElement === node, `${label} can take focus`,
+          String(document.activeElement?.className ?? document.activeElement?.tagName));
+        node.value = "";
+        for (const character of text) {
+          node.value += character;
+          node.dispatchEvent(new window.Event("input", { bubbles: true }));
+          if (document.activeElement !== node) {
+            check(false, `${label} kept focus after "${node.value}"`);
+            return false;
+          }
+          if (!node.isConnected) {
+            check(false, `${label} left the DOM after "${node.value}"`);
+            return false;
+          }
+          if (node.value !== text.slice(0, node.value.length)) {
+            check(false, `${label} lost characters: "${node.value}"`);
+            return false;
+          }
+        }
+        const ok = node.value === text && document.activeElement === node && node.isConnected;
+        check(ok, `${label} holds the whole typed value ("${node.value}")`,
+          `value=${JSON.stringify(node.value)} focused=${document.activeElement === node} connected=${node.isConnected}`);
+        // …and the model really followed every keystroke
+        return ok;
+      };
+      // text fields
+      typeInto(field("title"), "Lahore green cover", "the title field");
+      check(studio.getSettings().title === "Lahore green cover",
+        "the model followed the title keystrokes", studio.getSettings().title);
+      typeInto(field("subtitle"), "k-means, k=5", "the subtitle field");
+      check(studio.getSettings().subtitle === "k-means, k=5",
+        "the model followed the subtitle keystrokes", studio.getSettings().subtitle);
+      typeInto(field("credit"), "Sentinel-2 L2A 2024", "the credit field");
+      check(studio.getSettings().credit === "Sentinel-2 L2A 2024",
+        "the model followed the credit keystrokes", studio.getSettings().credit);
+      typeInto(field("legendTitle"), "Land cover", "the legend title field");
+      check(studio.getSettings().legend.title === "Land cover",
+        "the model followed the legend-title keystrokes", studio.getSettings().legend.title);
+      // number fields
+      typeInto(field("titleSize"), "34", "the title size field");
+      check(studio.getSettings().titleSize === 34, "the title size followed the keystrokes",
+        String(studio.getSettings().titleSize));
+      typeInto(field("legendFont"), "18", "the legend size field");
+      check(studio.getSettings().legend.fontSize === 18, "the legend size followed the keystrokes",
+        String(studio.getSettings().legend.fontSize));
+      typeInto(field("scaleDivisions"), "7", "the divisions field");
+      check(studio.getSettings().scaleBar.divisions === 7,
+        "the divisions followed the keystrokes", String(studio.getSettings().scaleBar.divisions));
+      typeInto(field("scaleLength"), "1250", "the total length field");
+      check(studio.getSettings().scaleBar.length === 1250,
+        "the total length followed the keystrokes", String(studio.getSettings().scaleBar.length));
+      // the width field must also stay VISIBLE while a value is typed into it
+      // (the old code hid the whole row as soon as a number arrived)
+      {
+        const widthField = field("imageWidth");
+        widthField.focus?.();
+        widthField.value = "";
+        let stayed = true;
+        for (const character of "3000") {
+          widthField.value += character;
+          widthField.dispatchEvent(new window.Event("input", { bubbles: true }));
+          if (field("manualScale").hidden || !widthField.isConnected ||
+            document.activeElement !== widthField) stayed = false;
+        }
+        check(stayed && widthField.value === "3000",
+          "the real image width field stays visible and focused while typing",
+          `value=${widthField.value} hidden=${field("manualScale").hidden}`);
+      }
+      check(studio.getSettings().scaleBar.imageWidth === 3000,
+        "the real image width followed the keystrokes", String(studio.getSettings().scaleBar.imageWidth));
+      typeInto(field("imageWidth"), "2500", "the real image width field");
+      check(studio.getSettings().scaleBar.imageWidth === 2500,
+        "replacing an existing width works too", String(studio.getSettings().scaleBar.imageWidth));
+      field("scaleLength").value = "";
+      field("scaleLength").dispatchEvent(new window.Event("change", { bubbles: true }));
+
+      // the legend class-name fields — the reported bug
+      const legendNames = () => [...document.querySelectorAll(".map-legend-name")];
+      check(legendNames().length >= 2, "the composer lists the class-name fields",
+        String(legendNames().length));
+      const nameFor = (index) => {
+        const node = legendNames()[index];
+        typeInto(node, `Class number ${index + 1}`, `legend class-name field ${index + 1}`);
+        return node;
+      };
+      const first = nameFor(0);
+      check(studio.getSettings().legend.rows[0].name === "Class number 1",
+        "the legend row model followed the typing",
+        studio.getSettings().legend.rows[0].name);
+      // the Clusters table is synced live, and it must NOT steal the focus back
+      const tableNameField = document.querySelector(
+        "#section-clusters table.cluster-table tbody tr input.cluster-name");
+      check(tableNameField?.value === "Class number 1",
+        "the Clusters table followed the composer's typing", tableNameField?.value);
+      check(document.activeElement === first,
+        "the composer's field is STILL focused after the cross-panel sync",
+        String(document.activeElement?.className));
+      nameFor(1);
+      check(studio.getSettings().legend.rows[1].name === "Class number 2",
+        "a second row types just as well", studio.getSettings().legend.rows[1].name);
+
+      // the other direction: typing in the Clusters table must survive too
+      tableNameField.focus?.();
+      tableNameField.value = "";
+      for (const character of "Water and trees") {
+        tableNameField.value += character;
+        tableNameField.dispatchEvent(new window.Event("input", { bubbles: true }));
+        if (document.activeElement !== tableNameField) {
+          check(false, `the Clusters table field kept focus after "${tableNameField.value}"`);
+          break;
+        }
+      }
+      check(tableNameField.value === "Water and trees" && document.activeElement === tableNameField,
+        "typing in the Clusters table keeps focus and the whole value",
+        `${JSON.stringify(tableNameField.value)} focused=${document.activeElement === tableNameField}`);
+      check(studio.getSettings().legend.rows[0].name === "Water and trees",
+        "and the composer's model followed it",
+        studio.getSettings().legend.rows[0].name);
+
+      // every repaint produced a NEW canvas while the fields stayed identical
+      const titleField = field("title");
+      const canvasBefore = studio.getCanvas();
+      titleField.focus?.();
+      titleField.value = "Karachi study area";
+      titleField.dispatchEvent(new window.Event("input", { bubbles: true }));
+      check(studio.getCanvas() !== canvasBefore,
+        "the preview canvas was recomposed on the keystroke");
+      check(field("title") === titleField && titleField.isConnected &&
+        document.activeElement === titleField,
+        "…while the sidebar field was not rebuilt");
+
+      // colour inputs too (they are re-created by the old code path as well)
+      const colourField = document.querySelector(".map-legend-color");
+      colourField.focus?.();
+      colourField.value = "#123456";
+      colourField.dispatchEvent(new window.Event("input", { bubbles: true }));
+      check(document.activeElement === colourField && colourField.isConnected,
+        "a legend colour field survives its own input event",
+        String(document.activeElement?.className));
+    }
 
     // ---- settings persist for the session: close and reopen
     const before = JSON.stringify(studio.getSettings());

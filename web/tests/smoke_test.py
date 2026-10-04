@@ -330,6 +330,23 @@ def check_workstation_layout() -> None:
           "the text sizes are derived from the image and applied by the composer")
     check("Image width on the ground =" in ui_js, "the ground-width field is worded plainly")
     check("sizesTouched" in ui_js, "the derived sizes stop following the image once edited")
+    # ---- item 17: the typing fix, the width field, the arrow spots, the border
+    check("renderPreview()" in ui_js and "renderPreview();" in ui_js,
+          "the composer has a preview-only redraw path")
+    check("_syncLegendRows" in ui_js and "setChildren(host, rows.map" not in ui_js,
+          "the legend rows are patched in place, never rebuilt per keystroke")
+    check("activeElement" in ui_js, "the composer never overwrites a focused field")
+    check("ARROW_PLACEMENTS" in studio_js and "outside-tc" in studio_js,
+          "the arrow has on-map corners and outside spots")
+    check("arrowPlacementOf" in studio_js and "LEGACY_ARROW_PLACEMENTS" in studio_js,
+          "old arrow positions still resolve")
+    check('"onmap-tr"' in studio_js and "CORNERS" not in ui_js,
+          "the default is on map: top right and the bare corner list is gone")
+    check("borderColor" in studio_js and "cssColor" in studio_js
+          and "Border around the image" not in ui_js and "settings.border =" not in ui_js,
+          "the border is always drawn and only its colour is a setting")
+    check("Real image width" in ui_js and "Enter the real image width first" in ui_js,
+          "the width field and the disabled-length tooltip use the requested wording")
     # ---- item 3: the composer is opaque and clears the page toolbar
     # every var() the stylesheet uses has to be defined: `var(--panel)` was a
     # typo for --bg-panel, which made the dialog and its sidebar transparent
