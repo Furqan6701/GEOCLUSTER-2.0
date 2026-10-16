@@ -80,6 +80,49 @@ def allow_credentials() -> bool:
     return "*" not in allowed_origins()
 
 
+def _flag(name: str, default: bool) -> bool:
+    """A boolean environment switch: unset/blank keeps `default`."""
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    return raw.strip().lower() not in {"0", "false", "no", "off"}
+
+
+def serve_web() -> bool:
+    """Whether this process also serves the frontend folder (Task 3).
+
+    Default **false**: unset means the historical API-only application with
+    every route at the root, which is what `api/tests` and the documented
+    `cd api && uvicorn main:app` loop expect. The Render start command sets
+    `SERVE_WEB=true`, which serves `web/` at `/` and moves the API to `/api`.
+    """
+    return _flag("SERVE_WEB", False)
+
+
+def api_root_aliases() -> bool:
+    """Whether the API routes are *also* registered at the root next to `/api`.
+
+    Only meaningful with `SERVE_WEB=true`. Default true so that a page opened on
+    `http://localhost:8000/` works with the frontend's local default API base
+    (`http://localhost:8000`), unchanged. A deployment sets
+    `API_ROOT_ALIASES=false` so exactly one API URL is published; the hosted
+    frontend uses same-origin `/api` anyway.
+    """
+    return _flag("API_ROOT_ALIASES", True)
+
+
+def trust_forwarded_headers() -> bool:
+    """Whether `X-Forwarded-For` may name the client for rate limiting.
+
+    Only a reverse proxy that *overwrites* the header may be trusted: a header
+    set by the client would otherwise let one visitor mint unlimited "IPs" and
+    walk straight past the limits. The Render deployment sets this to true
+    (Render appends the real address and holds the client port); locally the
+    default false means `request.client.host` is used, which is the truth.
+    """
+    return _flag("TRUST_FORWARDED_HEADERS", False)
+
+
 def docs_enabled() -> bool:
     """Whether FastAPI's `/docs`, `/redoc` and `/openapi.json` are served.
 

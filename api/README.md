@@ -78,6 +78,7 @@ Non-secret settings (defaults in brackets):
 | `AI_RATE_LIMIT_PER_MINUTE` | `10` | `/ai/chat` limit per client IP |
 | `SATELLITE_RATE_LIMIT_PER_MINUTE` | `5` | `/satellite/fetch` limit per client IP |
 | `ENABLE_DOCS` | `true` | `/docs`, `/redoc` and `/openapi.json`; set `false` in production |
+| `TRUST_FORWARDED_HEADERS` | `false` | Charge rate limits to the `X-Forwarded-For` client (set `true` behind Render/nginx) |
 
 ## Security
 
@@ -104,7 +105,12 @@ Non-secret settings (defaults in brackets):
   map.
 * **Rate limits per client IP**: `/ai/chat` 10/min and `/satellite/fetch`
   5/min by default (429 with `Retry-After`) - the two endpoints that spend
-  provider quota or fetch from a third party.
+  provider quota or fetch from a third party. Behind a proxy the socket peer is
+  the proxy, so `TRUST_FORWARDED_HEADERS=true` makes the limiter read
+  `X-Forwarded-For`. Only the **last** entry is believed (that is the hop the
+  trusted proxy appended); client-supplied entries to its left are ignored, so a
+  visitor cannot mint a fresh identity per request. Locally the header is not
+  read at all.
 * **Input size limits**: a chat message is capped at 2000 characters and
   rejected with 422; uploads (images and `.gch` files) are capped while
   streaming (`MAX_UPLOAD_MB`, 15) and rejected with 413; uploaded images are
