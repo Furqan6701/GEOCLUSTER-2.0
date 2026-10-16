@@ -107,9 +107,14 @@ rather than a dashboard:
   downscaled uploads, the distance at the original resolution as well.
 * **Files** — GCH2 Huffman compress to `.gch` (desktop-compatible), decompress
   back into the session, and PNG export of the current image.
-* **Assistant** — chat with the API's AI assistant; router commands such as
+* **Assistant** — chat with the API's AI assistant. Router commands such as
   `Show me F-8 imagery`, `Run k-means`, `Histogram` and `Compress this image`
-  work even when the model is unavailable. Replies are shown as plain text.
+  work even when the model is unavailable, and the model may now **run a tool
+  for you** with the value you asked for (`Smooth this image with a 5 by 5 mean
+  filter`). Every action is one of the app's own controls and is executed
+  through the very same code path as that button/slider, so the undo history,
+  result viewport and toasts behave identically; the parameter is validated
+  server-side first. Replies are shown as plain text.
 
 ## Run it (Windows PowerShell)
 
@@ -119,7 +124,7 @@ cd api
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-Copy-Item .env.example .env      # paste FIREWORKS_API_KEY / COPERNICUS_* if you have them
+Copy-Item .env.example .env      # paste GROQ_API_KEY / COPERNICUS_* if you have them
 uvicorn main:app --reload --port 8000
 
 # 2) Frontend (this terminal)
@@ -195,7 +200,9 @@ The boot test is optional but the strongest signal short of a real browser: it
 loads `index.html`, boots `js/app.js`, uploads the fixture image through the
 file input and then clicks through the filters, K-Means, the Clusters editor
 table, classify → the Map composer modal (aria, focus trap, one-canvas export),
-histogram/stats, GCH2 compress → decompress, the chat router commands and the
+histogram/stats, GCH2 compress → decompress, the chat (the router commands, the
+app state sent with every message, a model-chosen action executed through the
+panel action, and the plain-text refusal when nothing is loaded), and the
 session-expired recovery path. It skips itself (exit 0) when jsdom or the API is
 missing.
 
@@ -224,7 +231,7 @@ node web/tests/boot_test.mjs --jsdom /tmp/geocluster-jsdom/node_modules `
 | Banner mentions `/api` and the server could not reach the API | the proxy target is down — start the API, or point `serve.py --api http://host:port` at the right one |
 | Browser console shows a CORS error | the page's origin is missing from `ALLOWED_ORIGINS` (or you opened `file://`) — add the origin and restart the API |
 | "Your session expired…" toast | expected after an API restart or 60 minutes idle — the image must be uploaded again |
-| AI chip says "not configured" | `FIREWORKS_API_KEY` is missing in `api/.env`; commands still work |
+| AI chip says "not configured" | `GROQ_API_KEY` is missing in `api/.env`; commands still work |
 | Satellite chip says "not configured" | `COPERNICUS_CLIENT_ID`/`SECRET` missing in `api/.env` |
 | Chat answers 502 | the AI provider errored; commands still run — see `docs/frontend-notes.md` |
 

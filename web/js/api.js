@@ -157,8 +157,17 @@ export class ApiClient {
   }
 
   // ------------------------------------------------------------------ chat
-  chat(message) {
-    return this.request("/ai/chat", { method: "POST", json: { message } });
+  /**
+   * Ask the assistant. `context` is the app state the model may rely on
+   * (image loaded, K-Means result, undo/redo availability) - never coordinates
+   * and never anything that leaves the browser otherwise. Omitting it sends
+   * just the message, which the server treats as "nothing loaded".
+   */
+  chat(message, context = null) {
+    const json = context && typeof context === "object" && Object.keys(context).length
+      ? { message, ...context }
+      : { message };
+    return this.request("/ai/chat", { method: "POST", json });
   }
 }
 

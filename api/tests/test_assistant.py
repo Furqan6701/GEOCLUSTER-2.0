@@ -12,16 +12,22 @@ import httpx
 import pytest
 
 from geocluster.assistant import (
+    ACTION_SYSTEM_PROMPT,
+    AI_ACTIONS,
+    AI_ACTIONS_BY_NAME,
     AIAssistant,
     APP_HELP,
+    AssistantOutcome,
     CommandRouter,
     build_commands,
     clean_response,
     help_answer,
     help_data_path,
     help_question,
+    interpret_ai_reply,
     load_app_help,
     match_app_help,
+    validate_ai_action,
 )
 from geocluster.errors import AssistantProviderError, AssistantUnavailable
 
@@ -61,8 +67,8 @@ def test_router_matches_desktop_behavior(message, intent, key, value):
     "message,expected",
     [
         ("show me F-8", [{"action": "fetch_satellite", "location": "F-8"}]),
-        ("kmeans", [{"action": "run_operation", "operation": "kmeans"}]),
-        ("classify", [{"action": "run_operation", "operation": "kmeans"}]),
+        ("kmeans", [{"action": "run_kmeans"}]),
+        ("classify", [{"action": "run_kmeans"}]),
         ("mean filter", [{"action": "run_operation", "operation": "meanfilter"}]),
         ("threshold", [{"action": "run_operation", "operation": "threshold"}]),
         ("brightness", [{"action": "run_operation", "operation": "brightness"}]),
@@ -108,13 +114,52 @@ def test_assistant_cleans_provider_answer():
 
     assistant._client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
     assert assistant.ask("hi") == "hi"
-    # the owner's provider settings, unchanged
-    assert captured["model"] == "openai/gpt-oss-20b"
-    assert captured["temperature"] == 0.3
+    # Groq, JSON-capable model, no reasoning_effort (llama-3.3 does not take it)
+    assert captured["model"] == "llama-3.3-70b-versatile"
+    assert captured["temperature"] == 0.2
     assert captured["max_tokens"] == 600
-    assert captured["extra_body"] == {"reasoning_effort": "low"}
+    assert "response_format" not in captured
+    assert "extra_body" not in captured
+    fresh = AIAssistant(api_key="test-key")
+    assert str(fresh._ensure_client().base_url).rstrip("/") == "https://api.groq.com/openai/v1"
     assert captured["messages"][0]["role"] == "system"
     assert "GEOCLUSTER AI" in captured["messages"][0]["content"]
+
+
+def test_assistant_reads_groq_then_legacy_key_from_the_environment(monkeypatch):
+    from geocluster.assistant import GROQ_API_KEY_ENV, LEGACY_API_KEY_ENV
+
+    monkeypatch.delenv(GROQ_API_KEY_ENV, raising=False)
+    monkeypatch.delenv(LEGACY_API_KEY_ENV, raising=False)
+    assert AIAssistant().available is False
+
+    # the older variable still works, so an existing api/.env keeps going
+    monkeypatch.setenv(LEGACY_API_KEY_ENV, "legacy-key")
+    assert AIAssistant().available is True
+
+    # …but the current name wins
+    monkeypatch.setenv(GROQ_API_KEY_ENV, "groq-key")
+    assert AIAssistant()._api_key == "groq-key"
+
+
+def test_assistant_json_mode_prompt_and_schema():
+    assistant = AIAssistant(api_key="test-key")
+    captured = {}
+
+    def create(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(
+            content=json.dumps({"reply": "hi", "action": None})))])
+
+    assistant._client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    outcome = assistant.ask_with_action("hi", {"has_image": False})
+    assert isinstance(outcome, AssistantOutcome)
+    assert outcome.reply == "hi" and outcome.action is None
+    assert captured["response_format"] == {"type": "json_object"}
+    system = captured["messages"][0]["content"]
+    assert "ACTIONS YOU MAY REQUEST" in system
+    assert "CURRENT APP STATE:" in system
+    assert "Image loaded: no" in system
 
 
 def test_assistant_provider_failure_raises_generic_error(caplog):
@@ -149,7 +194,10 @@ def test_chat_returns_503_when_not_configured():
 
 
 def test_chat_returns_reply_with_stub():
-    stub = SimpleNamespace(available=True, ask=lambda question: f"answer for {question}")
+    stub = SimpleNamespace(
+        available=True,
+        ask_with_action=lambda question, context: AssistantOutcome(reply=f"answer for {question}"),
+    )
     with make_app_client(stub) as client:
         response = client.post("/ai/chat", json={"message": "what is NDVI?"})
     assert response.status_code == 200
@@ -160,10 +208,10 @@ def test_chat_returns_reply_with_stub():
 
 
 def test_chat_maps_provider_failure_to_502_without_raw_error():
-    def ask(_question):
+    def ask_with_action(_question, _context):
         raise AssistantProviderError("The AI provider is unavailable.")
 
-    stub = SimpleNamespace(available=True, ask=ask)
+    stub = SimpleNamespace(available=True, ask_with_action=ask_with_action)
     with make_app_client(stub) as client:
         response = client.post("/ai/chat", json={"message": "what is GIS?"})
     assert response.status_code == 502
@@ -172,10 +220,10 @@ def test_chat_maps_provider_failure_to_502_without_raw_error():
 
 
 def test_chat_command_intents_do_not_call_the_assistant():
-    def explode(_question):  # pragma: no cover - must never run
+    def explode(_question, _context):  # pragma: no cover - must never run
         raise AssertionError("the assistant must not be called for command intents")
 
-    stub = SimpleNamespace(available=True, ask=explode)
+    stub = SimpleNamespace(available=True, ask_with_action=explode)
     with make_app_client(stub) as client:
         response = client.post("/ai/chat", json={"message": "show me F-8"})
         assert response.status_code == 200
@@ -196,12 +244,233 @@ def test_chat_rate_limit_returns_429():
 
     application = create_app()
     application.state.ai_limiter = RateLimiter(1)
-    application.state.assistant = SimpleNamespace(available=True, ask=lambda question: "ok")
+    application.state.assistant = SimpleNamespace(
+        available=True,
+        ask_with_action=lambda question, context: AssistantOutcome(reply="ok"),
+    )
     with TestClient(application) as client:
         assert client.post("/ai/chat", json={"message": "what is GIS?"}).status_code == 200
         limited = client.post("/ai/chat", json={"message": "what is GIS?"})
         assert limited.status_code == 429
         assert limited.headers["retry-after"] == "60"
+
+
+# ------------------------------------------------- Task 1: the action whitelist
+
+FULL_STATE = {"has_image": True, "has_clusters": True, "has_history": True, "can_undo": True, "can_redo": True}
+IMAGE_ONLY = {"has_image": True}
+
+
+@pytest.mark.parametrize(
+    "requested,context,expected",
+    [
+        ("grayscale", IMAGE_ONLY, {"action": "run_operation", "operation": "grayscale"}),
+        ({"action": "negative"}, IMAGE_ONLY, {"action": "run_operation", "operation": "negative"}),
+        ({"action": "laplacian"}, IMAGE_ONLY, {"action": "run_operation", "operation": "laplacian"}),
+        (
+            {"action": "brightness", "params": {"value": -40}},
+            IMAGE_ONLY,
+            {"action": "run_operation", "operation": "brightness", "params": {"value": -40}},
+        ),
+        (
+            {"action": "threshold", "params": {"value": "200"}},
+            IMAGE_ONLY,
+            {"action": "run_operation", "operation": "threshold", "params": {"value": 200}},
+        ),
+        # mean_filter accepts the flat form and the documented default
+        (
+            {"action": "mean_filter", "window": 5},
+            IMAGE_ONLY,
+            {"action": "run_operation", "operation": "meanfilter", "params": {"window": 5}},
+        ),
+        (
+            {"action": "mean_filter"},
+            IMAGE_ONLY,
+            {"action": "run_operation", "operation": "meanfilter", "params": {"window": 3}},
+        ),
+        ({"action": "run_kmeans", "params": {"k": 7}}, IMAGE_ONLY, {"action": "run_kmeans", "params": {"k": 7}}),
+        ({"action": "run_kmeans"}, IMAGE_ONLY, {"action": "run_kmeans", "params": {"k": 5}}),
+        ({"action": "classify_clusters"}, FULL_STATE, {"action": "classify_clusters"}),
+        ({"action": "open_map_composer"}, IMAGE_ONLY, {"action": "open_map_composer"}),
+        ({"action": "open_histogram"}, IMAGE_ONLY, {"action": "open_histogram"}),
+        ({"action": "open_compress"}, IMAGE_ONLY, {"action": "open_compress"}),
+        ({"action": "open_distance"}, IMAGE_ONLY, {"action": "open_distance"}),
+        ({"action": "export_png"}, IMAGE_ONLY, {"action": "export_png"}),
+        ({"action": "export_label_map"}, FULL_STATE, {"action": "export_label_map"}),
+        ({"action": "undo"}, FULL_STATE, {"action": "undo"}),
+        ({"action": "redo"}, FULL_STATE, {"action": "redo"}),
+        ({"action": "clear_result"}, IMAGE_ONLY, {"action": "clear_result"}),
+        ({"action": "fit_view"}, IMAGE_ONLY, {"action": "fit_view"}),
+        ({"action": "actual_size"}, IMAGE_ONLY, {"action": "actual_size"}),
+        ({"action": "zoom_in"}, IMAGE_ONLY, {"action": "zoom_in"}),
+        ({"action": "zoom_out"}, IMAGE_ONLY, {"action": "zoom_out"}),
+    ],
+)
+def test_whitelisted_actions_become_client_commands(requested, context, expected):
+    assert validate_ai_action(requested, context) == (expected, None)
+
+
+@pytest.mark.parametrize(
+    "requested,context",
+    [
+        # nothing the app cannot do right now
+        ({"action": "run_kmeans"}, {}),
+        ({"action": "classify_clusters"}, IMAGE_ONLY),  # needs a K-Means result
+        ({"action": "export_label_map"}, {"has_clusters": True}),
+        ({"action": "undo"}, {"has_image": True, "has_history": True, "can_undo": False}),
+        ({"action": "redo"}, {"has_image": True, "has_history": True, "can_redo": False}),
+        # unknown actions and unknown parameters never reach the client
+        ("teleport", FULL_STATE),
+        ({"action": "fetch_satellite", "location": "F-8"}, FULL_STATE),
+        ({"action": "brightness", "params": {"value": 40, "latitude": 33.6}}, FULL_STATE),
+        # parameters outside the range the UI accepts
+        ({"action": "brightness", "params": {"value": 900}}, IMAGE_ONLY),
+        ({"action": "brightness", "params": {"value": 12.5}}, IMAGE_ONLY),
+        ({"action": "brightness", "params": {"value": True}}, IMAGE_ONLY),
+        ({"action": "threshold", "params": {"value": -1}}, IMAGE_ONLY),
+        ({"action": "mean_filter", "params": {"window": 2}}, IMAGE_ONLY),
+        ({"action": "mean_filter", "params": {"window": 99}}, IMAGE_ONLY),
+        ({"action": "run_kmeans", "params": {"k": 1}}, IMAGE_ONLY),
+        # brightness without an amount is a question, not an action
+        ({"action": "brightness"}, IMAGE_ONLY),
+        ({"action": "brightness", "params": {}}, IMAGE_ONLY),
+    ],
+)
+def test_rejected_actions_are_never_forwarded(requested, context):
+    command, reason = validate_ai_action(requested, context)
+    assert command is None
+    assert reason, "a rejection always says why (it is logged server-side)"
+
+
+def test_no_satellite_action_exists_in_the_whitelist():
+    """The model may never start a satellite fetch or name a location."""
+    assert all("satellite" not in spec.name for spec in AI_ACTIONS)
+    for spec in AI_ACTIONS:
+        assert "fetch" not in spec.command
+        assert "coordinate" not in spec.summary.lower()
+    prompt = ACTION_SYSTEM_PROMPT.lower()
+    assert "latitude" not in prompt and "longitude" not in prompt
+
+
+def test_whitelist_matches_the_ui_ranges():
+    specs = {spec.name: dict(spec.params) for spec in AI_ACTIONS if spec.params}
+    assert (specs["brightness"]["value"].minimum, specs["brightness"]["value"].maximum) == (-255, 255)
+    assert (specs["threshold"]["value"].minimum, specs["threshold"]["value"].maximum) == (0, 255)
+    assert (specs["mean_filter"]["window"].minimum, specs["mean_filter"]["window"].maximum) == (3, 31)
+    assert specs["mean_filter"]["window"].odd is True
+    assert (specs["run_kmeans"]["k"].minimum, specs["run_kmeans"]["k"].maximum) == (2, 10)
+    assert specs["brightness"]["value"].required is True
+
+
+def test_action_prompt_lists_every_whitelisted_action():
+    for spec in AI_ACTIONS:
+        assert f"- {spec.name}:" in ACTION_SYSTEM_PROMPT
+        assert spec.name in AI_ACTIONS_BY_NAME
+    assert '{"reply"' in ACTION_SYSTEM_PROMPT and "json" in ACTION_SYSTEM_PROMPT.lower()
+    assert "at most ONE" in ACTION_SYSTEM_PROMPT
+
+
+@pytest.mark.parametrize(
+    "payload,context,reply,action",
+    [
+        ("not json at all", IMAGE_ONLY, "not json at all", None),
+        (json.dumps({"reply": "Sure.", "action": None}), IMAGE_ONLY, "Sure.", None),
+        (
+            '```json\n{"reply": "Smoothing it.", "action": {"action": "mean_filter", "params": {"window": 5}}}\n```',
+            IMAGE_ONLY,
+            "Smoothing it.",
+            {"action": "run_operation", "operation": "meanfilter", "params": {"window": 5}},
+        ),
+        # a dropped action still leaves the user with a usable text answer
+        (json.dumps({"reply": "", "action": {"action": "brightness"}}), IMAGE_ONLY, None, None),
+        (json.dumps({"reply": "", "action": {"action": "run_kmeans"}}), {}, None, None),
+        (json.dumps({"reply": "On it.", "action": {"action": "teleport"}}), IMAGE_ONLY, "On it.", None),
+    ],
+)
+def test_interpret_ai_reply_parses_and_validates(payload, context, reply, action):
+    outcome = interpret_ai_reply(payload, context)
+    assert outcome.action == action
+    if reply is not None:
+        assert outcome.reply == reply
+    else:
+        assert outcome.reply, "an empty reply never reaches the client when something was rejected"
+
+
+def test_chat_returns_a_validated_action_and_executes_nothing_itself():
+    stub = SimpleNamespace(
+        available=True,
+        ask_with_action=lambda question, context: AssistantOutcome(
+            reply=f"answer for {question}",
+            action={"action": "run_operation", "operation": "brightness", "params": {"value": 40}},
+        ),
+    )
+    with make_app_client(stub) as client:
+        response = client.post(
+            "/ai/chat",
+            json={"message": "make it brighter by 40", "has_image": True},
+        )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["intent"] == "action"
+    assert payload["reply"] == "answer for make it brighter by 40"
+    assert payload["action"] == {"action": "run_operation", "operation": "brightness", "params": {"value": 40}}
+    # the same object travels in commands, the list the client executes
+    assert payload["commands"] == [{"action": "run_operation", "operation": "brightness", "params": {"value": 40}}]
+
+
+def test_chat_without_an_action_stays_a_plain_reply():
+    stub = SimpleNamespace(
+        available=True,
+        ask_with_action=lambda question, context: AssistantOutcome(reply="NDVI measures vegetation health."),
+    )
+    with make_app_client(stub) as client:
+        response = client.post("/ai/chat", json={"message": "what is NDVI?"})
+    payload = response.json()
+    assert payload["intent"] == "ask_question"
+    assert payload["action"] is None and payload["commands"] == []
+    assert payload["reply"] == "NDVI measures vegetation health."
+
+
+def test_chat_passes_the_app_state_to_the_assistant():
+    seen = []
+
+    def ask_with_action(question, context):
+        seen.append(context)
+        return AssistantOutcome(reply="ok")
+
+    stub = SimpleNamespace(available=True, ask_with_action=ask_with_action)
+    with make_app_client(stub) as client:
+        client.post("/ai/chat", json={"message": "what is GIS?", "has_image": True, "can_undo": True})
+        client.post("/ai/chat", json={"message": "what is GIS?"})
+    assert seen[0] == {
+        "has_image": True,
+        "has_clusters": False,
+        "has_history": False,
+        "can_undo": True,
+        "can_redo": False,
+    }
+    # nothing sent -> the safe all-False state, so an action cannot be chosen
+    assert seen[1] == {
+        "has_image": False,
+        "has_clusters": False,
+        "has_history": False,
+        "can_undo": False,
+        "can_redo": False,
+    }
+
+
+def test_router_commands_never_call_the_model_for_an_action():
+    """Command-shaped messages keep working with no key at all (no model call)."""
+
+    def explode(_question, _context):  # pragma: no cover - must never run
+        raise AssertionError("command-shaped messages must not reach the model")
+
+    stub = SimpleNamespace(available=True, ask_with_action=explode)
+    with make_app_client(stub) as client:
+        kmeans = client.post("/ai/chat", json={"message": "run k-means", "has_image": True})
+        assert kmeans.status_code == 200
+        assert kmeans.json()["commands"] == [{"action": "run_kmeans"}]
+        assert kmeans.json()["action"] is None
 
 
 # ------------------------------------------------- openai 3.22.1 compatibility
@@ -222,11 +491,11 @@ def test_openai_chat_completions_call_works_with_the_pinned_sdk():
                 "id": "chatcmpl-1",
                 "object": "chat.completion",
                 "created": 0,
-                "model": "accounts/fireworks/models/qwen3p7-plus",
+                "model": "llama-3.3-70b-versatile",
                 "choices": [
                     {
                         "index": 0,
-                        "message": {"role": "assistant", "content": "Final answer: hello"},
+                        "message": {"role": "assistant", "content": '{"reply": "hello", "action": null}'},
                         "finish_reason": "stop",
                     }
                 ],
@@ -235,24 +504,24 @@ def test_openai_chat_completions_call_works_with_the_pinned_sdk():
 
     client = OpenAI(
         api_key="test-key",
-        base_url="https://api.fireworks.ai/inference/v1",
+        base_url="https://api.groq.com/openai/v1",
         http_client=httpx.Client(transport=httpx.MockTransport(handler)),
     )
     response = client.chat.completions.create(
-        model="accounts/fireworks/models/qwen3p7-plus",
+        model="llama-3.3-70b-versatile",
         messages=[
             {"role": "system", "content": "system"},
             {"role": "user", "content": "question"},
         ],
-        temperature=0.3,
-        max_tokens=150,
-        extra_body={"reasoning_effort": "none"},
+        temperature=0.2,
+        max_tokens=600,
+        response_format={"type": "json_object"},
     )
-    assert response.choices[0].message.content == "Final answer: hello"
+    assert response.choices[0].message.content == '{"reply": "hello", "action": null}'
     assert captured["url"].endswith("/chat/completions")
-    assert captured["body"]["reasoning_effort"] == "none"
-    assert captured["body"]["max_tokens"] == 150
-    assert captured["body"]["temperature"] == 0.3
+    assert captured["body"]["response_format"] == {"type": "json_object"}
+    assert captured["body"]["max_tokens"] == 600
+    assert captured["body"]["temperature"] == 0.2
     assert captured["authorization"] == "Bearer test-key"
 
 
@@ -400,10 +669,10 @@ def test_chat_answers_tool_questions_with_no_api_key():
 
 
 def test_chat_answers_tool_questions_when_the_provider_is_down():
-    def explode(_question):  # pragma: no cover - must never run
+    def explode(_question, _context):  # pragma: no cover - must never run
         raise AssistantProviderError("The AI provider is unavailable.")
 
-    stub = SimpleNamespace(available=True, ask=explode)
+    stub = SimpleNamespace(available=True, ask_with_action=explode)
     with make_app_client(stub) as client:
         response = client.post("/ai/chat", json={"message": "how do I use threshold?"})
         assert response.status_code == 200

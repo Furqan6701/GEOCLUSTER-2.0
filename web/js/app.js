@@ -723,6 +723,48 @@ window.addEventListener("keydown", (event) => {
   }
 });
 
+// ----------------------------------------------------------- shared UI actions
+/**
+ * The one table of UI entry points the assistant may run (Task 1). Each entry
+ * is the SAME function the matching menu item, toolbar button or panel control
+ * calls, so a command from the chat produces exactly the undo history, result
+ * viewport and toast a click would - there is no second execution path.
+ */
+const uiActions = {
+  // View menu (the same viewer calls the keyboard shortcuts use)
+  fitView: () => withActiveViewer((viewer) => viewer.fit()),
+  actualSize: () => withActiveViewer((viewer) => viewer.zoomTo(1)),
+  zoomIn: () => withActiveViewer((viewer) => viewer.zoomBy(1.25)),
+  zoomOut: () => withActiveViewer((viewer) => viewer.zoomBy(1 / 1.25)),
+  // Edit menu, the toolbar buttons and Ctrl+Z / Ctrl+Y
+  undo,
+  redo,
+  // File menu
+  exportPng: () => exportCurrent(),
+  exportLabelMap: () => bus.emit("labelmap:request"),
+  openCompress: () => bus.emit("huffman:compress-request"),
+  // Processing menu
+  clearResult: () => panelById.get("filters")?.actions?.clearResult(),
+  // Analysis menu and the toolbar
+  openHistogram: () => bus.emit("histogram:request"),
+  openDistance: () => bus.emit("distance:request"),
+  openMapComposer: () => openMapStudio(),
+};
+ctx.uiActions = uiActions;
+
+/**
+ * The app state the assistant is allowed to rely on. It decides whether the
+ * model may choose an action at all (there is no image, no K-Means result or
+ * nothing to undo). Coordinates are never part of this, or of any message.
+ */
+ctx.appState = () => ({
+  has_image: Boolean(activeImage(state)),
+  has_clusters: Boolean(state.kmeans),
+  has_history: Boolean(state.original || state.result || state.kmeans),
+  can_undo: Boolean(history.canUndo),
+  can_redo: Boolean(history.canRedo),
+});
+
 // -------------------------------------------------------------------- menus
 /**
  * Every menu/toolbar entry point funnels through the Filters panel's `run()`,
@@ -784,7 +826,7 @@ const menuBar = createMenuBar([
         shortcut: "Ctrl+S",
         disabled: !gate.canRun(),
         reason: gate.isBusy() ? "a request is in flight" : "load, fetch or decompress an image first",
-        onClick: exportCurrent,
+        onClick: uiActions.exportPng,
       },
       // The raw label map is one of K-Means' outputs, so the entry APPEARS with
       // the first K-Means run (item 14) — it is never a greyed-out promise.
@@ -794,7 +836,7 @@ const menuBar = createMenuBar([
           icon: "layers",
           disabled: !gate.canRun(),
           reason: gate.isBusy() ? "a request is in flight" : "load, fetch or decompress an image first",
-          onClick: () => bus.emit("labelmap:request"),
+          onClick: uiActions.exportLabelMap,
         }]
         : []),
       {
@@ -804,7 +846,7 @@ const menuBar = createMenuBar([
         title: "Lossless .gch compression (Huffman coding); files also open in the desktop app.",
         disabled: !gate.canRun(),
         reason: gate.isBusy() ? "a request is in flight" : "load, fetch or decompress an image first",
-        onClick: () => bus.emit("huffman:compress-request"),
+        onClick: uiActions.openCompress,
       },
       {
         label: "Open .gch file (decompress)…",
@@ -826,7 +868,7 @@ const menuBar = createMenuBar([
         shortcut: "Ctrl+Z",
         disabled: !history.canUndo,
         reason: "nothing to undo — run an operation first",
-        onClick: undo,
+        onClick: uiActions.undo,
       },
       {
         label: "Redo",
@@ -834,17 +876,17 @@ const menuBar = createMenuBar([
         shortcut: "Ctrl+Y",
         disabled: !history.canRedo,
         reason: "nothing to redo — undo a step first",
-        onClick: redo,
+        onClick: uiActions.redo,
       },
     ],
   },
   {
     label: "View",
     items: () => [
-      { label: "Fit to view", icon: "fit", shortcut: "0", onClick: () => withActiveViewer((v) => v.fit()) },
-      { label: "Actual size", icon: "grid", shortcut: "1", onClick: () => withActiveViewer((v) => v.zoomTo(1)) },
-      { label: "Zoom in", icon: "zoomIn", shortcut: "+", onClick: () => withActiveViewer((v) => v.zoomBy(1.25)) },
-      { label: "Zoom out", icon: "zoomOut", shortcut: "−", onClick: () => withActiveViewer((v) => v.zoomBy(1 / 1.25)) },
+      { label: "Fit to view", icon: "fit", shortcut: "0", onClick: uiActions.fitView },
+      { label: "Actual size", icon: "grid", shortcut: "1", onClick: uiActions.actualSize },
+      { label: "Zoom in", icon: "zoomIn", shortcut: "+", onClick: uiActions.zoomIn },
+      { label: "Zoom out", icon: "zoomOut", shortcut: "−", onClick: uiActions.zoomOut },
       { separator: true },
       { label: "Show toolbox", icon: "panelLeft", checked: dockVisibility.toolbox, onClick: () => setDockVisible("toolbox", !dockVisibility.toolbox) },
       { label: "Show assistant", icon: "chat", checked: dockVisibility.assistant, onClick: () => setDockVisible("assistant", !dockVisibility.assistant) },
@@ -867,7 +909,7 @@ const menuBar = createMenuBar([
         icon: "trash",
         disabled: !state.result,
         reason: "there is no result yet — run a filter or K-Means first",
-        onClick: () => panelById.get("filters")?.actions?.clearResult(),
+        onClick: uiActions.clearResult,
       },
     ],
   },
@@ -875,9 +917,9 @@ const menuBar = createMenuBar([
     label: "Analysis",
     items: () => [
       { label: "Run K-Means…", icon: "layers", onClick: () => { focusSection("clusters"); panelById.get("clusters")?.actions?.runKMeans(); } },
-      { label: "Histogram", icon: "chart", onClick: () => bus.emit("histogram:request") },
+      { label: "Histogram", icon: "chart", onClick: uiActions.openHistogram },
       { separator: true },
-      { label: "Map composer…", icon: "map", onClick: () => { void openMapStudio(); } },
+      { label: "Map composer…", icon: "map", onClick: uiActions.openMapComposer },
     ],
   },
   {
@@ -905,7 +947,7 @@ function renderChips() {
   }
   const health = state.health;
   if (health) {
-    nodes.push(chip(`AI ${health.ai_configured ? "ready" : "not configured"}`, health.ai_configured ? "ok" : "warn", "FIREWORKS_API_KEY on the server"));
+    nodes.push(chip(`AI ${health.ai_configured ? "ready" : "not configured"}`, health.ai_configured ? "ok" : "warn", "GROQ_API_KEY on the server"));
     nodes.push(chip(`Satellite ${health.satellite_configured ? "ready" : "not configured"}`, health.satellite_configured ? "ok" : "warn", "Copernicus credentials on the server"));
     nodes.push(chip(`max ${health.max_image_megapixels} MP`, "", "MAX_IMAGE_MEGAPIXELS"));
   } else {
@@ -1101,6 +1143,9 @@ window.geocluster = {
   },
   history,
   imageActions,
+  uiActions,
+  appState: ctx.appState,
+  chat: chatPanel,
   panels: panelById,
   ApiError,
   undo,

@@ -191,11 +191,40 @@ class SatelliteFetchRequest(BaseModel):
 class ChatRequest(BaseModel):
     model_config = FORBID_EXTRA
     message: str = Field(..., min_length=1, max_length=2000)
+    # App state the browser already knows. The model is told about it and the
+    # server drops any action the app cannot run right now (no image, no
+    # K-Means result, nothing to undo). Defaults are the safe "nothing loaded".
+    has_image: bool = False
+    has_clusters: bool = False
+    has_history: bool = False
+    can_undo: bool = False
+    can_redo: bool = False
+
+    def app_context(self) -> dict[str, bool]:
+        return {
+            "has_image": self.has_image,
+            "has_clusters": self.has_clusters,
+            "has_history": self.has_history,
+            "can_undo": self.can_undo,
+            "can_redo": self.can_redo,
+        }
+
+
+class ChatAction(BaseModel):
+    """One validated action the client may run (whitelist-checked server-side)."""
+
+    action: str
+    operation: Optional[str] = None
+    params: dict[str, Any] = Field(default_factory=dict)
 
 
 class ChatResponse(BaseModel):
     intent: str
     reply: Optional[str] = None
+    #: the single action the model chose, when it chose a valid one
+    action: Optional[ChatAction] = None
+    #: everything the client should execute (the action above, or the router's
+    #: deterministic commands for command-shaped messages)
     commands: list[dict[str, Any]] = Field(default_factory=list)
 
 

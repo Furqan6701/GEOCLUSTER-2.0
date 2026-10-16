@@ -627,7 +627,9 @@ message. Raw JSON is never displayed.
 * The rule-based router needs no language model, so commands execute even when
   the model is unavailable:
   * `Show me F-8 imagery` → `{"action": "fetch_satellite", "location": "F-8"}`
-  * `Run k-means` → `{"action": "run_operation", "operation": "kmeans"}`
+  * `Run k-means` → `{"action": "run_kmeans"}` (it used to send
+    `run_operation/kmeans`, which the API does not have — K-Means is its own
+    route, so the command now goes through the Clusters panel's button path)
   * `Histogram` → `{"action": "open_histogram"}`
   * `Compress this image` → `{"action": "open_compress"}`
   * `Measure the distance` → `{"action": "open_distance"}`
@@ -643,10 +645,51 @@ message. Raw JSON is never displayed.
   already stores as `kmeans:labels`) is downloaded from the File menu's
   **Export raw label map (PNG)…** entry. Max iterations is not user-facing: the
   panel always sends `max_iter=100` and K is limited to 2..10.
-* Operations triggered from the chat carry no numbers, so documented defaults
-  are used and announced in the chat log: `kmeans {k: 5, max_iter: 100}`,
+* Router commands carry no numbers, so documented defaults are used and
+  announced in the chat log: `kmeans {k: 5, max_iter: 100}`,
   `meanfilter {window: 3}`, `threshold {value: 128}`, `brightness {value: 20}`.
   The panels remain the place to pick other values.
+
+## Chat actions (Task 1: the assistant may run the app)
+
+* The model answers in JSON — `{"reply": "…", "action": null}` — and may pick
+  at most **one** action from the fixed whitelist in
+  `api/geocluster/assistant.py` (`AI_ACTIONS`). The API returns it as `action`
+  and (identically) as the single entry of `commands`, so the browser keeps one
+  execution path for every kind of message.
+* The whitelist covers what the UI offers: `grayscale`, `negative`,
+  `laplacian`, `brightness {value}`, `threshold {value}`, `mean_filter
+  {window}`, `run_kmeans {k}`, `classify_clusters`, `open_map_composer`,
+  `open_histogram`, `open_compress`, `open_distance`, `export_png`,
+  `export_label_map`, `undo`, `redo`, `clear_result`, `fit_view`,
+  `actual_size`, `zoom_in`, `zoom_out`.
+* Validation is **server-side**: an unknown action, an unknown parameter, a
+  value outside the UI's range (brightness −255…255, threshold 0…255, mean
+  filter odd 3…31, k 2…10) or an action the app cannot run (no image, no
+  K-Means result, nothing to undo/redo — taken from the state the page sends)
+  is dropped with a logged reason; the reply text stays. The browser repeats
+  the range check before dispatching anything.
+* The model can **never** pick a satellite fetch or a coordinate: no such
+  action exists, and the reply text carries none. `Show me F-8 imagery` is the
+  router's own deterministic command, resolved server-side by place name.
+* Execution goes through the matching control, never a parallel path: point
+  operations and the three slider operations use the Filters panel's
+  dispatcher (`run()` / the slider's `commit()` — the slider moves to the
+  applied value and the history gets the same single step a release creates),
+  K-Means and classification use the Clusters panel's buttons, zoom/fit use the
+  View menu's viewer calls, Measure uses the toolbar toggle, export/compress/
+  histogram/map composer use the File/Analysis menu entries (`ctx.uiActions`
+  holds that one table).
+* With nothing loaded (or an unclear request) the assistant answers in text and
+  asks — the app state travels with the message (`has_image`, `has_clusters`,
+  `has_history`, `can_undo`, `can_redo`), and the chat refuses an image action
+  client-side with a plain-text bubble even if one arrived.
+* Provider: Groq `llama-3.3-70b-versatile`, JSON mode (`response_format:
+  {"type": "json_object"}`), `temperature=0.2`, `max_tokens=600`, no
+  `reasoning_effort` (the model does not take one). The key is
+  `GROQ_API_KEY` (`FIREWORKS_API_KEY` still accepted); it is read server-side
+  only. The offline glossary answers and the router commands are untouched by
+  any of this.
 * `open_distance` is **client-side**: the API has no distance endpoint, so the
   viewer measures the Euclidean pixel distance between two clicks (Esc clears).
 
@@ -738,11 +781,11 @@ message. Raw JSON is never displayed.
 
 | Command | What it does |
 | --- | --- |
-| `node --test "web/tests/*.test.mjs"` | 166 logic tests: config resolution, error mapping, API client contract (URLs, bodies, multipart, session recovery), chat command mapping/execution, the satellite request shapes, the filter preview maths (reflect-101 box average, threshold/brightness clipping, the 512 px preview cap), the slider snapping/help texts, the item-15 rule that no help popover survives
+| `node --test "web/tests/*.test.mjs"` | 172 logic tests: config resolution, error mapping, API client contract (URLs, bodies, multipart, session recovery), chat command mapping/execution (Task 1: every assistant action, the parameter validation that mirrors the server whitelist, and the app state sent with each message), the satellite request shapes, the filter preview maths (reflect-101 box average, threshold/brightness clipping, the 512 px preview cap), the slider snapping/help texts, the item-15 rule that no help popover survives
   anywhere and that the tooltip sentences equal the shipped assistant glossary, the history `dropEntry` replacement rule, the linked classification ranges (item 11) and the histogram maths of item 13 (the OpenCV gray weights, channel counting with alpha, the 0…10 smoothing slider, the channel→series mapping), the product copy and the required credits (item 14), and the item-16 composer maths (the nine legend placements, `scaleBarLayout` for satellite/drone/typed lengths, boundary labels and number formatting, the legend box sized to the longest class name, the image-derived default sizes, and the item-17 arrow placements/border/typed-length rules). No browser needed. |
 | `python web/tests/smoke_test.py` | Serves `web/` on 5173 (reuses a running server for the same root), checks assets + content types, that every relative module import resolves, that no key material exists under `web/`, that no `innerHTML` is used, the workstation layout contract (image workspace owns the flexible track, no `object-fit: cover`, technical corner radii), and that the API's CORS allows the frontend origin. |
 | `python web/tests/integration_check.py` | Live contract check against a running API: the exact call sequence the browser makes (session → upload → 6 filters → kmeans k=5 → classify → histogram → stats → GCH2 round trip → satellite validation and error paths → chat commands → 404/415). The three checks that need real Copernicus credentials report SKIP when the server has no `api/.env` instead of failing. Requires `uvicorn main:app --port 8000`. |
-| `node web/tests/boot_test.mjs --jsdom <dir>` | Boot test: loads `index.html` in jsdom, imports `js/app.js` and drives the UI through DOM events against the live API — 938 assertions covering the shell (menu bar, toolbar, status bar, dock collapse), viewport behaviour (pan, wheel zoom, pixel readout, distance measurement, sync mirroring), upload, the six filters, the Source panel's place/corner modes, the Filters panel's tooltips (item 15: no popovers, one-line titles) and slider sessions (preview without requests, one request per release, replace-not-stack, Escape, arrow-key commits, one slider at a time), the rendered K-Means range table (item 11: live linked ranges, clamped commits, locked ends, the browser-side preview with zero requests/history entries, the boundary bar, "Generate map" = one undo step), the File menu's four image actions (item 12: exact compress tooltip, label-map entry, GCH2 compress → decompress through the menu and the toolbar), histogram windows (item 13: the active-viewport rule with its Active badge, the per-footer Histogram buttons, the smoothing slider, the Channel dropdown's per-image option list, the resize/min/max clamps on all four edges), the composer's item-16 placements/scale bar/derived sizes and its item-17 typing fix (a whole string typed into every text/number field, with focus and value checked after each keystroke), the menus (item 14: the exact File/Edit/View/Processing/Analysis/Help contents, the conditional label-map entry, the New-session confirmation and its cancel path, the Help dialogs with their focus trap, Escape and credits, disabled reasons as tooltips and no inline notes anywhere), chat router commands, session-expiry recovery, and a clean browser console. jsdom is optional (not a dependency of the app); without it the test skips. |
+| `node web/tests/boot_test.mjs --jsdom <dir>` | Boot test: loads `index.html` in jsdom, imports `js/app.js` and drives the UI through DOM events against the live API — 963 assertions covering the shell (menu bar, toolbar, status bar, dock collapse), viewport behaviour (pan, wheel zoom, pixel readout, distance measurement, sync mirroring), upload, the six filters, the Source panel's place/corner modes, the Filters panel's tooltips (item 15: no popovers, one-line titles) and slider sessions (preview without requests, one request per release, replace-not-stack, Escape, arrow-key commits, one slider at a time), the rendered K-Means range table (item 11: live linked ranges, clamped commits, locked ends, the browser-side preview with zero requests/history entries, the boundary bar, "Generate map" = one undo step), the File menu's four image actions (item 12: exact compress tooltip, label-map entry, GCH2 compress → decompress through the menu and the toolbar), histogram windows (item 13: the active-viewport rule with its Active badge, the per-footer Histogram buttons, the smoothing slider, the Channel dropdown's per-image option list, the resize/min/max clamps on all four edges), the composer's item-16 placements/scale bar/derived sizes and its item-17 typing fix (a whole string typed into every text/number field, with focus and value checked after each keystroke), the menus (item 14: the exact File/Edit/View/Processing/Analysis/Help contents, the conditional label-map entry, the New-session confirmation and its cancel path, the Help dialogs with their focus trap, Escape and credits, disabled reasons as tooltips and no inline notes anywhere), the chat (Task 1: router commands, the app state sent with every message, a model-chosen action executed through the Filters panel's slider commit, K-Means with the chosen k, and the plain-text refusal when nothing is loaded), session-expiry recovery, and a clean browser console. jsdom is optional (not a dependency of the app); without it the test skips. |
 
 The boot test runs in both serving modes: the default (page on localhost →
 direct API calls) and hosted (`--page-host 5173-demo.e2b.app` → everything
@@ -764,14 +807,17 @@ are `0–80, 81–117, 118–155, 156–194, 195–255`, matching the desktop re
   `pytest api/tests -q --ignore=api/tests/test_memory.py` or add a local
   `-k "not memory"` filter. (This is a pre-existing backend issue, recorded
   here as requested.)
-* **"FIREWORKS" naming** remains in the assistant code and its log messages
-  (`api/geocluster/assistant.py`, `FIREWORKS_API_KEY`). Left as-is.
+* **"FIREWORKS" naming** was left as-is at the time; **Task 1 renamed the
+  identifiers** to `GROQ_*` (`GROQ_API_KEY`, `GROQ_BASE_URL`, `GROQ_MODEL`,
+  `LEGACY_API_KEY_ENV`) — the old `FIREWORKS_API_KEY` variable is still read as
+  a fallback, and the log line now says "Groq chat completion failed".
 * The satellite **success** path was not exercised in the build sandbox (no
   Copernicus credentials there) — only the 503/404/502 paths. The 260×260 tile
   behaviour is confirmed by the user's local run.
-* The AI **reply** path needs `FIREWORKS_API_KEY`; without it `/ai/chat`
-  answers 503 for questions (commands still work). Verified by unit test with
-  a stubbed client plus the user's local run.
+* The AI **reply** path needs `GROQ_API_KEY` (Task 1; `FIREWORKS_API_KEY` still
+  works as a legacy name); without a key `/ai/chat` answers 503 for questions
+  (commands still work). Verified by unit test with a stubbed client plus the
+  user's local run.
 * **Item 15 — the assistant answers "what is …?" itself, with no LLM call.**
   `api/geocluster/data/app_help.json` ships one entry per tool (id, name,
   aliases, short description; the six filter sentences are exactly the brief's
@@ -788,11 +834,13 @@ are `0–80, 81–117, 118–155, 156–194, 195–255`, matching the desktop re
   quirk. The router matches whole words only, longest alias first, so "what is
   the kernel size" finds the mean filter and "what is invert colors" finds
   Negative.
-* **"FIREWORKS" naming** (second note): the provider settings are the owner's
-  Groq endpoint/model — base URL `https://api.groq.com/openai/v1`, model
-  `openai/gpt-oss-20b`, `max_tokens` 600, `extra_body` `{"reasoning_effort":
-  "low"}` — kept exactly as configured; the `FIREWORKS_*` identifiers are
-  unchanged and only the environment key name stays that way.
+* **"FIREWORKS" naming** (second note, updated for Task 1): the provider is
+  still the owner's Groq endpoint — base URL `https://api.groq.com/openai/v1` —
+  but the model is `llama-3.3-70b-versatile` with JSON output
+  (`response_format={"type":"json_object"}`), `temperature=0.2`,
+  `max_tokens=600` and no `reasoning_effort`, because Task 1 needs a
+  machine-readable reply to carry the action. The identifiers are `GROQ_*` now
+  and the environment key is `GROQ_API_KEY`.
 * No browser automation runs in this environment, so the UI is verified by the
   module tests, the reference/import checks and the live API contract rather
   than by clicking. Serve it locally once to confirm the visuals.

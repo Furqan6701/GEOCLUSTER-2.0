@@ -3987,6 +3987,149 @@ if (!bootFailed) {
   check(!/json/i.test(validationToText("Operation 'brightness' requires a JSON body matching BrightnessRequest.",
     { operation: "brightness" })), "the API's JSON-body message is rewritten without the word JSON");
 
+  // ------------------------- 7e. Task 1: the chat runs the real UI actions ---
+  {
+    const gh = window.geocluster;
+    const chat = gh.chat;
+    check(chat?.handlers != null, "the chat panel exposes its command handlers");
+    const postsFor = (fragment) => requests.filter((entry) =>
+      entry.method === "POST" && entry.url.includes(fragment)).length;
+
+    // --- a model-chosen slider operation goes through the slider's own commit:
+    //     the panel shows the value, the API gets exactly that value and the
+    //     history gets ONE step, exactly like releasing the slider
+    const brightnessRow = document.querySelector('.slider-row[data-slider="brightness"]');
+    const brightnessRange = brightnessRow.querySelector('input[type="range"]');
+    const postsBefore = postsFor("/operations/brightness");
+    const stepsBefore = gh.history.entries.length;
+    await chat.handlers.runOperation("brightness", { value: -77 });
+    const committed = await until(() => postsFor("/operations/brightness") === postsBefore + 1,
+      "the chat's brightness action reaches the API");
+    check(Boolean(committed), "a chat action runs through the slider's commit path");
+    check(brightnessRange.value === "-77" &&
+      brightnessRow.querySelector('input[type="number"]').value === "-77",
+      "the slider shows the value the assistant applied", brightnessRange.value);
+    const brightnessBody = requests.filter((entry) =>
+      entry.method === "POST" && entry.url.includes("/operations/brightness")).pop().body;
+    check(JSON.parse(brightnessBody).value === -77,
+      "the value the assistant chose is what reaches the API", brightnessBody);
+    check(gh.history.entries[gh.history.pointer]?.label === "Brightness -77",
+      "the chat action records the same history label a slider release would",
+      String(gh.history.entries[gh.history.pointer]?.label));
+    check(gh.history.entries.length <= stepsBefore + 1,
+      "one chat action adds at most one history step",
+      `${stepsBefore} → ${gh.history.entries.length}`);
+
+    // --- K-Means with the k the assistant chose: the panel field shows it
+    const kField = [...document.querySelectorAll("#section-clusters .field input")]
+      .find((node) => node.type === "number");
+    await chat.handlers.runKMeans(6);
+    const ran = await until(() => state()?.kmeans?.k === 6, "the chat's K-Means action runs", { timeout: 25000 });
+    check(Boolean(ran), "K-Means from the chat runs with the validated k",
+      String(state()?.kmeans?.k));
+    check(kField.value === "6", "the K field shows the k the assistant used", kField.value);
+    const kmeansBody = requests.filter((entry) =>
+      entry.method === "POST" && entry.url.endsWith("/kmeans")).pop().body;
+    check(JSON.parse(kmeansBody).k === 6, "the k that reached the API is the chosen one", kmeansBody);
+
+    // --- the app state the chat sends with every message (never coordinates)
+    const flags = gh.appState();
+    check(flags.has_image === true && flags.has_clusters === true &&
+      typeof flags.can_undo === "boolean" && typeof flags.can_redo === "boolean",
+      "the chat tells the server what the app holds", JSON.stringify(flags));
+    check(!("location" in flags) && !("latitude" in flags) && !("longitude" in flags),
+      "the app state carries no coordinates", JSON.stringify(flags));
+
+    // --- the whole round trip: message out (with the state), router answer
+    //     back, command executed through the UI
+    const chatInput = document.querySelector(".chat-form textarea");
+    const chatForm = document.querySelector(".chat-form");
+    const chatPosts = requests.filter((entry) => entry.url.endsWith("/ai/chat")).length;
+    chatInput.value = "Histogram";
+    chatForm.dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
+    const posted = await until(() =>
+      requests.filter((entry) => entry.url.endsWith("/ai/chat")).length === chatPosts + 1,
+      "the chat posts the message to /ai/chat");
+    check(Boolean(posted), "the chat sends the message to the API");
+    const chatBody = JSON.parse(requests.filter((entry) =>
+      entry.url.endsWith("/ai/chat")).pop().body);
+    check(chatBody.message === "Histogram" && chatBody.has_image === true,
+      "the message carries the app state", JSON.stringify(chatBody));
+    check(!("location" in chatBody), "the chat request carries no location");
+    const ranRouterCommand = await until(() =>
+      document.querySelector(".chat-log").textContent.includes("Histogram ready."),
+      "the router command is executed through the UI");
+    check(Boolean(ranRouterCommand), "the chat runs router commands through the UI");
+    check(document.querySelector(".chat-log").textContent.includes("Router →"),
+      "router commands are labelled as such in the log");
+
+    // --- a model-style response (the shape /ai/chat returns when the model
+    //     picks an action) is executed through the same UI paths, and the log
+    //     says the action came from the assistant, not from the router
+    {
+      const realFetch = globalThis.fetch;
+      const payload = {
+        intent: "action",
+        reply: "Brightening the image by 50.",
+        action: { action: "run_operation", operation: "brightness", params: { value: 50 } },
+        commands: [{ action: "run_operation", operation: "brightness", params: { value: 50 } }],
+      };
+      globalThis.fetch = async (input, init = {}) => {
+        if (String(input).endsWith("/ai/chat")) {
+          return new Response(JSON.stringify(payload), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return realFetch(input, init);
+      };
+      try {
+        const postsBeforeModel = postsFor("/operations/brightness");
+        chatInput.value = "make it brighter by 50";
+        chatForm.dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
+        const ranModelAction = await until(() => postsFor("/operations/brightness") === postsBeforeModel + 1,
+          "the assistant's action is executed");
+        check(Boolean(ranModelAction), "a model-chosen action runs through the panel");
+        const modelBody = requests.filter((entry) =>
+          entry.method === "POST" && entry.url.includes("/operations/brightness")).pop().body;
+        check(JSON.parse(modelBody).value === 50,
+          "the parameter the assistant chose is what reaches the API", modelBody);
+        check(brightnessRange.value === "50",
+          "the slider shows the assistant's value", brightnessRange.value);
+        check(gh.history.entries[gh.history.pointer]?.label === "Brightness +50",
+          "the assistant's action records a normal history step",
+          String(gh.history.entries[gh.history.pointer]?.label));
+        const logText = document.querySelector(".chat-log").textContent;
+        check(logText.includes("Brightening the image by 50."),
+          "the assistant's reply text is shown in the log");
+        check(logText.includes("Action →") && logText.includes("run brightness ({\"value\":50})"),
+          "the log labels a model action as an action, with its parameters",
+          logText.slice(-160));
+        check(!logText.includes("{\"detail\""), "no raw JSON reaches the chat log");
+      } finally {
+        globalThis.fetch = realFetch;
+      }
+    }
+
+    // --- and with nothing loaded the same handler refuses instead of guessing
+    const saved = { original: state().original, result: state().result };
+    state().original = null;
+    state().result = null;
+    let refusal = null;
+    try {
+      await chat.handlers.fitView();
+    } catch (error) {
+      refusal = String(error?.message ?? error);
+    }
+    state().original = saved.original;
+    state().result = saved.result;
+    check(refusal != null && /no image loaded/.test(refusal),
+      "an image action is refused with a plain-text reason when nothing is loaded",
+      String(refusal));
+    check(!toasts.some((text) => /undefined|\[object Object\]/.test(text)),
+      "no toast prints undefined or a raw object", toasts.slice(-3).join(" | "));
+  }
+
   // ------------------------------------------------- 8. session-expired path
   const doomed = "00000000-0000-0000-0000-000000000000";
   state().sessionId = doomed;

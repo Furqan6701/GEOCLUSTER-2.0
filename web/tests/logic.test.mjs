@@ -153,7 +153,13 @@ import {
   titleFromName,
   toMeters,
 } from "../js/mapstudio.js";
-import { defaultParamsFor, describeCommand, executeCommands } from "../js/commands.js";
+import {
+  defaultParamsFor,
+  describeCommand,
+  executeCommands,
+  paramsForCommand,
+  validateCommandParams,
+} from "../js/commands.js";
 import {
   CHANNEL_MAX,
   CHANNEL_MIN,
@@ -486,10 +492,61 @@ test("describeCommand covers every router action", () => {
   assert.match(describeCommand({}), /unknown action/);
 });
 
+test("describeCommand covers every action the assistant may choose (Task 1)", () => {
+  // the AI's validated parameters are described, not the defaults
+  assert.equal(
+    describeCommand({ action: "run_operation", operation: "meanfilter", params: { window: 5 } }),
+    'run meanfilter ({"window":5})',
+  );
+  assert.equal(describeCommand({ action: "run_kmeans", params: { k: 7 } }), "run K-Means with k=7");
+  assert.equal(describeCommand({ action: "run_kmeans" }), "run K-Means");
+  assert.equal(describeCommand({ action: "classify_clusters" }), "classify the clusters and build the map");
+  assert.equal(describeCommand({ action: "open_map_composer" }), "open the map composer");
+  assert.equal(describeCommand({ action: "export_png" }), "export the current image as PNG");
+  assert.equal(describeCommand({ action: "export_label_map" }), "export the raw label map");
+  assert.equal(describeCommand({ action: "undo" }), "undo the last step");
+  assert.equal(describeCommand({ action: "redo" }), "redo the last step");
+  assert.equal(describeCommand({ action: "clear_result" }), "clear the result");
+  assert.equal(describeCommand({ action: "fit_view" }), "fit the image to the viewport");
+  assert.equal(describeCommand({ action: "actual_size" }), "show the image at actual size");
+  assert.equal(describeCommand({ action: "zoom_in" }), "zoom in");
+  assert.equal(describeCommand({ action: "zoom_out" }), "zoom out");
+});
+
+test("validateCommandParams mirrors the server whitelist exactly", () => {
+  assert.deepEqual(validateCommandParams("brightness", { value: -40 }), { value: -40 });
+  assert.deepEqual(validateCommandParams("threshold", { value: 0 }), { value: 0 });
+  // an even window snaps to the next odd value, like the panel's slider
+  assert.deepEqual(validateCommandParams("meanfilter", { window: 4 }), { window: 5 });
+  assert.deepEqual(validateCommandParams("meanfilter", { window: 31 }), { window: 31 });
+  assert.deepEqual(validateCommandParams("kmeans", { k: 10 }), { k: 10 });
+
+  // out of range, wrong type, missing or unknown parameters are refused
+  assert.equal(validateCommandParams("brightness", { value: 900 }), null);
+  assert.equal(validateCommandParams("brightness", { value: 12.5 }), null);
+  assert.equal(validateCommandParams("brightness", { value: "40" }), null);
+  assert.equal(validateCommandParams("threshold", { value: -1 }), null);
+  assert.equal(validateCommandParams("meanfilter", { window: 2 }), null);
+  assert.equal(validateCommandParams("meanfilter", { window: 99 }), null);
+  assert.equal(validateCommandParams("kmeans", { k: 1 }), null);
+  assert.equal(validateCommandParams("kmeans", { k: 5, latitude: 33.6 }), null);
+  assert.equal(validateCommandParams("brightness", {}), null);
+  assert.equal(validateCommandParams("brightness", null), null);
+  assert.equal(validateCommandParams("negative", { value: 1 }), null, "no parameters at all");
+});
+
+test("paramsForCommand prefers the command's values and falls back to defaults", () => {
+  assert.deepEqual(paramsForCommand("meanfilter", { window: 7 }), { window: 7 });
+  assert.deepEqual(paramsForCommand("meanfilter", null), { window: 3 });
+  assert.deepEqual(paramsForCommand("brightness", { value: 999 }), { value: 20 }, "invalid → default");
+  assert.equal(paramsForCommand("negative", { value: 1 }), null);
+});
+
 test("executeCommands dispatches every action exactly once", async () => {
   const calls = [];
   const handlers = {
     runOperation: async (operation, params) => calls.push(["run", operation, params]),
+    runKMeans: async (k) => calls.push(["kmeans", k]),
     openHistogram: async () => calls.push(["histogram"]),
     openCompress: async () => calls.push(["compress"]),
     openDistance: async () => calls.push(["distance"]),
@@ -509,7 +566,7 @@ test("executeCommands dispatches every action exactly once", async () => {
 
   assert.deepEqual(calls, [
     ["satellite", "F-8"],
-    ["run", "kmeans", { k: 5, max_iter: 100 }],
+    ["kmeans", undefined],
     ["run", "negative", null],
     ["histogram"],
     ["compress"],
@@ -517,8 +574,66 @@ test("executeCommands dispatches every action exactly once", async () => {
   ]);
   assert.equal(notes.length, 6);
   assert.match(notes[0], /Satellite fetch requested for F-8/);
-  assert.match(notes[1], /Ran kmeans with \{"k":5,"max_iter":100\}/);
+  assert.match(notes[1], /Ran K-Means/);
   assert.match(notes[2], /Ran negative/);
+});
+
+test("executeCommands runs every action the assistant may choose (Task 1)", async () => {
+  const calls = [];
+  const note = (name) => async (...args) => calls.push([name, ...args]);
+  const handlers = {
+    runOperation: async (operation, params) => calls.push(["run", operation, params]),
+    runKMeans: async (k) => calls.push(["kmeans", k]),
+    classifyClusters: note("classify"),
+    openMapComposer: note("composer"),
+    exportPng: note("export-png"),
+    exportLabelMap: note("export-labelmap"),
+    undo: note("undo"),
+    redo: note("redo"),
+    clearResult: note("clear"),
+    fitView: note("fit"),
+    actualSize: note("actual"),
+    zoomIn: note("zoom-in"),
+    zoomOut: note("zoom-out"),
+  };
+  const notes = await executeCommands(
+    [
+      { action: "run_operation", operation: "brightness", params: { value: -40 } },
+      { action: "run_kmeans", params: { k: 7 } },
+      { action: "classify_clusters" },
+      { action: "open_map_composer" },
+      { action: "export_png" },
+      { action: "export_label_map" },
+      { action: "undo" },
+      { action: "redo" },
+      { action: "clear_result" },
+      { action: "fit_view" },
+      { action: "actual_size" },
+      { action: "zoom_in" },
+      { action: "zoom_out" },
+    ],
+    handlers,
+  );
+
+  assert.deepEqual(calls, [
+    ["run", "brightness", { value: -40 }],
+    ["kmeans", 7],
+    ["classify"],
+    ["composer"],
+    ["export-png"],
+    ["export-labelmap"],
+    ["undo"],
+    ["redo"],
+    ["clear"],
+    ["fit"],
+    ["actual"],
+    ["zoom-in"],
+    ["zoom-out"],
+  ]);
+  assert.equal(notes.length, 13);
+  assert.match(notes[0], /Ran brightness with \{"value":-40\}/);
+  assert.match(notes[1], /Ran K-Means with k=7/);
+  assert.match(notes[2], /Classification applied/);
 });
 
 test("executeCommands never throws: failures and unknown actions become notes", async () => {
@@ -549,6 +664,43 @@ test("chat posts the message", async () => {
   assert.equal(calls[0].url, `${DEFAULT_API_BASE}/ai/chat`);
   assert.deepEqual(parseBody(calls[0].init), { message: "what is NDVI?" });
   assert.equal(response.reply, "hi");
+});
+
+test("chat forwards the app state and never a coordinate (Task 1)", async () => {
+  const { calls, fetchImpl } = recordingFetch({ intent: "action", reply: "ok", action: { action: "fit_view" }, commands: [] });
+  const api = new ApiClient({ fetchImpl });
+  await api.chat("fit the image", {
+    has_image: true,
+    has_clusters: false,
+    has_history: true,
+    can_undo: true,
+    can_redo: false,
+  });
+  const body = parseBody(calls[0].init);
+  assert.deepEqual(body, {
+    message: "fit the image",
+    has_image: true,
+    has_clusters: false,
+    has_history: true,
+    can_undo: true,
+    can_redo: false,
+  });
+  assert.ok(!("latitude" in body) && !("longitude" in body) && !("location" in body));
+});
+
+test("executeCommands runs a model-chosen action through the same handlers", async () => {
+  const calls = [];
+  const response = {
+    intent: "action",
+    reply: "Smoothing it.",
+    action: { action: "run_operation", operation: "meanfilter", params: { window: 5 } },
+    commands: [{ action: "run_operation", operation: "meanfilter", params: { window: 5 } }],
+  };
+  const notes = await executeCommands(response.commands, {
+    runOperation: async (operation, params) => calls.push([operation, params]),
+  });
+  assert.deepEqual(calls, [["meanfilter", { window: 5 }]]);
+  assert.deepEqual(notes, ['Ran meanfilter with {"window":5}.']);
 });
 
 // ------------------------------------------- STEP 1: operation params + 422s

@@ -632,6 +632,15 @@ export function createOperationsPanel(ctx) {
       describeOperation,
       revealParams,
       endAdjustment,
+      /**
+       * The slider's own commit path (Task 1): releasing a slider, pressing
+       * Enter in its number field and the assistant's validated value all end
+       * up here, so the panel shows the applied value and the undo history gets
+       * exactly one step per adjustment.
+       */
+      commit,
+      /** Whether an operation is driven by a slider (and therefore by commit). */
+      isSliderOperation: (operation) => Boolean(SLIDER_SPECS[operation]),
       adjustment: () => (adjustment ? { ...adjustment } : null),
       committed: () => ({ ...committedValue }),
       controls: () => controls,

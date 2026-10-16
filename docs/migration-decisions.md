@@ -142,12 +142,14 @@ deserializers are not ported.
   full error is logged server-side. A raw `"Error code: 404 …"` string can
   never appear in a 200 response.
 * SDK version: the desktop pins `openai==2.45.0`, the API pins
-  `openai==3.22.1`. The desktop call shape is smoke-checked against the
-  installed 3.22.1 SDK with a mocked HTTP transport: `temperature`,
-  `max_tokens` and `extra_body` are accepted and `extra_body
-  (reasoning_effort)` is forwarded verbatim in the request body, and the
-  response parses identically. **No API differences were found** for this
-  call shape; the test lives in `api/tests/test_assistant.py`.
+  `openai==3.22.1`. The call shape is smoke-checked against the installed
+  3.22.1 SDK with a mocked HTTP transport; the test lives in
+  `api/tests/test_assistant.py`. Task 1 changed the provider settings from the
+  desktop's Fireworks values to Groq: `llama-3.3-70b-versatile` with
+  `response_format={"type":"json_object"}`, `temperature=0.2`,
+  `max_tokens=600` and no `reasoning_effort` (llama-3.3 does not accept one).
+  The key env var is `GROQ_API_KEY`; `FIREWORKS_API_KEY` is still read as a
+  fallback so an existing `api/.env` keeps working.
 * Router quirks are preserved, including the desktop's ordering quirk that
   `"show histogram"` routes to `fetch_satellite` (satellite verbs are matched
   before the operation map). Both the quirk and every operation/intent the
@@ -157,7 +159,24 @@ deserializers are not ported.
   `{"action":"open_histogram"}`, `compress` → `{"action":"open_compress"}`,
   `distance` → `{"action":"open_distance"}`. Executable operations produce
   `{"action":"run_operation","operation":…}`; satellite requests produce
-  `{"action":"fetch_satellite","location":…}`.
+  `{"action":"fetch_satellite","location":…}`. K-Means produces
+  `{"action":"run_kmeans"}` (the desktop ran it through the Clusters panel;
+  `POST /operations/kmeans` does not exist).
+
+### What the desktop had that the API lost — and what Task 1 restores
+
+| Capability | Desktop | API before Task 1 | Now |
+| --- | --- | --- | --- |
+| Router | `command_router.CommandRouter`, rule-based | same rules, ported as-is | unchanged (still model-free) |
+| Executing an operation from chat | `ui.py::handle_ai_prompt` called `execute_operation(op)` directly | returned `commands`; the browser executed them with fixed defaults | the model may choose one action + its parameters; the browser executes it through the matching UI control |
+| Parameterising a command | dialog input | none — `OPERATION_DEFAULTS` only | validated parameters from the model (or the documented defaults) |
+| Model's role | chat only (`ai_assistant.ask`) | chat only (`{"reply"}`) | JSON `{"reply", "action"}`; the action is whitelisted and range-checked server-side |
+| Satellite | `fetch_sector_image(location)` from the router | `fetch_satellite` command from the router | unchanged; **no** satellite action is offered to the model, and no coordinates ever travel |
+
+The desktop never had a JSON action protocol — the capability that was lost in
+the port is the chat *applying* things, not a protocol. Task 1 restores it with
+a protocol that is safe by construction: a fixed whitelist, server-side range
+validation, app-state awareness, and execution through the app's own controls.
 
 ## 8. API-era additions (not present in the desktop)
 

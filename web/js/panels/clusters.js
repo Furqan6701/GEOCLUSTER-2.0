@@ -111,12 +111,32 @@ export function createClustersPanel(ctx) {
   let previewToken = 0;
 
   // --------------------------------------------------------------- K-Means
-  async function runKMeans() {
+  /**
+   * Run K-Means on the working image.
+   *
+   * `requestedK` is optional (Task 1): the assistant's validated k is written
+   * into the panel's own field first, so the number on screen is the number
+   * that ran — exactly as if the user had typed it and clicked the button. A
+   * click event (the button passes one) is not a number and is ignored.
+   */
+  async function runKMeans(requestedK = null) {
     const active = activeImage(state);
-    if (!active) return toast("Load or fetch an image first.", "warn");
+    if (!active) {
+      toast("Load or fetch an image first.", "warn");
+      return { ok: false, reason: "no-image" };
+    }
+    if (typeof requestedK === "number" && Number.isFinite(requestedK)) {
+      const wanted = Math.round(requestedK);
+      if (wanted < KMEANS_MIN_K || wanted > KMEANS_MAX_K) {
+        toast(`K must be between ${KMEANS_MIN_K} and ${KMEANS_MAX_K}.`, "warn");
+        return { ok: false, reason: "invalid-k" };
+      }
+      kInput.value = String(wanted);
+    }
     const k = Math.round(Number(kInput.value));
     if (!Number.isFinite(k) || k < KMEANS_MIN_K || k > KMEANS_MAX_K) {
-      return toast(`K must be between ${KMEANS_MIN_K} and ${KMEANS_MAX_K}.`, "warn");
+      toast(`K must be between ${KMEANS_MIN_K} and ${KMEANS_MAX_K}.`, "warn");
+      return { ok: false, reason: "invalid-k" };
     }
 
     setBusy(true);
@@ -133,8 +153,10 @@ export function createClustersPanel(ctx) {
       showClusteredImage();
       toast(`K-Means finished in ${result.iterations} iteration(s)${result.converged ? " (converged)" : ""}.`, "ok");
       bus.emit("status", { message: `K-Means k=${result.k} · ${result.iterations} iterations${result.converged ? " · converged" : ""}` });
+      return { ok: true, result };
     } catch (error) {
       report(error, "K-Means failed");
+      return { ok: false, reason: "failed", error };
     } finally {
       setBusy(false);
     }
@@ -589,8 +611,14 @@ export function createClustersPanel(ctx) {
    */
   async function classify() {
     const active = state.kmeans ? { id: state.kmeans.sourceImageId, info: state.kmeans.sourceInfo } : activeImage(state);
-    if (!active) return toast("Load or fetch an image first.", "warn");
-    if (!entries.length) return toast("Run K-Means first so there are ranges to classify.", "warn");
+    if (!active) {
+      toast("Load or fetch an image first.", "warn");
+      return { ok: false, reason: "no-image" };
+    }
+    if (!entries.length) {
+      toast("Run K-Means first so there are ranges to classify.", "warn");
+      return { ok: false, reason: "no-clusters" };
+    }
 
     // any half-typed field is clamped to its valid value first, exactly as
     // blurring the field would do — the model is always contiguous
@@ -601,7 +629,8 @@ export function createClustersPanel(ctx) {
     for (const row of rows) {
       const [min, max] = [row.minInput.value, row.maxInput.value].map((value) => Math.round(Number(value)));
       if (!Number.isFinite(min) || !Number.isFinite(max) || min < CHANNEL_MIN || max > CHANNEL_MAX || min > max) {
-        return toast(`Cluster ${row.cluster}: stay between ${CHANNEL_MIN} and ${CHANNEL_MAX}.`, "warn");
+        toast(`Cluster ${row.cluster}: stay between ${CHANNEL_MIN} and ${CHANNEL_MAX}.`, "warn");
+        return { ok: false, reason: "invalid-ranges" };
       }
       ranges[row.cluster] = [min, max];
       assignments[row.cluster] = { name: row.nameInput.value.trim() || `Cluster ${row.cluster}`, color: hexToRgb(row.colorInput.value) };
@@ -624,8 +653,10 @@ export function createClustersPanel(ctx) {
       });
       toast("Classification applied.", "ok");
       bus.emit("status", { message: `Classified ${Object.keys(ranges).length} clusters` });
+      return { ok: true, result };
     } catch (error) {
       report(error, "Classification failed");
+      return { ok: false, reason: "failed", error };
     } finally {
       setBusy(false);
     }

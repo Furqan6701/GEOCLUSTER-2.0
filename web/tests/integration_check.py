@@ -245,9 +245,11 @@ def main() -> int:
             check(body.get("width") == 260 and body.get("height") == 260, "satellite tile is 260×260", f"{body.get('width')}×{body.get('height')}")
 
     # ------------------------------------------------------------------- chat
+    # router-shaped messages never call the model, so they answer even without
+    # a key; each returns commands the client executes through a UI control
     for message, expected_intent, expected_action in [
         ("Show me F-8 imagery", "fetch_satellite", "fetch_satellite"),
-        ("Run k-means on this", "process_image", "run_operation"),
+        ("Run k-means on this", "process_image", "run_kmeans"),
         ("Measure the distance", "process_image", "open_distance"),
         ("Show histogram", "fetch_satellite", "fetch_satellite"),
     ]:
@@ -257,6 +259,13 @@ def main() -> int:
             check(reply.get("intent") == expected_intent, f'chat "{message}" intent', str(reply.get("intent")))
             commands = reply.get("commands", [])
             check(bool(commands) and commands[0].get("action") == expected_action, f'chat "{message}" command', str(commands))
+            check(reply.get("action") is None, f'chat "{message}" carries no model action', str(reply.get("action")))
+            check(all("location" not in c or c["action"] == "fetch_satellite" for c in commands),
+                  f'chat "{message}" commands carry no coordinates', str(commands))
+
+    # the app state travels with the message and an impossible action is refused
+    status, _, reply = request("POST", "/ai/chat", body={"message": "What is NDVI?", "has_image": False})
+    check(status in (200, 502, 503), "context flags are accepted", str(status))
 
     status, _, reply = request("POST", "/ai/chat", body={"message": "What is NDVI?"})
     if status == 200:
