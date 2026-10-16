@@ -17,6 +17,7 @@ What the scans did find, and why each is safe:
 | --- | --- | --- |
 | `client_id` / `client_secret` as **variable names** | `api/geocluster/satellite.py`, `desktop/frontend/sentinel_client.py` (all revisions) | These are locals that `os.getenv(...)` fills; no literal value accompanies them. |
 | `api_key="test-key"` | `api/tests/test_assistant.py` | A test double for a mocked client; never used against a real provider. |
+| `gsk_0123456789abcdefghijklmnop`, `gsk_task2-secret-value-…`, `gsk_plantation_do_not_leak`, `sk-abcdefghijklmnopqrstuvwx`, `ghp_0123456789abcdefghijklmnopqrst` | `api/tests/test_security.py` (Task 2) and `api/log_safety.py`'s tests | Deliberate **fake sentinels**: the suite plants them in the environment, then asserts that no endpoint, no error body and no log line contains them. They are key-*shaped* on purpose - that is what the redaction and the "never return a secret" tests need to match. They are not credentials and cannot be one (they all end in `0123456789`, `do_not_leak` or `test`). The scan below therefore reports exactly these five and nothing else. |
 | `MAX_UPLOAD_MB`, `SESSION_MAX_IMAGES`, … | `api/settings.py`, `.env.example` | Non-secret policy numbers that are also returned by `/health`. |
 | `GROQ_API_KEY` / `FIREWORKS_API_KEY` / `COPERNICUS_CLIENT_*` | docs, READMEs, `.env.example`, source | Names only; every value is empty in the tracked template. |
 
@@ -25,7 +26,9 @@ What the scans did find, and why each is safe:
 ```bash
 cd /path/to/GEOCLUSTER-2.0
 
-# 1) key-shaped literals in every blob that has ever existed (text + binaries)
+# 1) key-shaped literals in every blob that has ever existed (text + binaries).
+#    Expected output today: the five fake sentinels of api/tests/test_security.py
+#    and nothing else. Anything not on that list is a real finding.
 for obj in $(git rev-list --all --objects | awk '{print $1}' | sort -u); do
   [ "$(git cat-file -t "$obj" 2>/dev/null)" = blob ] || continue
   git cat-file blob "$obj" | strings -a |
@@ -49,6 +52,10 @@ The test suite keeps this property honest: `api/tests/test_security.py` plants
 secret values in the environment and asserts that no endpoint returns them, and
 `web/tests/smoke_test.py` scans everything under `web/` for key material and
 environment access from browser code.
+
+Re-run result at the branch tip (`a1e555e`, 65 commits, 518 blobs): scan 1
+prints only the five sentinels above, scan 3 prints nothing, and the only
+env-shaped path ever added is `api/.env.example`. Nothing to rotate.
 
 ## What is protected now
 
