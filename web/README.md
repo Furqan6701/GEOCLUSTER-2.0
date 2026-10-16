@@ -132,6 +132,22 @@ cd web
 python serve.py                  # http://localhost:5173
 ```
 
+### One process instead (no second terminal)
+
+`api` also serves this folder, which is the deployment shape
+(`docs/deployment-render.md`):
+
+```bash
+# from the repository root
+SERVE_WEB=true python -m uvicorn main:app --app-dir api --host 0.0.0.0 --port 8000
+```
+
+Then the whole app is <http://localhost:8000/>: the page comes from `web/`, the
+API answers at `/api` *and* at the root (so the frontend's local default needs no
+configuration), and everything private — `/.env`, `/.git/config`, `/api/main.py`,
+`/tests/…` — answers 404. `web/serve.py` stays the fastest loop when you are only
+editing the frontend.
+
 Open <http://localhost:5173>: the right side of the title bar shows the API
 address, the session and whether the AI/satellite credentials are configured
 on the server; the status bar at the bottom shows the image dimensions, the

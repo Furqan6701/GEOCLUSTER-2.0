@@ -35,12 +35,42 @@ uvicorn main:app --reload --port 8000
 * Interactive docs: <http://localhost:8000/docs>
 * Health: <http://localhost:8000/health>
 
+### One process for the frontend *and* the API
+
+`SERVE_WEB=true` mounts the `web/` folder at `/` and answers the API under
+`/api` as well (the root routes stay, so the frontend's local default keeps
+working):
+
+```powershell
+# from the repository root
+$env:SERVE_WEB="true"
+python -m uvicorn main:app --app-dir api --host 0.0.0.0 --port 8000
+```
+
+```bash
+# same thing on macOS / Linux
+SERVE_WEB=true python -m uvicorn main:app --app-dir api --host 0.0.0.0 --port 8000
+```
+
+Then <http://localhost:8000/> is the app, `/api/docs` is the interactive
+reference (404 once `ENABLE_DOCS=false`), and `/.env`,
+`/.git/config`, `/api/main.py`, `/tests/…` answer 404 by rule.
+`API_ROOT_ALIASES=false` publishes `/api` only; `TRUST_FORWARDED_HEADERS=true`
+is for running behind a proxy. Everything about deployment — Render settings,
+environment variables, memory on the free tier, requirements and what happens
+when the filesystem resets — is in
+[`docs/deployment-render.md`](../docs/deployment-render.md).
+
+`api/` stays the import root (`import schemas`), so start the server with
+`cd api` or with `--app-dir api`; `uvicorn api.main:app` is not supported (see
+the deployment document for why).
+
 ## Windows PowerShell — tests
 
 ```powershell
 cd api
 .\.venv\Scripts\Activate.ps1
-pytest -q                                # 143 tests, all offline (network mocked)
+pytest -q                                # ~340 tests, all offline (network mocked)
 python tests/bench_4mp.py                # optional timing report
 ```
 

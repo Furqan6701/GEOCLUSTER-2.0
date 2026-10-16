@@ -575,7 +575,11 @@ would go to the visitor's own computer. `resolveApiBase` therefore picks:
 | anything else — hosted preview, LAN, reverse proxy | `/api` | `serve.py` proxies `/api/*` to the backend (same-origin, no CORS) |
 
 `serve.py` has `--api <base>` (proxy target, default `http://127.0.0.1:8000`)
-and `--no-proxy`. Verified live: `/api/health`, `POST /api/sessions`, API error
+and `--no-proxy`. In the **unified** server (`SERVE_WEB=true`, see
+`docs/deployment-render.md`) there is no proxy at all: `web/` is mounted at `/`,
+the API answers under `/api` *and* at the root, so a local page's
+`http://localhost:8000` default and a hosted page's same-origin `/api` both hit
+the same process. Verified live: `/api/health`, `POST /api/sessions`, API error
 bodies (the 404 `detail` survives), the 405 for POSTs to static paths, a 502
 with a friendly `detail` when the backend is down while static files keep
 serving, and byte-identical PNG/GCH downloads through the proxy. The boot test
