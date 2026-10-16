@@ -43,7 +43,7 @@ SATELLITE_CACHE_DIR: str = os.getenv("SATELLITE_CACHE_DIR") or str(
 AI_RATE_LIMIT_PER_MINUTE: int = _env_int("AI_RATE_LIMIT_PER_MINUTE", 10)
 SATELLITE_RATE_LIMIT_PER_MINUTE: int = _env_int("SATELLITE_RATE_LIMIT_PER_MINUTE", 5)
 
-# CORS (localhost-only by default)
+# CORS (localhost-only by default; a deployment sets its own single origin)
 DEFAULT_ORIGINS = (
     "http://localhost:3000,"
     "http://localhost:5173,"
@@ -55,5 +55,39 @@ DEFAULT_ORIGINS = (
 
 
 def allowed_origins() -> list[str]:
+    """The CORS allow-list, read from `ALLOWED_ORIGINS` on every call.
+
+    Trailing slashes are stripped (browsers never send them) and duplicates are
+    removed, so a typo cannot silently drop an origin. An empty value falls back
+    to the localhost default rather than allowing everything.
+    """
     raw = os.getenv("ALLOWED_ORIGINS", DEFAULT_ORIGINS)
-    return [origin.strip() for origin in raw.split(",") if origin.strip()]
+    origins: list[str] = []
+    for origin in raw.split(","):
+        candidate = origin.strip().rstrip("/")
+        if candidate and candidate not in origins:
+            origins.append(candidate)
+    return origins or [origin.strip() for origin in DEFAULT_ORIGINS.split(",")]
+
+
+def allow_credentials() -> bool:
+    """Whether the CORS middleware may send `Access-Control-Allow-Credentials`.
+
+    Only true for an explicit allow-list: with `*` the browser would refuse the
+    combination anyway, and echoing a wildcard origin back with credentials is a
+    classic misconfiguration.
+    """
+    return "*" not in allowed_origins()
+
+
+def docs_enabled() -> bool:
+    """Whether FastAPI's `/docs`, `/redoc` and `/openapi.json` are served.
+
+    Enabled locally (they are the API's own reference) and switched off in a
+    deployment with `ENABLE_DOCS=false`, so a public URL never publishes the
+    full route/parameter map.
+    """
+    raw = os.getenv("ENABLE_DOCS")
+    if raw is None or raw.strip() == "":
+        return True
+    return raw.strip().lower() not in {"0", "false", "no", "off"}

@@ -151,17 +151,25 @@ def check_references() -> None:
 
 def check_no_secrets() -> None:
     patterns = {
-        "Fireworks-style key": re.compile(r"(?:sk|gsk)_[A-Za-z0-9]{10,}"),
+        "provider key literal": re.compile(r"(?:sk|gsk|fw)_[A-Za-z0-9]{10,}"),
+        "assigned GROQ_API_KEY": re.compile(r"GROQ_API_KEY\s*=\s*['\"]?[A-Za-z0-9]"),
         "assigned FIREWORKS_API_KEY": re.compile(r"FIREWORKS_API_KEY\s*=\s*['\"]?[A-Za-z0-9]"),
         "assigned COPERNICUS secret": re.compile(r"COPERNICUS_CLIENT_(?:ID|SECRET)\s*=\s*['\"]?[A-Za-z0-9]"),
         "bearer token literal": re.compile(r"Bearer\s+[A-Za-z0-9._-]{12,}"),
     }
+    # browser code can never read an environment variable at all, so this one
+    # only applies to the frontend's own files (the dev server reads WEB_PORT)
+    browser_only = {"environment read": re.compile(r"process\.env|os\.environ|os\.getenv")}
     hits = []
     for path in WEB.rglob("*"):
         if not path.is_file() or path.suffix.lower() not in {".js", ".mjs", ".html", ".css", ".py", ".json", ".md"}:
             continue
         text = path.read_text(encoding="utf-8", errors="ignore")
-        for label, pattern in patterns.items():
+        checks = dict(patterns)
+        shipped = "tests" not in path.relative_to(WEB).parts
+        if shipped and path.suffix.lower() in {".js", ".mjs", ".html"}:
+            checks.update(browser_only)
+        for label, pattern in checks.items():
             if pattern.search(text):
                 hits.append(f"{path.relative_to(WEB)}: {label}")
     check(not hits, "no key material anywhere under web/", "; ".join(hits))
@@ -709,6 +717,33 @@ def check_proxy(port: int = PORT) -> None:
         check("text/html" in content_type, "static files are unaffected by the proxy", content_type)
     except Exception as error:  # noqa: BLE001
         check(False, "static files are unaffected by the proxy", str(error))
+
+    # the web server publishes the frontend and nothing else: no dot-files, no
+    # parent segments, no api/ sources and no cached satellite data
+    secrets = ("GROQ_API_KEY", "COPERNICUS", "Traceback")
+    for path in ("/.env", "/.git/config", "/%2e%2e/api/.env", "/../api/.env",
+                 "/.env.example", "/js/../api/main.py", "/%2eenv"):
+        try:
+            status, _, body = fetch(f"{origin}{path}", headers={"Origin": origin})
+            check(status in (400, 403, 404), f"serve.py refuses {path}", f"{status} {body[:60]!r}")
+        except urllib.error.HTTPError as error:
+            body = error.read().decode("utf-8", "replace")
+            check(error.code in (400, 403, 404), f"serve.py refuses {path}", str(error.code))
+        except Exception as error:  # noqa: BLE001
+            check(False, f"serve.py refuses {path}", str(error))
+            continue
+        check(not any(token in body for token in secrets), f"{path} carries no secret material")
+
+    try:
+        status, _, body = fetch(f"{origin}/js/app.js", headers={"Origin": origin})
+        text = body.decode("utf-8", "replace") if isinstance(body, bytes) else str(body)
+        check(status == 200, "the frontend's own sources are still served", str(status))
+        # the only mention of a key name is the chip's tooltip; a *value* never
+        # appears (the assigned-key patterns above catch that too)
+        check("gsk_" not in text and "Bearer " not in text,
+              "the frontend never embeds a key value", text[:80])
+    except Exception as error:  # noqa: BLE001
+        check(False, "the frontend's own sources are still served", str(error))
 
 
 

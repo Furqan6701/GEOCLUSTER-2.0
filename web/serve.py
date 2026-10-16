@@ -70,14 +70,38 @@ class FrontendHandler(http.server.SimpleHTTPRequestHandler):
     def is_proxy_path(self) -> bool:
         return self.proxy_enabled and (self.path == API_PREFIX or self.path.startswith(API_PREFIX + "/"))
 
+    def is_blocked_path(self) -> bool:
+        """Dot-files and parent segments are never served, whatever they name.
+
+        The handler already cannot escape this folder, but `/.env`, `/.git/…`
+        and `/%2e%2e/api/.env` should answer 404 on their own terms instead of
+        relying on the file being absent - a misconfigured proxy or a stray
+        symlink would otherwise publish them.
+        """
+        from urllib.parse import unquote
+
+        raw = self.path.split("?", 1)[0].split("#", 1)[0]
+        try:
+            decoded = unquote(raw)
+        except Exception:  # noqa: BLE001 - a path we cannot decode is not served
+            return True
+        for segment in decoded.replace("\\", "/").split("/"):
+            if segment == ".." or (segment.startswith(".") and segment not in {"", "."}):
+                return True
+        return False
+
     def do_GET(self):  # noqa: N802
         if self.is_proxy_path():
             return self.proxy("GET")
+        if self.is_blocked_path():
+            return self.fail(404, "Not found.")
         return super().do_GET()
 
     def do_HEAD(self):  # noqa: N802
         if self.is_proxy_path():
             return self.proxy("HEAD")
+        if self.is_blocked_path():
+            return self.fail(404, "Not found.")
         return super().do_HEAD()
 
     def do_POST(self):  # noqa: N802

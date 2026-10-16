@@ -11,10 +11,14 @@ images live behind a per-session LRU cap, and the processing package
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+import log_safety
 import schemas
 import settings
 from geocluster.errors import (
@@ -41,23 +45,52 @@ from routers import sessions as sessions_router
 from sessions import SessionStore
 
 
+logger = logging.getLogger("geocluster.api")
+
+#: What a client sees when something unexpected breaks. The real exception -
+#: traceback, file paths, upstream provider text - is logged server-side only.
+GENERIC_SERVER_ERROR = "The server hit an unexpected error. Try again."
+
+
 def create_app() -> FastAPI:
+    # a key-shaped string must never reach a log handler, whatever raised it
+    log_safety.install_secret_redaction()
+    # the interactive reference is a *local* convenience: a deployment sets
+    # ENABLE_DOCS=false and gets 404 for /docs, /redoc and /openapi.json
+    docs = settings.docs_enabled()
     app = FastAPI(
         title="GeoCluster API",
         version="1.0.0",
         description=(
             "Web backend for GeoCluster 2.0: image operations, K-Means clustering, "
             "classification, GCH2 Huffman, satellite fetch and the AI assistant. "
-            "Local-only; CORS is restricted to ALLOWED_ORIGINS."
+            "Secrets live in environment variables only; CORS is restricted to "
+            "ALLOWED_ORIGINS."
         ),
+        docs_url="/docs" if docs else None,
+        redoc_url="/redoc" if docs else None,
+        openapi_url="/openapi.json" if docs else None,
     )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.allowed_origins(),
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        # a wildcard origin and credentials must never travel together
+        allow_credentials=settings.allow_credentials(),
+        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+        allow_headers=["Content-Type", "Accept"],
     )
+
+    @app.middleware("http")
+    async def security_headers(request: Request, call_next):
+        """Two headers that cost nothing and cannot break the UI.
+
+        Deliberately *not* X-Frame-Options/CSP: the app is also embedded in a
+        preview iframe, and a frame-deny header would blank it there.
+        """
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        return response
 
     app.state.sessions = SessionStore(
         ttl_minutes=settings.SESSION_TTL_MINUTES,
@@ -86,6 +119,32 @@ def create_app() -> FastAPI:
         SatelliteUnavailable: 503,
         SatelliteError: 502,
     }
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_error_handler(_request: Request, exc: RequestValidationError) -> JSONResponse:
+        """Field-level 422s without the submitted value or a pydantic URL.
+
+        The frontend flattens `{loc, msg}` into "field must be …"; echoing the
+        raw input back (which may be anything a user pasted, including a
+        credential) or an external documentation URL adds nothing but risk.
+        """
+        # only these three keys are copied, so the submitted value (`input`)
+        # and the external pydantic URL never reach a client
+        detail = [
+            {
+                "type": str(error.get("type", "value_error")),
+                "loc": [str(part) for part in error.get("loc", ())],
+                "msg": str(error.get("msg", "Invalid value.")),
+            }
+            for error in exc.errors()
+        ]
+        return JSONResponse(status_code=422, content={"detail": detail})
+
+    @app.exception_handler(Exception)
+    async def unhandled_error_handler(request: Request, exc: Exception) -> JSONResponse:
+        """Anything unforeseen: a generic sentence out, the detail to the log."""
+        logger.exception("Unhandled error on %s %s", request.method, request.url.path)
+        return JSONResponse(status_code=500, content={"detail": GENERIC_SERVER_ERROR})
 
     @app.exception_handler(GeoclusterError)
     async def geocluster_error_handler(_request: Request, exc: GeoclusterError) -> JSONResponse:

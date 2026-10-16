@@ -581,6 +581,13 @@ with a friendly `detail` when the backend is down while static files keep
 serving, and byte-identical PNG/GCH downloads through the proxy. The boot test
 runs in both modes (see the table below).
 
+**Only the `web/` folder is published (Task 2).** `serve.py` answers **404** for
+any request whose path contains a dot-segment or a `..` segment — `/.env`,
+`/.git/config`, `/.env.example`, `/%2e%2e/api/.env`, `/js/../api/main.py` — so a
+stray file or symlink dropped into `web/` is not reachable by URL, and the API
+in `api/` can never be read as if it were static content. The smoke test
+asserts each of those paths plus that the responses carry no key material.
+
 ## Sessions (server memory, 60-minute TTL)
 
 Sessions live in the API process: a server restart or the TTL (60 minutes)

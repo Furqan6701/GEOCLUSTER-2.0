@@ -75,8 +75,51 @@ Non-secret settings (defaults in brackets):
 | `SESSION_MAX_IMAGES` | `6` | Per-session images; least-recently-used is evicted |
 | `GLOBAL_MEMORY_MB` | `512` | Global in-memory image budget |
 | `SATELLITE_CACHE_DIR` | `%TEMP%/geocluster-satellite-cache` (OS temp dir) | Satellite PNG cache |
-| `AI_RATE_LIMIT_PER_MINUTE` | `10` | `/ai/chat` limit per client |
-| `SATELLITE_RATE_LIMIT_PER_MINUTE` | `5` | `/satellite/fetch` limit per client |
+| `AI_RATE_LIMIT_PER_MINUTE` | `10` | `/ai/chat` limit per client IP |
+| `SATELLITE_RATE_LIMIT_PER_MINUTE` | `5` | `/satellite/fetch` limit per client IP |
+| `ENABLE_DOCS` | `true` | `/docs`, `/redoc` and `/openapi.json`; set `false` in production |
+
+## Security
+
+* **Secrets live in environment variables only** (`api/.env` locally, the host's
+  env vars in a deployment). They are read server-side, never written into a
+  response, a log line or the frontend. `api/.env` is gitignored; the tracked
+  `api/.env.example` holds placeholder names with empty values. The audit of the
+  repository and its full git history (`docs/security-audit.md`) found no key,
+  token or credential ever committed.
+* **Logs are redacted.** `api/log_safety.py` wraps the log formatters (uvicorn's
+  included) so any key-shaped string — `gsk_…`, `sk-…`, a `Bearer` header, an
+  `api_key=` / `client_secret=` value — becomes `***` in the log line *and* in a
+  logged traceback, while the error and the traceback stay readable.
+* **No endpoint returns a secret, a file path or a stack trace.** Domain errors
+  are curated sentences; validation errors are `{type, loc, msg}` without the
+  submitted value; anything unforeseen becomes
+  `{"detail": "The server hit an unexpected error. Try again."}` with the
+  traceback logged server-side.
+* **CORS is an allow-list** (`ALLOWED_ORIGINS`, localhost by default). A
+  deployment sets its one public origin; a wildcard never travels with
+  credentials.
+* **`ENABLE_DOCS=false` closes the interactive reference** (404 for `/docs`,
+  `/redoc`, `/openapi.json`) so a public deployment does not publish its route
+  map.
+* **Rate limits per client IP**: `/ai/chat` 10/min and `/satellite/fetch`
+  5/min by default (429 with `Retry-After`) - the two endpoints that spend
+  provider quota or fetch from a third party.
+* **Input size limits**: a chat message is capped at 2000 characters and
+  rejected with 422; uploads (images and `.gch` files) are capped while
+  streaming (`MAX_UPLOAD_MB`, 15) and rejected with 413; uploaded images are
+  additionally capped by pixels (`MAX_IMAGE_MEGAPIXELS`, 4) and decoded from
+  their bytes, never trusted by extension. Session ids and image ids are
+  `secrets.token_urlsafe` values, and each session keeps at most
+  `SESSION_MAX_IMAGES` images inside a global `GLOBAL_MEMORY_MB` budget.
+* **Nothing on disk is served**: the API has no static-file route; the only
+  bytes it returns are images/`.gch` payloads built in memory. The satellite
+  cache lives under the OS temp directory and is disposable.
+* **The frontend folder publishes only the frontend.** `web/serve.py` (and the
+  unified server, see `docs/deployment-render.md`) answers 404 for dot-files and
+  parent segments - `/.env`, `/.git/config`, `/%2e%2e/api/.env` - so a stray
+  file or symlink inside `web/` is not on the internet by accident. The smoke
+  test asserts this.
 
 ### Ground-scale metadata (`ImageOut`)
 

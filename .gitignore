@@ -1,9 +1,13 @@
 # Freebuff agent metadata — never commit this
 .freebuff/
 
-# Environment variables — keep real credentials out of git
+# Environment variables — keep real credentials out of git.
+# .env.example files are templates with placeholder names only; they ARE tracked.
 .env
 .env.*
+!.env.example
+*.env.local
+.envrc
 
 # Python
 __pycache__/
@@ -19,6 +23,13 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Key/certificate material can never be committed by accident
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
 
 # Node (only used by the optional jsdom boot test — the web frontend has no
 # build step and no runtime dependencies)
