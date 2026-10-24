@@ -14,7 +14,7 @@
 export const PROJECT_NAME = "GeoCluster 2.0";
 export const APP_VERSION = "2.0";
 
-export const DEFAULT_API_BASE = "http://localhost:8000";
+export const DEFAULT_API_BASE = "http://localhost:8010";
 export const API_BASE_STORAGE_KEY = "geocluster.apiBase";
 export const DEFAULT_PORT = 5173;
 /**
