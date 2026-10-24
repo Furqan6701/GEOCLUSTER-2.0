@@ -7,10 +7,11 @@ pointer behaviour, and layout at the two widths the user asked about.
 
 ## 0. Setup
 
-1. Start the API: `uvicorn main:app --host 0.0.0.0 --port 8000` (from `api/`,
-   with `.env` in place).
-2. Serve the frontend **from `web/`**: `python web/serve.py --port 5173`.
-   The API's CORS allow-list only accepts `http://localhost:5173`.
+1. Start the app (one command, from the repository root, with `.env` in place):
+   `SERVE_WEB=true python -m uvicorn main:app --app-dir api --host 127.0.0.1 --port 8010`.
+2. Open `http://localhost:8010/` (the page and the API share the origin). The
+   separate `python web/serve.py --port 5173` loop is only for frontend-only work;
+   its CORS allow-list accepts `http://localhost:5173`.
 3. Open `http://localhost:5173` in Chrome. Press `F12` → **Console**; keep it
    visible for the whole run. There must be **0 errors** at every step.
 4. Have `api/tests/fixtures/sample.jpg` handy (or any JPEG/PNG).

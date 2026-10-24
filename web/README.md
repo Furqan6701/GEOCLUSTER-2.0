@@ -119,17 +119,10 @@ rather than a dashboard:
 ## Run it (Windows PowerShell)
 
 ```powershell
-# 1) API (separate terminal)
-cd api
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-Copy-Item .env.example .env      # paste GROQ_API_KEY / COPERNICUS_* if you have them
-uvicorn main:app --reload --port 8000
-
-# 2) Frontend (this terminal)
-cd web
-python serve.py                  # http://localhost:5173
+# from the repository root (venv in api/.venv, .env copied from api/.env.example)
+$env:SERVE_WEB="true"
+python -m uvicorn main:app --app-dir api --host 127.0.0.1 --port 8010
+# then open http://localhost:8010/
 ```
 
 ### One process instead (no second terminal)
@@ -139,10 +132,10 @@ python serve.py                  # http://localhost:5173
 
 ```bash
 # from the repository root
-SERVE_WEB=true python -m uvicorn main:app --app-dir api --host 0.0.0.0 --port 8000
+SERVE_WEB=true python -m uvicorn main:app --app-dir api --host 127.0.0.1 --port 8010
 ```
 
-Then the whole app is <http://localhost:8000/>: the page comes from `web/`, the
+Then the whole app is <http://localhost:8010/>: the page comes from `web/`, the
 API answers at `/api` *and* at the root (so the frontend's local default needs no
 configuration), and everything private — `/.env`, `/.git/config`, `/api/main.py`,
 `/tests/…` — answers 404. `web/serve.py` stays the fastest loop when you are only
@@ -158,8 +151,8 @@ channel layout, zoom, cursor position, pixel value and the active viewport.
 ```bash
 cd api && python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt && cp .env.example .env
-uvicorn main:app --reload --port 8000     # terminal 1
-cd web && python3 serve.py                # terminal 2 -> http://localhost:5173
+cd .. && SERVE_WEB=true python -m uvicorn main:app --app-dir api --host 127.0.0.1 --port 8010
+# then open http://localhost:8010/
 ```
 
 ## Where the API request goes
@@ -168,7 +161,7 @@ The frontend picks its API base in this order:
 
 1. `?api=…` on the page URL,
 2. `localStorage.geocluster.apiBase`,
-3. the page's hostname — **localhost** pages call `http://localhost:8000`
+3. the page's hostname — **localhost** pages call `http://localhost:8010`
    directly (the normal dev flow, allowed by the API's CORS list); any other
    host uses the same-origin **`/api`** path.
 
@@ -178,7 +171,7 @@ on the LAN, a reverse proxy). Browsers must never be told to call `localhost`
 for a service that runs on the server — that would mean *their* machine.
 
 ```powershell
-python serve.py                                   # /api/* → http://127.0.0.1:8000
+python serve.py                                   # /api/* → http://127.0.0.1:8010
 python serve.py --api http://127.0.0.1:9000       # proxy another backend
 python serve.py --no-proxy                        # static files only
 ```
@@ -187,7 +180,7 @@ python serve.py --no-proxy                        # static files only
 
 | Setting | How |
 | --- | --- |
-| API address | `http://localhost:5173/?api=http://127.0.0.1:8000`, `?api=/api` (force the proxy), or `localStorage.geocluster.apiBase` |
+| API address | `http://localhost:5173/?api=http://127.0.0.1:8010`, `?api=/api` (force the proxy), or `localStorage.geocluster.apiBase` |
 | API port / credentials | `api/.env` (see `api/.env.example`) |
 | CORS | only needed for the direct flow: serve the page from an origin listed in the API's `ALLOWED_ORIGINS` (defaults include localhost:5173). Hosted pages go through `/api`, which is same-origin — no CORS involved |
 | Frontend port | `python serve.py --port 5174` — remember to add that origin to `ALLOWED_ORIGINS` |
@@ -204,7 +197,7 @@ node --test "web/tests/*.test.mjs"
 # static checks: assets, imports, no keys, no innerHTML, CORS (API optional)
 python web/tests/smoke_test.py
 
-# live contract check (API must be running on :8000)
+# live contract check (the app must be running on :8010)
 python web/tests/integration_check.py
 
 # boot test: runs the real UI in jsdom against the live API (needs jsdom)
@@ -243,7 +236,7 @@ node web/tests/boot_test.mjs --jsdom /tmp/geocluster-jsdom/node_modules `
 
 | Symptom | Fix |
 | --- | --- |
-| Banner "Can't reach the API…" | start the API (`uvicorn main:app --port 8000`) and confirm the base URL |
+| Banner "Can't reach the API…" | start the API (`uvicorn main:app --port 8010`) and confirm the base URL |
 | Banner mentions `/api` and the server could not reach the API | the proxy target is down — start the API, or point `serve.py --api http://host:port` at the right one |
 | Browser console shows a CORS error | the page's origin is missing from `ALLOWED_ORIGINS` (or you opened `file://`) — add the origin and restart the API |
 | "Your session expired…" toast | expected after an API restart or 60 minutes idle — the image must be uploaded again |

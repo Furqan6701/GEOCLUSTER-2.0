@@ -24,35 +24,25 @@ pip install -r requirements-dev.txt      # tests (pytest, httpx)
 Copy-Item .env.example .env              # then edit .env and paste your keys
 ```
 
-## Windows PowerShell — run
+## Run locally — one command
+
+From the repository root, with the venv active (`api/.venv`):
 
 ```powershell
-cd api
-.\.venv\Scripts\Activate.ps1
-uvicorn main:app --reload --port 8000
-```
-
-* Interactive docs: <http://localhost:8000/docs>
-* Health: <http://localhost:8000/health>
-
-### One process for the frontend *and* the API
-
-`SERVE_WEB=true` mounts the `web/` folder at `/` and answers the API under
-`/api` as well (the root routes stay, so the frontend's local default keeps
-working):
-
-```powershell
-# from the repository root
 $env:SERVE_WEB="true"
-python -m uvicorn main:app --app-dir api --host 0.0.0.0 --port 8000
+python -m uvicorn main:app --app-dir api --host 127.0.0.1 --port 8010
 ```
 
 ```bash
-# same thing on macOS / Linux
-SERVE_WEB=true python -m uvicorn main:app --app-dir api --host 0.0.0.0 --port 8000
+SERVE_WEB=true python -m uvicorn main:app --app-dir api --host 127.0.0.1 --port 8010
 ```
 
-Then <http://localhost:8000/> is the app, `/api/docs` is the interactive
+Then open **<http://localhost:8010/>**. The same process serves the frontend
+from `web/` and the API under `/api` (the root routes also answer, so the
+frontend's local default keeps working). Interactive docs:
+<http://localhost:8010/api/docs>; health: <http://localhost:8010/api/health>.
+
+The app is at <http://localhost:8010/>, `/api/docs` is the interactive
 reference (404 once `ENABLE_DOCS=false`), and `/.env`,
 `/.git/config`, `/api/main.py`, `/tests/…` answer 404 by rule.
 `API_ROOT_ALIASES=false` publishes `/api` only; `TRUST_FORWARDED_HEADERS=true`
@@ -81,8 +71,9 @@ cd api
 python3.11 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt -r requirements-dev.txt
 cp .env.example .env                     # add your keys
-uvicorn main:app --reload --port 8000
 pytest -q
+cd .. && SERVE_WEB=true python -m uvicorn main:app --app-dir api --host 127.0.0.1 --port 8010
+# then open http://localhost:8010/
 ```
 
 ## Environment variables (`api/.env`)
@@ -98,7 +89,7 @@ Non-secret settings (defaults in brackets):
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `ALLOWED_ORIGINS` | localhost:3000/5173/8000 (http and 127.0.0.1) | CORS allow-list |
+| `ALLOWED_ORIGINS` | localhost:3000/5173/8010 (http and 127.0.0.1) | CORS allow-list |
 | `MAX_IMAGE_MEGAPIXELS` | `4` | Larger uploads are downscaled with `cv2.INTER_AREA` |
 | `MAX_UPLOAD_MB` | `15` | Upload size cap (413 above it) |
 | `SESSION_TTL_MINUTES` | `60` | Sliding session lifetime |
@@ -181,20 +172,20 @@ never overwritten — each operation returns a **new** image id.
 
 | Method & path | Body / query | Success | Example |
 | --- | --- | --- | --- |
-| `POST /sessions` | – | 201 `{session_id, ttl_minutes, max_images}` | `curl -X POST http://localhost:8000/sessions` |
-| `POST /sessions/{sid}/images` | multipart `file=` | 201 `ImageOut` | `curl -F "file=@../desktop/images/sample.jpg" http://localhost:8000/sessions/$SID/images` |
-| `GET /sessions/{sid}/images/{iid}` | `?format=png\|jpeg` | 200 image bytes | `curl -o out.png "http://localhost:8000/sessions/$SID/images/$IID?format=png"` |
-| `POST /sessions/{sid}/images/{iid}/operations/{op}` | op ∈ grayscale, negative, laplacian (no body); brightness `{"value":40}`; threshold `{"value":128}`; meanfilter `{"window":3}` | 201 `ImageOut` | `curl -X POST -H "Content-Type: application/json" -d "{\"value\":40}" http://localhost:8000/sessions/$SID/images/$IID/operations/brightness` |
-| `POST /sessions/{sid}/images/{iid}/kmeans` | `{"k":5,"max_iter":30}` (`maxIter` also accepted) | 200 labels/display ids, ranges, centroids, counts | `curl -X POST -H "Content-Type: application/json" -d "{\"k\":5}" http://localhost:8000/sessions/$SID/images/$IID/kmeans` |
+| `POST /sessions` | – | 201 `{session_id, ttl_minutes, max_images}` | `curl -X POST http://localhost:8010/sessions` |
+| `POST /sessions/{sid}/images` | multipart `file=` | 201 `ImageOut` | `curl -F "file=@../desktop/images/sample.jpg" http://localhost:8010/sessions/$SID/images` |
+| `GET /sessions/{sid}/images/{iid}` | `?format=png\|jpeg` | 200 image bytes | `curl -o out.png "http://localhost:8010/sessions/$SID/images/$IID?format=png"` |
+| `POST /sessions/{sid}/images/{iid}/operations/{op}` | op ∈ grayscale, negative, laplacian (no body); brightness `{"value":40}`; threshold `{"value":128}`; meanfilter `{"window":3}` | 201 `ImageOut` | `curl -X POST -H "Content-Type: application/json" -d "{\"value\":40}" http://localhost:8010/sessions/$SID/images/$IID/operations/brightness` |
+| `POST /sessions/{sid}/images/{iid}/kmeans` | `{"k":5,"max_iter":30}` (`maxIter` also accepted) | 200 labels/display ids, ranges, centroids, counts | `curl -X POST -H "Content-Type: application/json" -d "{\"k\":5}" http://localhost:8010/sessions/$SID/images/$IID/kmeans` |
 | `POST /sessions/{sid}/images/{iid}/classify` | `{"ranges":{"0":[0,50],...},"assignments":{"0":{"name":"Shadows","color":[0,0,0]},...}}` | 200 `{image_id, legend[]}` | see the e2e script below |
-| `GET /sessions/{sid}/images/{iid}/histogram` | – | 200 `{bins:[256 ints]}` | `curl http://localhost:8000/sessions/$SID/images/$IID/histogram` |
-| `GET /sessions/{sid}/images/{iid}/stats` | – | 200 `{min,max,mean,std}` | `curl http://localhost:8000/sessions/$SID/images/$IID/stats` |
-| `POST /huffman/compress` | multipart `file=` | 200 `.gch` (GCH2) bytes | `curl -F "file=@../desktop/images/sample.jpg" -o out.gch http://localhost:8000/huffman/compress` |
-| `POST /huffman/decompress` | multipart `file=*.gch` | 200 PNG bytes | `curl -F "file=@out.gch" -o back.png http://localhost:8000/huffman/decompress` |
-| `POST /satellite/fetch` | `{"session_id":…, "location":"F-8", "start":"2026-08-01", "end":"2026-10-02"}` | 200 `ImageOut` | `curl -X POST -H "Content-Type: application/json" -d "{\"session_id\":\"$SID\",\"location\":\"F-8\"}" http://localhost:8000/satellite/fetch` |
-| `GET /locations` | – | 200 `{sectors, aliases}` | `curl http://localhost:8000/locations` |
-| `POST /ai/chat` | `{"message":"show me F-8"}` | 200 `{intent, reply, commands[]}` | `curl -X POST -H "Content-Type: application/json" -d "{\"message\":\"histogram\"}" http://localhost:8000/ai/chat` |
-| `GET /health` | – | 200 `{status, ai_configured, satellite_configured, max_image_megapixels}` | `curl http://localhost:8000/health` |
+| `GET /sessions/{sid}/images/{iid}/histogram` | – | 200 `{bins:[256 ints]}` | `curl http://localhost:8010/sessions/$SID/images/$IID/histogram` |
+| `GET /sessions/{sid}/images/{iid}/stats` | – | 200 `{min,max,mean,std}` | `curl http://localhost:8010/sessions/$SID/images/$IID/stats` |
+| `POST /huffman/compress` | multipart `file=` | 200 `.gch` (GCH2) bytes | `curl -F "file=@../desktop/images/sample.jpg" -o out.gch http://localhost:8010/huffman/compress` |
+| `POST /huffman/decompress` | multipart `file=*.gch` | 200 PNG bytes | `curl -F "file=@out.gch" -o back.png http://localhost:8010/huffman/decompress` |
+| `POST /satellite/fetch` | `{"session_id":…, "location":"F-8", "start":"2026-08-01", "end":"2026-10-02"}` | 200 `ImageOut` | `curl -X POST -H "Content-Type: application/json" -d "{\"session_id\":\"$SID\",\"location\":\"F-8\"}" http://localhost:8010/satellite/fetch` |
+| `GET /locations` | – | 200 `{sectors, aliases}` | `curl http://localhost:8010/locations` |
+| `POST /ai/chat` | `{"message":"show me F-8"}` | 200 `{intent, reply, commands[]}` | `curl -X POST -H "Content-Type: application/json" -d "{\"message\":\"histogram\"}" http://localhost:8010/ai/chat` |
+| `GET /health` | – | 200 `{status, ai_configured, satellite_configured, max_image_megapixels}` | `curl http://localhost:8010/health` |
 
 Status codes: 201 image created · 400 bad Huffman payload · 404 unknown
 session/image/operation/location · 413 upload too large · 415 unsupported or
@@ -204,7 +195,7 @@ failure (AI or Copernicus) · 503 not configured · 507 memory budget exhausted.
 ## Quick end-to-end example
 
 ```powershell
-$base = "http://localhost:8000"
+$base = "http://localhost:8010"
 $sid  = (Invoke-RestMethod -Method Post "$base/sessions").session_id
 $img  = Invoke-RestMethod -Method Post "$base/sessions/$sid/images" -Form @{ file = Get-Item ..\desktop\images\sample.jpg }
 $gray = Invoke-RestMethod -Method Post "$base/sessions/$sid/images/$($img.image_id)/operations/grayscale"

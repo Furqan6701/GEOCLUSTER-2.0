@@ -1,10 +1,10 @@
 /**
  * Frontend configuration.
  *
- * The API runs at http://localhost:8000 by default (see api/README.md).
+ * The API runs at http://localhost:8010 by default (see api/README.md).
  * Override the address without editing code:
- *   - query string:  http://localhost:5173/?api=http://127.0.0.1:8000
- *   - localStorage:  localStorage.setItem("geocluster.apiBase", "http://127.0.0.1:8000")
+ *   - query string:  http://localhost:5173/?api=http://127.0.0.1:8010
+ *   - localStorage:  localStorage.setItem("geocluster.apiBase", "http://127.0.0.1:8010")
  *
  * The page MUST be served over http(s) (not file://) so the browser sends a
  * real Origin header that the API's ALLOWED_ORIGINS accepts.
@@ -45,7 +45,7 @@ export function isValidHttpUrl(value) {
  *   1. ?api= query string (an http(s) URL or a same-origin path like /api),
  *   2. localStorage["geocluster.apiBase"],
  *   3. the page's hostname — a local dev machine talks to
- *      http://localhost:8000 directly, anything else (hosted preview, LAN,
+ *      http://localhost:8010 directly, anything else (hosted preview, LAN,
  *      reverse proxy) uses the same-origin /api path that serve.py forwards
  *      to the backend. Browsers must never call localhost for a service that
  *      runs on the server, not on the user's machine.

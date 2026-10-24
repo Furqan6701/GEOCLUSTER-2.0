@@ -2,10 +2,10 @@
 """Live contract check between the frontend's calls and the running API.
 
 Runs the exact request sequence the browser makes (see web/js/api.js) against
-http://localhost:8000 and validates the shapes the UI relies on. The API must
+http://localhost:8010 and validates the shapes the UI relies on. The API must
 be running:
 
-    cd api && uvicorn main:app --port 8000
+    SERVE_WEB=true python -m uvicorn main:app --app-dir api --host 127.0.0.1 --port 8010
     python web/tests/integration_check.py
 
 Exit code 0 = every check passed.
@@ -19,7 +19,7 @@ import sys
 import urllib.error
 import urllib.request
 
-API = "http://localhost:8000"
+API = "http://localhost:8010"
 REPO = pathlib.Path(__file__).resolve().parents[2]
 SAMPLE = REPO / "desktop" / "images" / "sample.jpg"
 

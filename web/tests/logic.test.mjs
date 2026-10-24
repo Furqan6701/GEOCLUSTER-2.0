@@ -210,16 +210,16 @@ const parseBody = (init) => (init.body ? JSON.parse(init.body) : undefined);
 // ------------------------------------------------------------------- config
 
 test("normalizeBase trims whitespace and trailing slashes", () => {
-  assert.equal(normalizeBase("  http://localhost:8000///  "), "http://localhost:8000");
+  assert.equal(normalizeBase("  http://localhost:8010///  "), "http://localhost:8010");
   assert.equal(normalizeBase(null), "");
   assert.equal(normalizeBase(undefined), "");
 });
 
 test("isValidHttpUrl accepts http(s) only", () => {
-  assert.equal(isValidHttpUrl("http://localhost:8000"), true);
+  assert.equal(isValidHttpUrl("http://localhost:8010"), true);
   assert.equal(isValidHttpUrl("https://api.example.com"), true);
   assert.equal(isValidHttpUrl("ftp://localhost"), false);
-  assert.equal(isValidHttpUrl("localhost:8000"), false);
+  assert.equal(isValidHttpUrl("localhost:8010"), false);
   assert.equal(isValidHttpUrl(""), false);
 });
 
@@ -250,7 +250,7 @@ test("resolveApiBase uses the same-origin /api path off the dev machine", () => 
 });
 
 test("isUsableApiBase accepts http(s) URLs and same-origin paths only", () => {
-  assert.equal(isUsableApiBase("http://localhost:8000"), true);
+  assert.equal(isUsableApiBase("http://localhost:8010"), true);
   assert.equal(isUsableApiBase("https://api.example.com/"), true);
   assert.equal(isUsableApiBase("/api"), true);
   assert.equal(isUsableApiBase("//evil.example/api"), false);
@@ -293,7 +293,7 @@ test("ApiError flags network and session failures", () => {
 });
 
 test("humanizeError maps statuses to friendly text", () => {
-  assert.match(humanizeError(new ApiError(0, "network"), { apiBase: "http://localhost:8000" }), /Can't reach the API at http:\/\/localhost:8000/);
+  assert.match(humanizeError(new ApiError(0, "network"), { apiBase: "http://localhost:8010" }), /Can't reach the API at http:\/\/localhost:8010/);
   assert.match(humanizeError(new ApiError(413, null)), /too large/i);
   assert.match(humanizeError(new ApiError(415, null)), /isn't a supported image/i);
   assert.match(humanizeError(new ApiError(429, null)), /Too many requests/i);
@@ -318,9 +318,9 @@ test("humanizeError turns a 422 detail list into one sentence and never shows JS
 
 test("ApiClient builds URLs from a normalized base", async () => {
   const { calls, fetchImpl } = recordingFetch({ ok: true });
-  const api = new ApiClient({ base: "http://localhost:8000/", fetchImpl });
+  const api = new ApiClient({ base: "http://localhost:8010/", fetchImpl });
   await api.health();
-  assert.equal(calls[0].url, "http://localhost:8000/health");
+  assert.equal(calls[0].url, "http://localhost:8010/health");
   assert.equal(calls[0].init.method, "GET");
   assert.equal(calls[0].init.body, undefined);
 });

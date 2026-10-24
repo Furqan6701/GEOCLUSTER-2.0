@@ -47,10 +47,10 @@ SATELLITE_RATE_LIMIT_PER_MINUTE: int = _env_int("SATELLITE_RATE_LIMIT_PER_MINUTE
 DEFAULT_ORIGINS = (
     "http://localhost:3000,"
     "http://localhost:5173,"
-    "http://localhost:8000,"
+    "http://localhost:8010,"
     "http://127.0.0.1:3000,"
     "http://127.0.0.1:5173,"
-    "http://127.0.0.1:8000"
+    "http://127.0.0.1:8010"
 )
 
 
@@ -103,8 +103,8 @@ def api_root_aliases() -> bool:
     """Whether the API routes are *also* registered at the root next to `/api`.
 
     Only meaningful with `SERVE_WEB=true`. Default true so that a page opened on
-    `http://localhost:8000/` works with the frontend's local default API base
-    (`http://localhost:8000`), unchanged. A deployment sets
+    `http://localhost:8010/` works with the frontend's local default API base
+    (`http://localhost:8010`), unchanged. A deployment sets
     `API_ROOT_ALIASES=false` so exactly one API URL is published; the hosted
     frontend uses same-origin `/api` anyway.
     """

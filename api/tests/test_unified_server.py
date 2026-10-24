@@ -91,7 +91,7 @@ def test_the_api_answers_under_the_prefix(unified):
 
 
 def test_the_root_alias_keeps_the_local_default_working(unified):
-    """The page may call http://localhost:8000 directly (the frontend default)."""
+    """The page may call http://localhost:8010 directly (the frontend default)."""
     assert unified.get("/health").status_code == 200
     assert unified.post("/ai/chat", json={"message": "Show me F-8 imagery"}).status_code in (200, 502, 503)
 
@@ -239,3 +239,39 @@ def test_a_router_command_runs_without_a_model_key(unified):
     assert body["action"] is None
     assert body["commands"][0]["action"] == "run_kmeans"
     assert "location" not in json.dumps(body["commands"])
+
+
+# ------------------------------------------------- local development port 8010
+
+def test_default_origins_follow_the_local_port(monkeypatch):
+    """The documented local page (localhost:8010) is allowed by default, the old port is not."""
+    import settings
+
+    monkeypatch.delenv("ALLOWED_ORIGINS", raising=False)
+    origins = settings.allowed_origins()
+    assert "http://localhost:8010" in origins
+    assert "http://127.0.0.1:8010" in origins
+    assert "http://localhost:5173" in origins
+    assert not any(origin.endswith(":8000") for origin in origins)
+
+
+def test_the_local_page_gets_cors_from_the_default_list(monkeypatch):
+    """A preflight from the local page origin is answered with that origin, no env needed."""
+    monkeypatch.delenv("ALLOWED_ORIGINS", raising=False)
+    with TestClient(create_app()) as client:
+        response = client.options(
+            "/health",
+            headers={
+                "Origin": "http://localhost:8010",
+                "Access-Control-Request-Method": "GET",
+            },
+        )
+    assert response.headers.get("access-control-allow-origin") == "http://localhost:8010"
+
+
+def test_the_frontend_default_and_the_dev_proxy_agree_on_the_port():
+    """config.js (the browser default) and serve.py (the dev proxy) both target 8010."""
+    config_js = (WEB_ROOT / "js" / "config.js").read_text(encoding="utf-8")
+    serve_py = (WEB_ROOT / "serve.py").read_text(encoding="utf-8")
+    assert 'DEFAULT_API_BASE = "http://localhost:8010"' in config_js
+    assert 'DEFAULT_API = "http://127.0.0.1:8010"' in serve_py

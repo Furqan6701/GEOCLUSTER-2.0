@@ -13,7 +13,7 @@ no CORS configuration to get wrong in production.
 | anything private (`/.env`, `/.git/config`, `/%2e%2e/api/.env`, `web/tests/…`) | 404, always |
 
 The root aliases exist so that the frontend's **local** default
-(`http://localhost:8000`, see `web/js/config.js`) keeps working unchanged. A
+(`http://localhost:8010`, see `web/js/config.js`) keeps working unchanged. A
 deployment sets `API_ROOT_ALIASES=false`: the hosted page is same-origin and
 calls `/api`, so exactly one API URL is published.
 
@@ -28,8 +28,8 @@ loop expect.
 supported ways to start the server are:
 
 ```bash
-cd api && python -m uvicorn main:app --port 8000                # API only (development, tests)
-python -m uvicorn main:app --app-dir api --port 8000            # repo root, same app
+cd api && python -m uvicorn main:app --port 8010                # API only (development, tests)
+python -m uvicorn main:app --app-dir api --port 8010            # repo root, same app
 ```
 
 `api/` stays the import root, so `import schemas`, `import settings`,
@@ -50,21 +50,18 @@ python -m venv .venv && . .venv/bin/activate
 pip install -r api/requirements.txt
 
 # every time, from the repository root
-SERVE_WEB=true python -m uvicorn main:app --app-dir api --host 0.0.0.0 --port 8000
+SERVE_WEB=true python -m uvicorn main:app --app-dir api --host 127.0.0.1 --port 8010
 ```
 
-* App: <http://localhost:8000/> — the same origin also answers `/api/health`.
-* Windows PowerShell:
-  `$env:SERVE_WEB="true"; python -m uvicorn main:app --app-dir api --port 8000`
-* API only (tests, integration scripts):
-  `cd api && python -m uvicorn main:app --host 0.0.0.0 --port 8000`
+* App: <http://localhost:8010/> — the same origin also answers `/api/health`.
+* Windows PowerShell (same command): `$env:SERVE_WEB="true"` then the `python -m uvicorn …` line above.
 * Frontend dev loop (unchanged, for iterating on `web/` alone):
   `python web/serve.py` on <http://localhost:5173>, which proxies `/api/*` to
-  127.0.0.1:8000. `web/README.md` documents the `--api`, `--no-proxy` and
+  127.0.0.1:8010. `web/README.md` documents the `--api`, `--no-proxy` and
   `?api=`/localStorage overrides.
 
 `web/js/config.js` resolves the API base in this order: `?api=` → localStorage →
-page host (`localhost`/`127.0.0.1` → `http://localhost:8000`; anything else →
+page host (`localhost`/`127.0.0.1` → `http://localhost:8010`; anything else →
 same-origin `/api`). Browsers must never call localhost for a service that runs
 on the server, and a hosted page never does.
 

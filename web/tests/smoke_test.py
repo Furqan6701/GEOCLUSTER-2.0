@@ -10,7 +10,7 @@ Checks, without needing a browser or the API:
      web/js/** resolves (broken imports would blank the page);
   3. no key material is present anywhere under web/;
   4. no `.innerHTML` usage (chat replies must render through textContent);
-  5. if the API is running on :8000, its CORS headers allow the frontend origin
+  5. if the API is running on :8010, its CORS headers allow the frontend origin
      — reported as SKIP when the API is down.
 
 Usage:
@@ -33,7 +33,7 @@ import urllib.request
 
 WEB = pathlib.Path(__file__).resolve().parents[1]
 PORT = 5173
-API = "http://localhost:8000"
+API = "http://localhost:8010"
 ORIGIN = f"http://localhost:{PORT}"
 
 FAILURES: list[str] = []
@@ -652,8 +652,8 @@ def check_workstation_layout() -> None:
 
 
 def check_cors() -> None:
-    if not port_open("localhost", 8000):
-        skip("API CORS for the frontend origin", "API not running on :8000")
+    if not port_open("localhost", 8010):
+        skip("API CORS for the frontend origin", "API not running on :8010")
         return
     try:
         request = urllib.request.Request(f"{API}/health", headers={"Origin": ORIGIN})

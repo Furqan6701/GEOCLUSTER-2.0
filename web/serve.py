@@ -8,7 +8,7 @@ Usage (from the repository root or from web/):
     python web/serve.py --host 0.0.0.0  # allow other devices on your LAN
 
 It serves this folder and forwards **/api/*** to the backend (default
-http://127.0.0.1:8000), so the page works when the browser is not on the same
+http://127.0.0.1:8010), so the page works when the browser is not on the same
 machine as the API — a hosted preview, another device on the LAN, or a reverse
 proxy. Browsers must never be told to call localhost for a service that runs on
 the server: from a page served at http://localhost:5173 the frontend talks to
@@ -33,7 +33,7 @@ import urllib.request
 
 WEB_ROOT = pathlib.Path(__file__).resolve().parent
 DEFAULT_PORT = 5173
-DEFAULT_API = "http://127.0.0.1:8000"
+DEFAULT_API = "http://127.0.0.1:8010"
 API_PREFIX = "/api"
 PROXY_TIMEOUT = 300  # seconds; satellite fetches can be slow
 
@@ -142,7 +142,7 @@ class FrontendHandler(http.server.SimpleHTTPRequestHandler):
             payload = json.dumps(
                 {
                     "detail": f"The web server could not reach the API at {self.api_base} ({error}). "
-                    "Start it with: uvicorn main:app --port 8000 (from api/)."
+                    "Start it with: uvicorn main:app --port 8010 (from api/)."
                 }
             ).encode("utf-8")
             self.send_response(502)

@@ -8,7 +8,7 @@
  * session-expired recovery path.
  *
  * Requirements:
- *   - a running API at http://localhost:8000 (uvicorn main:app --port 8000)
+ *   - a running API at http://localhost:8010 (uvicorn main:app --port 8010)
  *   - jsdom, which is NOT a dependency of the app (it has none). Install it
  *     outside the repo, e.g.:
  *         npm install --prefix /tmp/geocluster-jsdom jsdom
@@ -19,7 +19,7 @@
  *                                     [--page-host <hostname>] [--web <origin>]
  *
  * --page-host simulates where the page is served from. With a local host the
- * frontend calls the API directly (http://localhost:8000, the documented dev
+ * frontend calls the API directly (http://localhost:8010, the documented dev
  * flow). With any other host — a hosted preview — it must fall back to the
  * same-origin /api path, which this harness resolves against --web (serve.py).
  */
@@ -39,7 +39,7 @@ function arg(name, fallback = null) {
   return index >= 0 && argv[index + 1] ? argv[index + 1] : fallback;
 }
 
-const API_BASE = arg("api", process.env.GEOCLUSTER_API ?? "http://localhost:8000");
+const API_BASE = arg("api", process.env.GEOCLUSTER_API ?? "http://localhost:8010");
 const PAGE_HOST = arg("page-host", process.env.GEOCLUSTER_PAGE_HOST ?? "localhost");
 const WEB_ORIGIN = arg("web", process.env.GEOCLUSTER_WEB ?? "http://127.0.0.1:5173");
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "0.0.0.0", ""]);
@@ -131,7 +131,7 @@ try {
   apiUp = false;
 }
 if (!apiUp) {
-  console.log(`SKIP  boot test — no API at ${API_BASE} (start: uvicorn main:app --port 8000)`);
+  console.log(`SKIP  boot test — no API at ${API_BASE} (start: uvicorn main:app --port 8010)`);
   console.log("RESULT: skipped (0 failures)");
   process.exit(0);
 }
@@ -2214,7 +2214,7 @@ if (!bootFailed) {
       entry.method === "POST" && entry.url.includes("/operations/brightness")).pop();
     check(latestPost.url.includes(`/images/${baseId}/operations/brightness`),
       "the replacement is measured against the pre-first-touch image",
-      latestPost.url.replace("http://localhost:8000", ""));
+      latestPost.url.replace("http://localhost:8010", ""));
     check(JSON.parse(latestPost.body).value === 12, "the replacement sends the new value", latestPost.body);
     check(history.entries[history.pointer].label === "Brightness +12",
       "the single step carries the latest value", history.entries[history.pointer].label);
@@ -3412,7 +3412,7 @@ if (!bootFailed) {
         .map((node) => `${node.textContent} ${node.title}`);
       check(!menuText.some((text) => /localhost|127\.0\.0\.1|:\d{4}\b|API |uvicorn|jsdom|dev server/i.test(text)),
         "no menu entry mentions a port, a hostname or developer wording",
-        menuText.filter((text) => /localhost|:8000|API /i.test(text)).join(" || "));
+        menuText.filter((text) => /localhost|:8010|API /i.test(text)).join(" || "));
     }
 
     // ---- Help → Keyboard shortcuts: a two-column list in a real dialog

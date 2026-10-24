@@ -544,8 +544,8 @@ inline notes anywhere in `#menubar`, and every disabled entry has a title).
   the values in `api/.env.example`) include:
 
   ```
-  http://localhost:3000, http://localhost:5173, http://localhost:8000,
-  http://127.0.0.1:3000, http://127.0.0.1:5173, http://127.0.0.1:8000
+  http://localhost:3000, http://localhost:5173, http://localhost:8010,
+  http://127.0.0.1:3000, http://127.0.0.1:5173, http://127.0.0.1:8010
   ```
 
 * Verified in this environment: preflight (`OPTIONS` + `Access-Control-
@@ -566,19 +566,19 @@ inline notes anywhere in `#menubar`, and every disabled entry has a title).
 ### Two serving modes (and why CORS is only half the story)
 
 Browsers resolve `localhost` to the **user's** machine, so a page that is not
-served from the dev box must never call `http://localhost:8000` — that request
+served from the dev box must never call `http://localhost:8010` — that request
 would go to the visitor's own computer. `resolveApiBase` therefore picks:
 
 | Page host | API base | Path |
 | --- | --- | --- |
-| `localhost` / `127.0.0.1` (the documented dev flow) | `http://localhost:8000` | direct call, needs CORS |
+| `localhost` / `127.0.0.1` (the documented dev flow) | `http://localhost:8010` | direct call, needs CORS |
 | anything else — hosted preview, LAN, reverse proxy | `/api` | `serve.py` proxies `/api/*` to the backend (same-origin, no CORS) |
 
-`serve.py` has `--api <base>` (proxy target, default `http://127.0.0.1:8000`)
+`serve.py` has `--api <base>` (proxy target, default `http://127.0.0.1:8010`)
 and `--no-proxy`. In the **unified** server (`SERVE_WEB=true`, see
 `docs/deployment-render.md`) there is no proxy at all: `web/` is mounted at `/`,
 the API answers under `/api` *and* at the root, so a local page's
-`http://localhost:8000` default and a hosted page's same-origin `/api` both hit
+`http://localhost:8010` default and a hosted page's same-origin `/api` both hit
 the same process. Verified live: `/api/health`, `POST /api/sessions`, API error
 bodies (the 404 `detail` survives), the 405 for POSTs to static paths, a 502
 with a friendly `detail` when the backend is down while static files keep
@@ -615,7 +615,7 @@ missing image surfaces as a 404 and the user re-uploads.
 
 | HTTP | UI text (abridged) |
 | --- | --- |
-| transport failure | "Can't reach the API at … Make sure the backend is running (uvicorn main:app --port 8000)…" plus a banner |
+| transport failure | "Can't reach the API at … Make sure the backend is running (uvicorn main:app --port 8010)…" plus a banner |
 | 400 | the server's `detail` |
 | 404 | the server's `detail` (e.g. "Unknown image: …") |
 | 413 | "That file is too large for the server." |
@@ -795,7 +795,7 @@ message. Raw JSON is never displayed.
 | `node --test "web/tests/*.test.mjs"` | 172 logic tests: config resolution, error mapping, API client contract (URLs, bodies, multipart, session recovery), chat command mapping/execution (Task 1: every assistant action, the parameter validation that mirrors the server whitelist, and the app state sent with each message), the satellite request shapes, the filter preview maths (reflect-101 box average, threshold/brightness clipping, the 512 px preview cap), the slider snapping/help texts, the item-15 rule that no help popover survives
   anywhere and that the tooltip sentences equal the shipped assistant glossary, the history `dropEntry` replacement rule, the linked classification ranges (item 11) and the histogram maths of item 13 (the OpenCV gray weights, channel counting with alpha, the 0…10 smoothing slider, the channel→series mapping), the product copy and the required credits (item 14), and the item-16 composer maths (the nine legend placements, `scaleBarLayout` for satellite/drone/typed lengths, boundary labels and number formatting, the legend box sized to the longest class name, the image-derived default sizes, and the item-17 arrow placements/border/typed-length rules). No browser needed. |
 | `python web/tests/smoke_test.py` | Serves `web/` on 5173 (reuses a running server for the same root), checks assets + content types, that every relative module import resolves, that no key material exists under `web/`, that no `innerHTML` is used, the workstation layout contract (image workspace owns the flexible track, no `object-fit: cover`, technical corner radii), and that the API's CORS allows the frontend origin. |
-| `python web/tests/integration_check.py` | Live contract check against a running API: the exact call sequence the browser makes (session → upload → 6 filters → kmeans k=5 → classify → histogram → stats → GCH2 round trip → satellite validation and error paths → chat commands → 404/415). The three checks that need real Copernicus credentials report SKIP when the server has no `api/.env` instead of failing. Requires `uvicorn main:app --port 8000`. |
+| `python web/tests/integration_check.py` | Live contract check against a running API: the exact call sequence the browser makes (session → upload → 6 filters → kmeans k=5 → classify → histogram → stats → GCH2 round trip → satellite validation and error paths → chat commands → 404/415). The three checks that need real Copernicus credentials report SKIP when the server has no `api/.env` instead of failing. Requires `uvicorn main:app --port 8010`. |
 | `node web/tests/boot_test.mjs --jsdom <dir>` | Boot test: loads `index.html` in jsdom, imports `js/app.js` and drives the UI through DOM events against the live API — 963 assertions covering the shell (menu bar, toolbar, status bar, dock collapse), viewport behaviour (pan, wheel zoom, pixel readout, distance measurement, sync mirroring), upload, the six filters, the Source panel's place/corner modes, the Filters panel's tooltips (item 15: no popovers, one-line titles) and slider sessions (preview without requests, one request per release, replace-not-stack, Escape, arrow-key commits, one slider at a time), the rendered K-Means range table (item 11: live linked ranges, clamped commits, locked ends, the browser-side preview with zero requests/history entries, the boundary bar, "Generate map" = one undo step), the File menu's four image actions (item 12: exact compress tooltip, label-map entry, GCH2 compress → decompress through the menu and the toolbar), histogram windows (item 13: the active-viewport rule with its Active badge, the per-footer Histogram buttons, the smoothing slider, the Channel dropdown's per-image option list, the resize/min/max clamps on all four edges), the composer's item-16 placements/scale bar/derived sizes and its item-17 typing fix (a whole string typed into every text/number field, with focus and value checked after each keystroke), the menus (item 14: the exact File/Edit/View/Processing/Analysis/Help contents, the conditional label-map entry, the New-session confirmation and its cancel path, the Help dialogs with their focus trap, Escape and credits, disabled reasons as tooltips and no inline notes anywhere), the chat (Task 1: router commands, the app state sent with every message, a model-chosen action executed through the Filters panel's slider commit, K-Means with the chosen k, and the plain-text refusal when nothing is loaded), session-expiry recovery, and a clean browser console. jsdom is optional (not a dependency of the app); without it the test skips. |
 
 The boot test runs in both serving modes: the default (page on localhost →

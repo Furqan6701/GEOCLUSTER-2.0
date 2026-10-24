@@ -183,7 +183,7 @@ export function humanizeError(error, { apiBase = "", operation = "" } = {}) {
       case 0:
         return (
           `Can't reach the API${apiBase ? ` at ${apiBase}` : ""}. ` +
-          "Make sure the backend is running (uvicorn main:app --port 8000) and the address matches."
+          "Make sure the backend is running (uvicorn main:app --port 8010) and the address matches."
         );
       case 400:
         return detail || "The server rejected that request.";
