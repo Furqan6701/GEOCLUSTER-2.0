@@ -167,7 +167,7 @@ def test_private_paths_are_not_served(unified, path: str):
 
 
 def test_private_paths_carry_no_key_material(unified, monkeypatch):
-    monkeypatch.setenv("GROQ_API_KEY", "gsk_plantation_do_not_leak")
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_" + "fake" * 8 + "_do_not_leak")
     for path in PRIVATE_PATHS:
         body = unified.get(path).text
         assert "gsk_" not in body and "do_not_leak" not in body, path

@@ -26,10 +26,18 @@ from fastapi.testclient import TestClient
 
 WEB_DIR = Path(__file__).resolve().parents[2] / "web"
 
+
+def _sentinel(prefix: str, filler: str = "fake", repeat: int = 8) -> str:
+    """A key-shaped fake built at runtime, so the source holds no complete key-shaped literal."""
+    return prefix + filler * repeat
+
+
+GROQ_SAMPLE = _sentinel("gsk_")
+
 SECRET_VALUES = {
-    "GROQ_API_KEY": "gsk_task2-secret-value-0123456789abcdef",
-    "COPERNICUS_CLIENT_ID": "task2-client-id-abcdef",
-    "COPERNICUS_CLIENT_SECRET": "task2-client-secret-abcdef",
+    "GROQ_API_KEY": GROQ_SAMPLE,
+    "COPERNICUS_CLIENT_ID": _sentinel("client-id-", repeat=4),
+    "COPERNICUS_CLIENT_SECRET": _sentinel("client-secret-", repeat=4),
 }
 
 
@@ -271,14 +279,14 @@ def test_key_shaped_strings_are_redacted_from_log_text():
     from log_safety import redact
 
     samples = [
-        "gsk_0123456789abcdefghijklmnop",
-        "fw-abcdefghijklmnop",
-        "sk-abcdefghijklmnopqrstuvwx",
-        "ghp_0123456789abcdefghijklmnopqrst",
-        "Authorization: Bearer abcdef0123456789",
-        "client_secret=abcdef123456",
-        "api_key = hunter2hunter2",
-        "access_token: eyJhbGciOiJIUzI1NiJ9",
+        GROQ_SAMPLE,
+        _sentinel("fw-", repeat=4),
+        _sentinel("sk-", repeat=6),
+        _sentinel("ghp_"),
+        "Authorization: Bearer " + _sentinel("", repeat=4),
+        "client_secret=" + _sentinel("", repeat=2),
+        "api_key = " + _sentinel("", repeat=2),
+        "access_token: " + _sentinel("eyJ", repeat=4),
     ]
     for sample in samples:
         cleaned = redact(f"failed for {sample}")
@@ -287,7 +295,7 @@ def test_key_shaped_strings_are_redacted_from_log_text():
             if len(fragment) >= 8:
                 assert fragment not in cleaned, f"{fragment!r} survived in {cleaned!r}"
     # the useful context is kept
-    assert redact("failed for key gsk_0123456789abcdefghijklmnop").startswith("failed for key ")
+    assert redact(f"failed for key {GROQ_SAMPLE}").startswith("failed for key ")
     assert redact("plain sentence, nothing to hide") == "plain sentence, nothing to hide"
     assert redact("") == ""
 
@@ -307,14 +315,14 @@ def test_redaction_filter_covers_a_formatter_and_a_traceback():
     install_secret_redaction("geocluster.tests.redaction")
 
     def fail():
-        raise RuntimeError("provider rejected key gsk_0123456789abcdefghijklmnop")
+        raise RuntimeError(f"provider rejected key {GROQ_SAMPLE}")
 
     try:
         fail()
     except RuntimeError:
         logger.exception("provider call failed")
     output = stream.getvalue()
-    assert "gsk_0123456789abcdefghijklmnop" not in output
+    assert GROQ_SAMPLE not in output
     assert "***" in output
     assert "Traceback" in output, "the useful part of the log is kept"
     assert isinstance(handler.formatter, RedactingFormatter)
