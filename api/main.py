@@ -24,7 +24,7 @@ Everything is in-memory and synchronous by design: sessions expire on a TTL,
 images live behind a per-session LRU cap, and the processing package
 (`geocluster/`) contains no PyQt, no torch and no file-based IPC. The only thing
 ever written to disk is the disposable satellite/place cache, whose failures are
-non-fatal - see docs/deployment-render.md.
+non-fatal.
 """
 
 from __future__ import annotations

@@ -1,6 +1,5 @@
 # Runtime dependencies for the GeoCluster API and the unified server, pinned to
-# the versions the test suite runs against. Every line is used (see the table in
-# docs/deployment-render.md); starlette/anyio/httpx2 arrive as transitive
+# the versions the test suite runs against. Every line is used; starlette/anyio/httpx2 arrive as transitive
 # dependencies of fastapi/openai and are deliberately not pinned here.
 # No torch: the API's K-Means is the NumPy port (api/geocluster/kmeans.py).
 fastapi==0.142.2

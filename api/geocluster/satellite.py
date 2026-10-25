@@ -1,7 +1,7 @@
 """Copernicus Data Space client with an on-disk cache.
 
 Ported from desktop/frontend/sentinel_client.py with these API-era changes
-(all documented in docs/migration-decisions.md):
+(listed below):
   * ONE cache-key rule, and it names the whole request: bounding box, size, date
     window and output resolution — not just the location name, which used to
     make "F-8 in July" and "F-8 in October" the same file

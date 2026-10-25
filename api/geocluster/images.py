@@ -3,7 +3,7 @@
 Decoding mirrors the desktop (cv2.IMREAD_UNCHANGED, see ui.load_image) so
 grayscale and alpha images keep their channels. Non-uint8 data (16-bit TIFFs,
 float HDR files) is normalized to uint8 before processing; the policy is
-documented in docs/migration-decisions.md.
+applied before any processing step.
 """
 
 from __future__ import annotations
