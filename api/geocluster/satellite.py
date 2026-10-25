@@ -66,7 +66,10 @@ TOKEN_TTL_SECONDS = 540  # < 10 minutes
 #: Connect and read timeouts (seconds) for Copernicus requests. Overridable with
 #: COPERNICUS_CONNECT_TIMEOUT_SECONDS and COPERNICUS_READ_TIMEOUT_SECONDS.
 DEFAULT_CONNECT_TIMEOUT_SECONDS = 15.0
-DEFAULT_READ_TIMEOUT_SECONDS = 90.0
+DEFAULT_READ_TIMEOUT_SECONDS = 45.0
+#: Overall budget (seconds) for one fetch: sign-in, imagery request, every retry
+#: and every backoff together. Overridable with COPERNICUS_TOTAL_TIMEOUT_SECONDS.
+DEFAULT_TOTAL_TIMEOUT_SECONDS = 120.0
 #: Connection errors and timeouts are retried this many times (4 attempts in all),
 #: waiting BACKOFF_SECONDS, then twice that, then twice that again.
 RETRIES = 3
@@ -200,9 +203,11 @@ class SatelliteClient:
         places: PlaceLookup | None = None,
         connect_timeout: float | None = None,
         read_timeout: float | None = None,
+        total_timeout: float | None = None,
         retries: int = RETRIES,
         backoff_seconds: float = BACKOFF_SECONDS,
         sleep=time.sleep,
+        clock=None,
     ) -> None:
         self._client_id = client_id if client_id is not None else os.getenv("COPERNICUS_CLIENT_ID")
         self._client_secret = (
@@ -222,9 +227,15 @@ class SatelliteClient:
             if read_timeout is not None
             else _env_seconds("COPERNICUS_READ_TIMEOUT_SECONDS", DEFAULT_READ_TIMEOUT_SECONDS),
         )
+        self._total_timeout = (
+            float(total_timeout)
+            if total_timeout is not None
+            else _env_seconds("COPERNICUS_TOTAL_TIMEOUT_SECONDS", DEFAULT_TOTAL_TIMEOUT_SECONDS)
+        )
         self._retries = max(0, int(retries))
         self._backoff = float(backoff_seconds)
         self._sleep = sleep
+        self._clock = clock if clock is not None else time.monotonic
         self._token: str | None = None
         self._token_expires_at = 0.0
         self._token_lock = threading.Lock()
@@ -243,41 +254,62 @@ class SatelliteClient:
             )
         return str(self._client_id), str(self._client_secret)
 
-    def _post(self, url: str, *, what: str, **kwargs) -> requests.Response:
+    def _new_deadline(self) -> float:
+        """The clock time by which one fetch must have answered, retries included."""
+        return self._clock() + self._total_timeout
+
+    def _post(self, url: str, *, what: str, deadline: float, **kwargs) -> requests.Response:
         """POST on the shared session, retrying connection errors and timeouts.
 
-        Up to ``self._retries`` retries (so ``retries + 1`` attempts in all),
-        waiting ``backoff * 2**n`` seconds between attempts. Any other answer,
-        including an HTTP error status, is returned to the caller unchanged.
-        Raises SatelliteNetworkError once every attempt has failed.
+        Up to ``self._retries`` retries (``retries + 1`` attempts in all), waiting
+        ``backoff * 2**n`` seconds between attempts. Every attempt's timeouts are
+        capped to the time left before ``deadline``, and no retry starts unless
+        its backoff also fits before it. Any other answer, including an HTTP
+        error status, is returned to the caller unchanged. Raises
+        SatelliteNetworkError when the attempts run out or the deadline passes.
         """
         attempts = self._retries + 1
-        for attempt in range(1, attempts):
+        connect_timeout, read_timeout = self._timeout
+        for attempt in range(1, attempts + 1):
+            remaining = deadline - self._clock()
+            if remaining <= 0:
+                logger.error("Copernicus %s request stopped: the overall deadline passed", what)
+                raise SatelliteNetworkError(NETWORK_MESSAGE)
+            timeout = (min(connect_timeout, remaining), min(read_timeout, remaining))
             try:
-                return self._session.post(url, timeout=self._timeout, **kwargs)
+                return self._session.post(url, timeout=timeout, **kwargs)
             except (requests.ConnectionError, requests.Timeout) as exc:
+                name = exc.__class__.__name__
+                if attempt == attempts:
+                    logger.error(
+                        "Copernicus %s request failed after %d attempts (%s)", what, attempts, name
+                    )
+                    raise SatelliteNetworkError(NETWORK_MESSAGE) from exc
+                wait = self._backoff * (2 ** (attempt - 1))
+                if deadline - self._clock() <= wait:
+                    logger.error(
+                        "Copernicus %s request failed (%s); the overall deadline leaves no time to retry",
+                        what, name,
+                    )
+                    raise SatelliteNetworkError(NETWORK_MESSAGE) from exc
                 logger.warning(
                     "Copernicus %s request attempt %d of %d failed (%s); retrying",
-                    what, attempt, attempts, exc.__class__.__name__,
+                    what, attempt, attempts, name,
                 )
-                self._sleep(self._backoff * (2 ** (attempt - 1)))
-        try:
-            return self._session.post(url, timeout=self._timeout, **kwargs)
-        except (requests.ConnectionError, requests.Timeout) as exc:
-            logger.error(
-                "Copernicus %s request failed after %d attempts (%s)",
-                what, attempts, exc.__class__.__name__,
-            )
-            raise SatelliteNetworkError(NETWORK_MESSAGE) from exc
+                self._sleep(wait)
+        raise AssertionError("the retry loop always returns or raises")  # pragma: no cover
 
-    def get_access_token(self) -> str:
+    def get_access_token(self, deadline: float | None = None) -> str:
         """Exchange credentials for a token, cached in memory for under 10 minutes.
 
         The lock means concurrent fetches share one sign-in. The token is only
         ever sent in the Authorization header; it is never logged or returned.
+        ``deadline`` is the fetch's overall deadline (see ``_new_deadline``).
         """
+        if deadline is None:
+            deadline = self._new_deadline()
         with self._token_lock:
-            now = time.monotonic()
+            now = self._clock()
             if self._token and now < self._token_expires_at:
                 return self._token
             client_id, client_secret = self._require_credentials()
@@ -285,6 +317,7 @@ class SatelliteClient:
                 response = self._post(
                     TOKEN_URL,
                     what="token",
+                    deadline=deadline,
                     data={
                         "grant_type": "client_credentials",
                         "client_id": client_id,
@@ -469,7 +502,8 @@ class SatelliteClient:
         if refresh:
             logger.info("Refreshing the satellite cache for %s", geometry["label"])
 
-        token = self.get_access_token()
+        deadline = self._new_deadline()  # one budget for sign-in and imagery together
+        token = self.get_access_token(deadline)
         payload = {
             "input": {
                 "bounds": {"bbox": bbox},
@@ -494,6 +528,7 @@ class SatelliteClient:
             response = self._post(
                 PROCESS_URL,
                 what="process",
+                deadline=deadline,
                 headers={"Authorization": f"Bearer {token}"},
                 json=payload,
             )
