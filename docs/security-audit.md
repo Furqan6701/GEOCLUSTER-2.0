@@ -1,77 +1,63 @@
-# Secrets audit (Task 2)
+# Secrets audit
 
-Scope: the whole repository at `arena/01a0f8a7-geocluster-2-0`, **including the
-full git history** (every commit, every blob, text and binary), plus the working
-tree. Date of audit: 2026-10-16.
+Scope: the whole repository, including its full git history (every commit and
+every blob, text and binary), plus the working tree. The last run was on
+2026-10-25, on the cleanup branch `arena/01a0f8a7-geocluster-2-0`.
 
 ## Result: nothing to rotate
 
-**No API key, token, client id, client secret, password or certificate has ever
-been committed to this repository.** The only environment-file path that has
-ever been tracked is `api/.env.example`, which contains placeholder names with
-empty values (and did so in every historical revision as well).
+No API key, token, client ID, client secret, password or certificate has been
+committed to this repository. The only environment file ever tracked is
+`api/.env.example`, which holds placeholder names with empty values.
 
-What the scans did find, and why each is safe:
+The scans did find some text that looks like a secret at first glance. Each
+finding was reviewed and falls into one of these groups:
 
-| Finding | Where | Verdict |
+| Group | Where | Verdict |
 | --- | --- | --- |
-| `client_id` / `client_secret` as **variable names** | `api/geocluster/satellite.py`, `desktop/frontend/sentinel_client.py` (all revisions) | These are locals that `os.getenv(...)` fills; no literal value accompanies them. |
-| `api_key="test-key"` | `api/tests/test_assistant.py` | A test double for a mocked client; never used against a real provider. |
-| `gsk_0123456789abcdefghijklmnop`, `gsk_task2-secret-value-…`, `gsk_plantation_do_not_leak`, `sk-abcdefghijklmnopqrstuvwx`, `ghp_0123456789abcdefghijklmnopqrst` | `api/tests/test_security.py` (Task 2) and `api/log_safety.py`'s tests | Deliberate **fake sentinels**: the suite plants them in the environment, then asserts that no endpoint, no error body and no log line contains them. They are key-*shaped* on purpose - that is what the redaction and the "never return a secret" tests need to match. They are not credentials and cannot be one (they all end in `0123456789`, `do_not_leak` or `test`). The scan below therefore reports exactly these five and nothing else. |
-| `MAX_UPLOAD_MB`, `SESSION_MAX_IMAGES`, … | `api/settings.py`, `.env.example` | Non-secret policy numbers that are also returned by `/health`. |
-| `GROQ_API_KEY` / `FIREWORKS_API_KEY` / `COPERNICUS_CLIENT_*` | docs, READMEs, `.env.example`, source | Names only; every value is empty in the tracked template. |
+| Secret-named variables and parameters (for example `client_secret` in code that reads it from the environment) | `api/geocluster/`, `desktop/frontend/` (all revisions) | Identifiers, not values. A value is read at run time with `os.getenv`. |
+| Test doubles for the AI and Copernicus clients | `api/tests/` | Placeholders such as `test-key` or `SECRET-TOKEN`, used by mocked clients only. |
+| Fake, key-shaped sentinels | `api/tests/test_security.py`, `api/tests/test_unified_server.py`, and earlier revisions of this document | Deliberate test values. The tests plant them in the environment and assert that no response, error body or log line contains them. They are not credentials. Current revisions build them at run time, so the source has no complete key-shaped literal. The older revisions remain in history and are not rewritten. |
+| Names of settings in documentation | READMEs, `api/.env.example`, `docs/` | Names only. Every value in the tracked template is empty. |
 
-## How this was checked (re-run any time)
+## How the checks work
 
-```bash
-cd /path/to/GEOCLUSTER-2.0
+Re-run these any time. The output should show only the groups above.
 
-# 1) key-shaped literals in every blob that has ever existed (text + binaries).
-#    Expected output today: the five fake sentinels of api/tests/test_security.py
-#    and nothing else. Anything not on that list is a real finding.
-for obj in $(git rev-list --all --objects | awk '{print $1}' | sort -u); do
-  [ "$(git cat-file -t "$obj" 2>/dev/null)" = blob ] || continue
-  git cat-file blob "$obj" | strings -a |
-    grep -aoE '(gsk_|fw_|sk-|ghp_|AIza|xox[baprs]-)[A-Za-z0-9_-]{10,}'
-done | sort -u
+1. **Every blob in history.** For each object reachable from any branch, read the
+   contents and match these families: Groq-style and OpenAI-style keys, GitHub
+   tokens, Google API keys, Slack tokens, `Bearer` header values, private key
+   blocks, and long values assigned to secret-named variables. Print only the
+   finding type, the file and the commit that introduced it. Never print the value.
+2. **Env-like files ever added.** `git log --all --diff-filter=A --name-only` filtered
+   for `.env` (except `.env.example`), `.pem`, `.key`, `.p12`, `.pfx` and `id_rsa`.
+3. **The working tree.** `git grep` for the same families, excluding documentation
+   that describes them.
+4. **Ignored files.** `git check-ignore` confirms that `.env`, `api/.env` and the
+   virtual environment folders are ignored, and that `.env.example`, `LICENSE` and the
+   README files are not.
 
-# 2) long values assigned to secret-ish names, in every commit
-for c in $(git rev-list --all); do
-  git grep -I -n -E '(api_?key|secret|password|token|licen[cs]e)["'"'"' ]*[:=]["'"'"' ]*[A-Za-z0-9_/+-]{24,}' "$c" -- .
-done | sort -u
-
-# 3) any env-like file ever added
-git log --all --diff-filter=A --name-only --pretty=format: |
-  sort -u | grep -iE '\.env|secret|credential|\.pem$|\.key$|id_rsa|token'
-
-# 4) the working tree
-git grep -I -nE '(API_KEY|CLIENT_SECRET|PASSWORD|SECRET|TOKEN)["'"'"' ]*[:=]["'"'"' ]*[A-Za-z0-9_-]{8,}'
-```
-
-The test suite keeps this property honest: `api/tests/test_security.py` plants
-secret values in the environment and asserts that no endpoint returns them, and
-`web/tests/smoke_test.py` scans everything under `web/` for key material and
+The test suite keeps the runtime behaviour honest. `api/tests/test_security.py`
+plants secret values in the environment and asserts that no endpoint returns them.
+`web/tests/smoke_test.py` scans everything under `web/` for key material and for
 environment access from browser code.
 
-Re-run result at the branch tip (`a1e555e`, 65 commits, 518 blobs): scan 1
-prints only the five sentinels above, scan 3 prints nothing, and the only
-env-shaped path ever added is `api/.env.example`. Nothing to rotate.
+## What is protected at run time
 
-## What is protected now
+`api/log_safety.py` redacts key-shaped strings from every log line and every logged
+traceback. A third-party error message that quotes a request therefore cannot write
+a key to the log.
 
-Log hygiene is enforced too: `api/log_safety.py` redacts key-shaped strings from
-every log line and logged traceback, so even a third-party error message that
-quotes the request cannot write a key to the log.
-
-See the **Security** section of `api/README.md` for the full contract:
-environment-only secrets, no secret/path/traceback in any response, a CORS
-allow-list, `ENABLE_DOCS=false` in production, per-IP rate limits on
-`/ai/chat` and `/satellite/fetch`, message/upload size caps, and static serving
-that publishes `web/` only (dot-files and parent segments answer 404).
+See the **Security** section of [`api/README.md`](../api/README.md) for the full
+contract: secrets only in environment variables, no secret, file path or traceback in
+any response, a CORS allow-list, `ENABLE_DOCS=false` in production, per-IP rate
+limits on `/api/ai/chat` and `/api/satellite/fetch`, message and upload size caps, and
+static serving that publishes only `web/` (dot-files and parent segments answer 404).
 
 ## If you have ever pasted a key somewhere else
 
-The audit covers git history, not your machines, chat logs or deployment
-dashboards. If a real Groq key or Copernicus client secret was ever pasted into
-a ticket, a screenshot or a shell history, rotate it at the provider and put the
-new value in the deployment's environment variables (never in a tracked file).
+This audit covers git history. It does not cover your machines, chat logs, shell
+history or deployment dashboards. If a real Groq key or Copernicus client secret was
+ever pasted into a ticket, a screenshot or a shell history, rotate it at the provider
+and put the new value in the deployment's environment variables, never in a tracked
+file.
