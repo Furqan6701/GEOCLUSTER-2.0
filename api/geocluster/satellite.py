@@ -8,7 +8,13 @@ Ported from desktop/frontend/sentinel_client.py with these API-era changes
   * cache directory configurable, defaulting to a folder under the OS temp dir
   * the default date window is rolling and ends today (the desktop hardcoded
     2026-05-01 .. 2026-07-01)
-  * the OAuth token is cached for under 10 minutes (never printed anywhere)
+  * the OAuth token is cached in memory for under 10 minutes, behind a lock so
+    concurrent fetches share one sign-in (never printed, logged or returned)
+  * connection errors and timeouts are retried (3 retries, short exponential
+    backoff) on one shared requests session; connect and read timeouts are
+    configurable (COPERNICUS_CONNECT_TIMEOUT_SECONDS, COPERNICUS_READ_TIMEOUT_SECONDS)
+  * an unreachable Copernicus and rejected credentials get different messages
+    (SatelliteNetworkError / SatelliteCredentialsError, both HTTP 502)
   * credentials are read from the environment only; a missing pair raises
     SatelliteUnavailable (the endpoint answers 503) instead of crashing startup
   * the crop can come from a sector/alias (as before) or from a place name
@@ -24,6 +30,7 @@ from __future__ import annotations
 import logging
 import math
 import os
+import threading
 import tempfile
 import time
 from datetime import date, datetime, timedelta, timezone
@@ -31,7 +38,12 @@ from pathlib import Path
 
 import requests
 
-from .errors import SatelliteError, SatelliteUnavailable
+from .errors import (
+    SatelliteCredentialsError,
+    SatelliteError,
+    SatelliteNetworkError,
+    SatelliteUnavailable,
+)
 from .locations import get_sector
 from .places import (
     EARTH_METRES_PER_DEGREE,
@@ -50,7 +62,37 @@ PROCESS_URL = "https://sh.dataspace.copernicus.eu/api/v1/process"
 # rolls forward so the window always ends today.
 DEFAULT_WINDOW_DAYS = 61
 TOKEN_TTL_SECONDS = 540  # < 10 minutes
-REQUEST_TIMEOUT_SECONDS = 60
+
+#: Connect and read timeouts (seconds) for Copernicus requests. Overridable with
+#: COPERNICUS_CONNECT_TIMEOUT_SECONDS and COPERNICUS_READ_TIMEOUT_SECONDS.
+DEFAULT_CONNECT_TIMEOUT_SECONDS = 15.0
+DEFAULT_READ_TIMEOUT_SECONDS = 90.0
+#: Connection errors and timeouts are retried this many times (4 attempts in all),
+#: waiting BACKOFF_SECONDS, then twice that, then twice that again.
+RETRIES = 3
+BACKOFF_SECONDS = 0.5
+
+# User-facing messages. They never contain a token, a secret or a response body.
+NETWORK_MESSAGE = "Could not reach Copernicus. Check your internet connection and try again."
+CREDENTIALS_MESSAGE = (
+    "Copernicus rejected the client ID or secret. "
+    "Check COPERNICUS_CLIENT_ID and COPERNICUS_CLIENT_SECRET in api/.env."
+)
+PROVIDER_MESSAGE = "Copernicus had a problem answering. Try again shortly."
+AUTH_MESSAGE = "Could not authenticate with Copernicus."
+IMAGERY_MESSAGE = "The satellite imagery request failed."
+
+
+def _env_seconds(name: str, default: float) -> float:
+    """A positive number of seconds from the environment, or the default."""
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        return default
+    return value if value > 0 else default
 
 #: The Process API is always asked for this ground sampling distance.
 RESOLUTION_M = 10.0
@@ -156,6 +198,11 @@ class SatelliteClient:
         token_ttl_seconds: int = TOKEN_TTL_SECONDS,
         session: requests.Session | None = None,
         places: PlaceLookup | None = None,
+        connect_timeout: float | None = None,
+        read_timeout: float | None = None,
+        retries: int = RETRIES,
+        backoff_seconds: float = BACKOFF_SECONDS,
+        sleep=time.sleep,
     ) -> None:
         self._client_id = client_id if client_id is not None else os.getenv("COPERNICUS_CLIENT_ID")
         self._client_secret = (
@@ -167,8 +214,20 @@ class SatelliteClient:
         self.cache_dir = Path(cache_dir)
         self._token_ttl = int(token_ttl_seconds)
         self._session = session or requests.Session()
+        self._timeout = (
+            connect_timeout
+            if connect_timeout is not None
+            else _env_seconds("COPERNICUS_CONNECT_TIMEOUT_SECONDS", DEFAULT_CONNECT_TIMEOUT_SECONDS),
+            read_timeout
+            if read_timeout is not None
+            else _env_seconds("COPERNICUS_READ_TIMEOUT_SECONDS", DEFAULT_READ_TIMEOUT_SECONDS),
+        )
+        self._retries = max(0, int(retries))
+        self._backoff = float(backoff_seconds)
+        self._sleep = sleep
         self._token: str | None = None
         self._token_expires_at = 0.0
+        self._token_lock = threading.Lock()
         # place-name resolution (Nominatim) shares the satellite cache folder
         self.places = places if places is not None else PlaceLookup(cache_dir=self.cache_dir)
 
@@ -184,43 +243,86 @@ class SatelliteClient:
             )
         return str(self._client_id), str(self._client_secret)
 
-    def get_access_token(self) -> str:
-        """Exchange credentials for a token, cached for under 10 minutes."""
-        now = time.monotonic()
-        if self._token and now < self._token_expires_at:
-            return self._token
-        client_id, client_secret = self._require_credentials()
+    def _post(self, url: str, *, what: str, **kwargs) -> requests.Response:
+        """POST on the shared session, retrying connection errors and timeouts.
+
+        Up to ``self._retries`` retries (so ``retries + 1`` attempts in all),
+        waiting ``backoff * 2**n`` seconds between attempts. Any other answer,
+        including an HTTP error status, is returned to the caller unchanged.
+        Raises SatelliteNetworkError once every attempt has failed.
+        """
+        attempts = self._retries + 1
+        for attempt in range(1, attempts):
+            try:
+                return self._session.post(url, timeout=self._timeout, **kwargs)
+            except (requests.ConnectionError, requests.Timeout) as exc:
+                logger.warning(
+                    "Copernicus %s request attempt %d of %d failed (%s); retrying",
+                    what, attempt, attempts, exc.__class__.__name__,
+                )
+                self._sleep(self._backoff * (2 ** (attempt - 1)))
         try:
-            response = self._session.post(
-                TOKEN_URL,
-                data={
-                    "grant_type": "client_credentials",
-                    "client_id": client_id,
-                    "client_secret": client_secret,
-                },
-                timeout=REQUEST_TIMEOUT_SECONDS,
+            return self._session.post(url, timeout=self._timeout, **kwargs)
+        except (requests.ConnectionError, requests.Timeout) as exc:
+            logger.error(
+                "Copernicus %s request failed after %d attempts (%s)",
+                what, attempts, exc.__class__.__name__,
             )
-            response.raise_for_status()
-            payload = response.json()
-        except requests.RequestException as exc:
-            # Never include the response body here: it may echo credentials.
-            logger.error("Copernicus token request failed: %s", exc.__class__.__name__)
-            raise SatelliteError("Could not authenticate with Copernicus.") from exc
-        except ValueError as exc:
-            logger.error("Copernicus token response was not JSON.")
-            raise SatelliteError("Could not authenticate with Copernicus.") from exc
-        token = payload.get("access_token")
-        if not token:
-            logger.error("Copernicus token response contained no access_token.")
-            raise SatelliteError("Could not authenticate with Copernicus.")
-        expires_in = payload.get("expires_in", self._token_ttl)
-        try:
-            lifetime = float(expires_in)
-        except (TypeError, ValueError):
-            lifetime = float(self._token_ttl)
-        self._token = str(token)
-        self._token_expires_at = now + max(30.0, min(lifetime - 30.0, float(self._token_ttl)))
-        return self._token
+            raise SatelliteNetworkError(NETWORK_MESSAGE) from exc
+
+    def get_access_token(self) -> str:
+        """Exchange credentials for a token, cached in memory for under 10 minutes.
+
+        The lock means concurrent fetches share one sign-in. The token is only
+        ever sent in the Authorization header; it is never logged or returned.
+        """
+        with self._token_lock:
+            now = time.monotonic()
+            if self._token and now < self._token_expires_at:
+                return self._token
+            client_id, client_secret = self._require_credentials()
+            try:
+                response = self._post(
+                    TOKEN_URL,
+                    what="token",
+                    data={
+                        "grant_type": "client_credentials",
+                        "client_id": client_id,
+                        "client_secret": client_secret,
+                    },
+                )
+            except requests.RequestException as exc:
+                # Never include the response body here: it may echo credentials.
+                logger.error("Copernicus token request failed: %s", exc.__class__.__name__)
+                raise SatelliteError(AUTH_MESSAGE) from exc
+            if response.status_code in (400, 401, 403):
+                logger.error("Copernicus rejected the token request (HTTP %d).", response.status_code)
+                raise SatelliteCredentialsError(CREDENTIALS_MESSAGE)
+            if response.status_code >= 400:
+                logger.error("Copernicus token request returned HTTP %d.", response.status_code)
+                raise SatelliteError(PROVIDER_MESSAGE)
+            try:
+                payload = response.json()
+            except ValueError as exc:
+                logger.error("Copernicus token response was not JSON.")
+                raise SatelliteError(AUTH_MESSAGE) from exc
+            token = payload.get("access_token") if isinstance(payload, dict) else None
+            if not token:
+                logger.error("Copernicus token response contained no access_token.")
+                raise SatelliteError(AUTH_MESSAGE)
+            expires_in = payload.get("expires_in", self._token_ttl)
+            try:
+                lifetime = float(expires_in)
+            except (TypeError, ValueError):
+                lifetime = float(self._token_ttl)
+            self._token = str(token)
+            self._token_expires_at = now + max(30.0, min(lifetime - 30.0, float(self._token_ttl)))
+            return self._token
+
+    def _forget_token(self) -> None:
+        with self._token_lock:
+            self._token = None
+            self._token_expires_at = 0.0
 
     def cache_path(self, key: str) -> Path:
         """Path of a cached download for a full cache key (see `cache_key`)."""
@@ -389,16 +491,25 @@ class SatelliteClient:
             "evalscript": TRUE_COLOR_EVALSCRIPT,
         }
         try:
-            response = self._session.post(
+            response = self._post(
                 PROCESS_URL,
+                what="process",
                 headers={"Authorization": f"Bearer {token}"},
                 json=payload,
-                timeout=REQUEST_TIMEOUT_SECONDS,
             )
-            response.raise_for_status()
+        except SatelliteNetworkError:
+            raise
         except requests.RequestException as exc:
             logger.error("Copernicus process request failed: %s", exc.__class__.__name__)
-            raise SatelliteError("The satellite imagery request failed.") from exc
+            raise SatelliteError(IMAGERY_MESSAGE) from exc
+        if response.status_code in (401, 403):
+            # The cached token may have been revoked: sign in again on the next fetch.
+            self._forget_token()
+            logger.error("Copernicus rejected the imagery request (HTTP %d).", response.status_code)
+            raise SatelliteCredentialsError(CREDENTIALS_MESSAGE)
+        if response.status_code >= 400:
+            logger.error("Copernicus imagery request returned HTTP %d.", response.status_code)
+            raise SatelliteError(IMAGERY_MESSAGE)
 
         content = response.content
         try:

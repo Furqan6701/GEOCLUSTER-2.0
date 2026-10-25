@@ -43,6 +43,14 @@ class SatelliteError(GeoclusterError):
     """A Copernicus request failed."""
 
 
+class SatelliteNetworkError(SatelliteError):
+    """Copernicus could not be reached: connection failures and timeouts, after retries."""
+
+
+class SatelliteCredentialsError(SatelliteError):
+    """Copernicus rejected the client ID or client secret."""
+
+
 class SessionNotFound(GeoclusterError):
     """Unknown or expired session id."""
 
