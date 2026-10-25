@@ -162,7 +162,7 @@ scale bar exact.
 ## Tests
 
 ```bash
-pytest api/tests -q                      # 341 tests, offline (network mocked)
+pytest api/tests -q                      # 342 tests, offline (network mocked)
 ```
 
 On Windows, skip `test_memory.py` because it imports the Unix-only `resource`
