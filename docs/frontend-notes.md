@@ -12,8 +12,8 @@ The frontend is a desktop-style workspace, not a dashboard:
 | --- | --- |
 | Title bar | GeoCluster 2.0, menu bar (File · View · Processing · Analysis · Help), status chips (API, session, AI, satellite, max MP) |
 | Toolbar | Open · Satellite · Export · Compress · Undo/Redo · Pan · Pixel · Measure · Sync · dock toggles (single non-wrapping row; labels collapse to icons below 1440 px) |
-| Toolbox dock | collapsible sections: Source, Filters, Clusters, Analysis (every control from the previous panels, unchanged in behaviour; the Files section became File-menu entries — item 12) |
-| Image workspace | up to three viewports — **Original**, **Result** and **Map** (hidden until a classification exists) — each with a header (name + dimensions + active tool) and a footer (Fit/1:1/±/Distance, zoom %, pixel readout); the Map footer also toggles its legend |
+| Toolbox dock | collapsible sections: Source, Filters, Clusters, Analysis (every control from the previous panels, unchanged in behaviour; the Files section became File-menu entries, item 12) |
+| Image workspace | up to three viewports. **Original**, **Result** and **Map** (hidden until a classification exists), each with a header (name + dimensions + active tool) and a footer (Fit/1:1/±/Distance, zoom %, pixel readout); the Map footer also toggles its legend |
 | Assistant dock | scrollable conversation, quick-command buttons, compact input; collapsible |
 | Status bar | dimensions · channel layout · zoom · cursor X/Y · pixel value · active viewport · session · API · New session |
 
@@ -26,7 +26,7 @@ fill the pane rather than being shown as thumbnails.
 
 View → *Synchronise Original ↔ Result* (toolbar **Sync**, shortcut `Y`) makes
 camera changes (zoom and pan) mirror from one viewport to the other. It is a
-frontend feature only — both viewports hold their own decoded bitmap, so no
+frontend feature only, both viewports hold their own decoded bitmap, so no
 API support is needed. With sync off each viewport navigates independently.
 Camera changes are announced on the bus as `viewer:camera`, which is also what
 the status bar uses.
@@ -43,8 +43,8 @@ never affects zoom or pan. The viewport's own `Distance` button and the toolbar
 
 The API has no operation history (every operation returns a new image id), so
 history lives in the browser: `js/history.js` keeps the last **15 displayed
-states**. Each state stores a label, the server image id, the image info and —
-once the viewer has fetched it — the **Blob** itself, plus a snapshot of both
+states**. Each state stores a label, the server image id, the image info and,
+once the viewer has fetched it, the **Blob** itself, plus a snapshot of both
 viewport slots so "Clear result" is undoable too.
 
 * Toolbar **Undo/Redo**, File → Undo/Redo, `Ctrl+Z` and `Ctrl+Y` (`Ctrl+Shift+Z`
@@ -53,14 +53,14 @@ viewport slots so "Clear result" is undoable too.
 * Sessions keep only a few images (LRU). If a state's id has been evicted, the
   operation that needs it gets a 404, `SessionManager.withImage()` silently
   re-uploads the stored Blob (`revive()` in `app.js`), re-points every history
-  entry that referenced the old id and retries the call once — the user sees
+  entry that referenced the old id and retries the call once, the user sees
   nothing. Old Blobs are released after 24 images to bound memory.
 * Starting a new session clears the history (server ids are gone).
 
 ### No internal ids in user-facing text
 
-Toasts and status messages name the image, the operation and its size — never
-the server's `image_id`: "Result — sample.jpg#negative (1600×1066)", not
+Toasts and status messages name the image, the operation and its size, never
+the server's `image_id`: "Result, sample.jpg#negative (1600×1066)", not
 "new image EkEkL0bUvBYg". A boot assertion collects every `/images/<id>` id the
 session used and fails if any of them appears in a toast.
 
@@ -70,21 +70,21 @@ The footer **Distance** button is a real toggle: `aria-pressed` is the single
 source of its active look (the `.primary` class is gone, so nothing can leave it
 highlighted), the label gains a ● and the tooltip changes while measuring, and
 `_syncFooterState()` disables it (and the footer **Histogram** button) whenever
-the viewport has no image — an "active looking" tool on an empty pane was the
+the viewport has no image, an "active looking" tool on an empty pane was the
 reported bug.
 
 * The sidebar's "Measure on the active viewport" button is gone (the toolbar
   Measure button and each viewport's own Distance button remain), together with
-  every explanatory line — no "Client-only", no "the API has no distance
+  every explanatory line, no "Client-only", no "the API has no distance
   endpoint", no "image was not downscaled".
 * Controls: **Unit** (`UNIT_ORDER`: pixels, mm, cm, m, km, inches, ft, mi) and
-  **Pixel size** — the ground length of ONE image pixel in the chosen unit.
+  **Pixel size**, the ground length of ONE image pixel in the chosen unit.
   Satellite imagery pre-fills both from `meters_per_pixel` (metres, or
   kilometres for a coarse mosaic); an upload starts in pixels with the pixel
   size field hidden. Changing the unit CONVERTS the pixel size, so the ground
   size a pixel spans never changes behind the user's back. Both are re-filled
   when another image loads, because the pixel size describes that image.
-* The latest measurement is **one line** — `Distance: 450.20 px` — with a
+* The latest measurement is **one line**, `Distance: 450.20 px`, with a
   **Clear** button. A ground unit without a pixel size asks for it in that same
   line rather than inventing a number, and the original-resolution pixel count
   is appended **only when the upload was actually downscaled**
@@ -114,23 +114,23 @@ Pressing the button opens a **floating, non-modal, opaque window**
   `head#…tail` (`clipTitle`);
 * an **Image** dropdown: Original, Result and **every state in the undo
   history** (deduped by id, labelled the way the history labels them);
-* a **large chart** (560×260) with clearly labelled controls — Image, Scale
+* a **large chart** (560×260) with clearly labelled controls. Image, Scale
   (Linear/Log), Smoothing (Off/Low/High), Display (Counts/Density/Cumulative),
-  Theme (Dark/Light), **Export PNG** (2×) — plus the five statistics beside it
+  Theme (Dark/Light), **Export PNG** (2×), plus the five statistics beside it
   (min, max, mean, std dev, pixel count) computed in the browser from the bins
   (`binStats`);
 * a **Compare** dropdown that overlays a second image's bins as an outline in
   `#ffb454` with a two-row legend naming both images.
 
 Bins are fetched **once per image** and cached in the manager, so changing any
-option (or reopening a window for the same image) makes no request at all —
+option (or reopening a window for the same image) makes no request at all,
 asserted in the boot test.
 
 ### North arrow and credit follow the image source (items 6 & 7)
 
 `sourceDefaults(source, info)` decides: an image is "satellite imagery" when the
 composer was opened with `source === "satellite"` **or** the image carries
-ground metadata (`bbox` / `meters_per_pixel`) — so a classify/operation result
+ground metadata (`bbox` / `meters_per_pixel`), so a classify/operation result
 of a satellite crop keeps them, while a plain upload does not.
 
 | source | north arrow | credit line |
@@ -143,14 +143,14 @@ the checkbox handler sets `northArrowTouched`, the credit field sets
 `creditTouched`, and `normalizeSettings` only re-applies the source default
 while the matching flag is false. (A caller that passes `visible`/`credit`
 without ever recording a choice counts as that choice.) The arrow keeps Style,
-Size (px) and Position, and is drawn north-up — the Rotation control and
+Size (px) and Position, and is drawn north-up, the Rotation control and
 `northArrow.rotation` setting are gone.
 
 ### Legend placement (items 5 and 16)
 
 * `legend.placement` replaces the old `legend.corner`. `LEGEND_PLACEMENTS` now
-  holds **nine** entries — **Outside right (default)**, Outside left, Outside
-  bottom left / center / right, and On map — top left / top right / bottom left
+  holds **nine** entries. **Outside right (default)**, Outside left, Outside
+  bottom left / center / right, and On map, top left / top right / bottom left
   / bottom right. Out-of-image placements carry `edge` (`left`/`right`/`bottom`)
   and, for the bottom band, `align` (`left`/`center`/`right`);
   `legendPlacementOf()` normalizes anything unknown back to the default, and the
@@ -166,7 +166,7 @@ Size (px) and Position, and is drawn north-up — the Rotation control and
   box, so centre/right alignment lands where the box really is.
 * **No class name is ever truncated:** `legendBoxSize()` measures the longest
   name with the very font the box is drawn with (the title and percentage column
-  too) and `drawLegendBox()` draws the strings unclipped — the ellipsis path is
+  too) and `drawLegendBox()` draws the strings unclipped, the ellipsis path is
   gone from the legend.
   A legend that is hidden (or has no rows) reserves no space at all.
 * The measurement is text-metric based (the same `legendBoxSize()` used for
@@ -178,14 +178,14 @@ Size (px) and Position, and is drawn north-up — the Rotation control and
 * **One font for every text on the canvas.** `MAP_FONTS` = Arial (default),
   Times New Roman, Georgia, Verdana, Courier New, Trebuchet MS. Every draw
   call goes through `fontSpec(size, { font, weight })`, which builds a valid
-  CSS shorthand — `700 26px "Georgia", system-ui, sans-serif`. The comma
+  CSS shorthand, `700 26px "Georgia", system-ui, sans-serif`. The comma
   matters: `"Georgia" system-ui sans-serif` is invalid CSS, and canvas
   silently keeps the PREVIOUS font instead of erroring. `mapFont()` maps an
   unknown family back to Arial.
 * **A size per text** (all clamped by `normalizeSettings` to 8…96 px, the
   arrow to 12…160): title 26, subtitle 14, legend 14 (`legend.fontSize`),
   scale-bar label 12 (`scaleBar.fontSize`), credit 12. `frameMetrics()` takes
-  those sizes so the title strip and the footer grow with the text — the frame
+  those sizes so the title strip and the footer grow with the text, the frame
   can never clip a bigger title, and 2x/3x exports stay exact multiples.
 * **Title options**: a bold toggle (`titleBold`, on by default) and
   left/center/right alignment (`titleAlign`, **center** by default, drawn at
@@ -197,7 +197,7 @@ Size (px) and Position, and is drawn north-up — the Rotation control and
 
 * The dialog and its sidebar were **transparent**: `.map-modal-dialog`,
   `.map-modal-head`/`-foot`, `.map-modal-body` and `.map-props` asked for
-  `var(--panel)` / `var(--panel-2)`, which were never defined — a typo for
+  `var(--panel)` / `var(--panel-2)`, which were never defined, a typo for
   `--bg-panel` / `--bg-panel-2`. A missing custom property makes the whole
   declaration invalid, so the modal fell back to `background: transparent`
   and the workspace showed through. Every `var()` in `styles.css` is now
@@ -210,18 +210,18 @@ Size (px) and Position, and is drawn north-up — the Rotation control and
   writes `--map-modal-top`, so the composer's own header always starts below
   the toolbar.
 
-### Classification editor — live linked ranges (item 11)
+### Classification editor: live linked ranges (item 11)
 
 * **Ranges are always contiguous over 0..255.** `web/js/clusterranges.js` is the
   pure, unit-tested module that owns that rule: no gaps, no overlaps, at least
   one value per class, first class starts at 0 and last one ends at 255. The
-  first Min and the last Max are rendered `readOnly` (and styled `.locked`) —
+  first Min and the last Max are rendered `readOnly` (and styled `.locked`),
   the panel never lets them be edited. The API does not enforce contiguity;
   the client module is the only authority, and `normalizeEntries()` repairs
   anything the server or a kept editor hands back.
 * **Editing moves exactly one neighbour, live.** `editMax(entries, i, v)` sets
   `max(i) = v` and `min(i+1) = v + 1`; `editMin` mirrors it onto `max(i−1)`.
-  The table fields listen to `input`, so the link follows every keystroke —
+  The table fields listen to `input`, so the link follows every keystroke,
   there is no Apply step. A keystroke whose value would empty a class or cross
   another one is **not** applied (the text stays in the field so typing can
   continue); Enter or blur **clamps** it into the valid window
@@ -236,7 +236,7 @@ Size (px) and Position, and is drawn north-up — the Rotation control and
   256-entry RGB table from the ranges and colours, `recolorPixels()` applies it
   to the preview-sized copy of the **classified source** image (OpenCV's
   `BGR2GRAY` weights are reproduced in `toGray()`), and the canvas goes out as
-  the existing `preview:show` event — the same path the filter sliders use, so
+  the existing `preview:show` event, the same path the filter sliders use, so
   the badge reads `preview · classification`. The source bitmap comes from the
   viewport that already holds it (`ctx.viewers`), otherwise from the session's
   Blob cache; typing itself makes **no request and no history entry** (both
@@ -256,7 +256,7 @@ Size (px) and Position, and is drawn north-up — the Rotation control and
   the map composer's empty note, the Image menu's composer note, the composer's
   "nothing to draw" toast and the `errors.js` operation label.
 
-### Files section removed — File-menu image actions (item 12)
+### Files section removed: File-menu image actions (item 12)
 
 * The **Files** toolbox section is gone (`js/panels/files.js` deleted,
   `panels/index.js` no longer creates it, no `focusSection("files")` remains).
@@ -271,20 +271,20 @@ Size (px) and Position, and is drawn north-up — the Rotation control and
   `#gch-file-input` picker (the old picker lived inside the section body, so
   the boot test used to find it under `#toolbox-sections`). Behaviour is
   unchanged: the same requests, the same toasts, the same `status` messages,
-  and the same gate — the menu computes `disabled`/`reason` from
+  and the same gate, the menu computes `disabled`/`reason` from
   `gate.canRun()` / `gate.isBusy()`, the requests book themselves with
   `gate.setBusy(true, "image-actions")`.
 * **Every hint line is gone**, app-wide, not just from the Files section:
   * the two Files paragraphs ("GCH2 files are compatible with the desktop app.",
     "Compression is lossless and stateless; the file can be opened in the
-    desktop app.") died with the section — the compress entry's tooltip carries
+    desktop app.") died with the section, the compress entry's tooltip carries
     the wording instead: *"Lossless .gch compression (Huffman coding); files
     also open in the desktop app."* (`ui.js` menu items now accept an explicit
     `title`, used in preference to the note/shortcut tooltip);
   * `labelled()` in `ui.js` **lost its `hint` parameter**, so no field can
     render a hint line any more, and the `.hint-line` CSS rule was deleted;
   * the Source panel's field hints moved into `title` tooltips ("Sector code,
-    alias, or any place name", "Paste from Google Maps — any corner", "The
+    alias, or any place name", "Paste from Google Maps, any corner", "The
     opposite corner; no need to sort them", and the dates' "leave it empty to
     use the server's rolling window"), and its date paragraph was removed.
   The boot test now asserts `.note`/`.hint-line` count 0 in the Source and
@@ -293,14 +293,14 @@ Size (px) and Position, and is drawn north-up — the Rotation control and
 * The raw label map is the last remnant of the item-1 image/label toggle: it
   is still one download of the API's stored `kmeans:labels` image, but it is
   no longer a sidebar button. The entry is disabled with the reason "run
-  K-Means first — the label map is one of its outputs" until a K-Means run
+  K-Means first, the label map is one of its outputs" until a K-Means run
   exists, instead of toasting after the click.
 
 ### Histogram windows: viewport targeting, channels, resizing (item 13)
 
 The sidebar **Histogram** button opens the window for the **active viewport's**
 image (`state.activeRole`, mirroring the `viewer:active` event) and falls back
-to the other viewport when that image already has a window — so Original and
+to the other viewport when that image already has a window, so Original and
 Result are two presses, not a dropdown hunt. `hasWindowFor(id)` is the one
 predicate behind that rule; the `Image` dropdown stays for the finer states.
 The active viewport is marked by an **Active** badge in its header.
@@ -312,7 +312,7 @@ image regardless of which pane is active.
 * **Smoothing** is a slider 0…10 (`SMOOTHING_RANGE`, `SMOOTHING_STEPS[i]` = the
   moving-average window: 0, 3, 5 … 21). Its label is the single word
   "Smoothing"; no value text is printed. The old Off/Low/High dropdown and its
-  raw-window mapping are gone — `smoothingLevel(v)` is a plain round+clamp.
+  raw-window mapping are gone, `smoothingLevel(v)` is a plain round+clamp.
 * **Channel** (Gray/Red/Green/Blue/RGB overlay) is computed **in the browser**
   from the decoded image, so there is no API change and switching channel never
   sends a request: `session.imageBlob` → `createImageBitmap` → one canvas pass
@@ -321,7 +321,7 @@ image regardless of which pane is active.
   agrees with the API. Gray is the API's own 256-bin series;
   `channelKeysFor(info)` trusts the API's `info.channels`, so a grayscale image
   offers Gray only. The shared `toGray()` lives in `js/color.js` (the OpenCV
-  weights the API uses) — there is exactly one copy.
+  weights the API uses), there is exactly one copy.
 * Windows are **resizable** (bottom-right grip, pointer drag or arrow keys,
   Shift = big step) and always **clamped inside the page**: `sizeBounds()` caps
   the size to the viewport, `fitSize()`/`reclamp()`/`reclampAll()` re-fit on a
@@ -339,12 +339,12 @@ image regardless of which pane is active.
   rows): the swatch and the land-cover name on the first line, Min / Max / %
   on the second. The number spinners are hidden (`appearance: textfield`) so a
   3-digit bound fits its column. At the default 272 px sidebar (238 px on small
-  screens) the whole table fits without a horizontal scroller — the `.table-wrap`
+  screens) the whole table fits without a horizontal scroller, the `.table-wrap`
   was removed from this section.
 * Class names follow K: the API's land-cover presets at **K=5** only
   (`Shadows`, `Dark Trees / Forest`, …); every other K gets `Class 1` … `Class K`
   (`defaultClassNames()` / `defaultNameFor()` in `panels/clusters.js`).
-* "Reset ranges" now resets **only the min/max values** — names and colours the
+* "Reset ranges" now resets **only the min/max values**, names and colours the
   user typed are carried into the re-render.
 
 ### The action gate (bug fix)
@@ -355,8 +355,8 @@ image regardless of which pane is active.
   requests ran. Arriving images (upload, satellite fetch, K-Means, classify,
   undo/redo, restored/revived image) never re-evaluated it, so the buttons only
   came back as a side effect of some unrelated request finishing.
-* Fix: `js/gate.js` owns the single rule — a registered action is enabled iff a
-  working image exists and no request is in flight — and re-evaluates every
+* Fix: `js/gate.js` owns the single rule, a registered action is enabled iff a
+  working image exists and no request is in flight, and re-evaluates every
   button after every state change (`image:loaded`, `image:cleared`,
   `operation:applied`, `history:changed`, `session:reset`) and whenever a
   request starts or ends. In-flight requests are counted per owner, so a
@@ -372,7 +372,7 @@ image regardless of which pane is active.
 * `ImageOut` gained `bbox` and `meters_per_pixel`. `POST /satellite/fetch`
   fills them: the bbox the provider was asked for, and the metres one *stored*
   pixel covers (`resolution_m / scale`, so a downscale is included). Uploads
-  report `null` — the API never invents a scale.
+  report `null`, the API never invents a scale.
 * Filters, K-Means and classify carry them (`derive_ground_metadata()`), with
   `meters_per_pixel` multiplied by the size change, so a derived image is
   measured as accurately as its source.
@@ -384,9 +384,9 @@ image regardless of which pane is active.
 
 ### Map composer (implemented)
 
-* **One canvas, one renderer.** `js/mapstudio.js` draws everything — image,
+* **One canvas, one renderer.** `js/mapstudio.js` draws everything, image,
   legend, scale bar, north arrow, title/subtitle, credit and corner
-  coordinates — into a single canvas. The modal shows that canvas and the PNG
+  coordinates, into a single canvas. The modal shows that canvas and the PNG
   export re-renders it at 1x/2x/3x, so the file can never disagree with the
   preview. `js/map.js` keeps only `mapCanvasToBlob`, `mapFileName` and
   `formatPercentage`; the old second composer is gone.
@@ -400,7 +400,7 @@ image regardless of which pane is active.
   `renderPreview()`, which recomposes the canvas and repaints **only the
   preview**. The legend rows are patched **in place** by `_syncLegendRows()`
   (nodes are rebuilt only when the row COUNT changes) and a field that
-  currently has focus is never overwritten — by the composer or by the
+  currently has focus is never overwritten, by the composer or by the
   incoming Clusters-table rows (`setLegendRows()` keeps the focused value).
   The Clusters panel's own `setLegendRows()` skips its focused name/colour
   input for the same reason. No path is left where a keystroke rebuilds (or
@@ -414,38 +414,38 @@ image regardless of which pane is active.
   scale bar on with 4 alternating black/white divisions, north arrow on
   (classic style, 0°, top right), background `#0d1115`, border on, corner
   coordinates off. Settings persist for the session inside `MapStudio`.
-* **Scale (item 16):** `scaleBarLayout()` is a pure function — no canvas, no
-  settings object — and it is what both the drawing code and the tests use:
+* **Scale (item 16):** `scaleBarLayout()` is a pure function, no canvas, no
+  settings object, and it is what both the drawing code and the tests use:
     * **ground scale known** (`meters_per_pixel`/`bbox` from item 5, or the
       user's “Image width on the ground”): the bar is **exact**. The default
       total length is a 1/2/5 round number near **a fifth** of the ground width
       (`roundScaleLength`, auto-picking km above a kilometre until the user
-      chooses a unit); a **label sits at every division boundary** — `0`, each
-      tick, and the total with its unit — numbers formatted with at most two
+      chooses a unit); a **label sits at every division boundary**, `0`, each
+      tick, and the total with its unit, numbers formatted with at most two
       decimals and no trailing zeros (`formatNumber`);
     * **photo with no ground scale** (e.g. a drone shot): a **plain**
       alternating black/white bar at 40 % of the image width with **no numbers,
-      no unit and no note** — never an invented distance;
+      no unit and no note**, never an invented distance;
     * **a typed total length** turns the labels on; once a ground width exists
       the pixel length is exact for it. A length longer than the image is capped
       at the ground width so the bar cannot claim a distance the image does not
       cover.
   Position: **Bottom left (default), Center, Right** (`SCALE_POSITIONS`), which
-  only moves the bar along the footer — the labels travel with it. Divisions are
+  only moves the bar along the footer, the labels travel with it. Divisions are
   clamped to 1…10, and total length / divisions / unit / label size update the
   preview live.
 * **Item 17 changes to the composer:**
   * the ground-width field is labelled **“Real image width”**, with the tooltip
     “How wide the whole image is on the ground, from its left edge to its right
     edge. Used to put distances on the scale bar.” The unit dropdown beside it
-    stays. The row is hidden only when the API already knows the ground scale —
+    stays. The row is hidden only when the API already knows the ground scale,
     never while a width is being typed;
   * **Total length** is **disabled** with the tooltip “Enter the real image
     width first” while no ground scale is known; with one it is enabled (“How
     long the bar is, in the unit you picked”) and the bar's pixel length
     follows exactly. `scaleBarLayout()` ignores a typed length when no ground
     scale exists, so nothing can be invented;
-  * the north arrow uses **`ARROW_PLACEMENTS`** — On map: top left / top right
+  * the north arrow uses **`ARROW_PLACEMENTS`**. On map: top left / top right
     (default) / bottom left / bottom right, plus Outside: top right / top left /
     top center. Outside spots reserve an `arrowBand` **above the title line**
     (inside the title strip, so the canvas grows while the subtitle and footer
@@ -463,7 +463,7 @@ image regardless of which pane is active.
   the sidebar always starts from a sensible value for the image in front of it
   and every field keeps its own min/max.
 * **Legend sync:** the composer's class names/colours and the Clusters table
-  are two views of the same rows — edits in either one are pushed to the other
+  are two views of the same rows, edits in either one are pushed to the other
   over the bus (`map:legend-rows` / `clusters:changed`).
 
 ### Histogram options and distance units (STEP 5)
@@ -472,14 +472,14 @@ image regardless of which pane is active.
   (moving average over 3/5/9 bins), **cumulative**, **density** (share of
   pixels) and a **light/dark canvas**. They are applied in that fixed order to
   the same 256 integer bins the API returned, so switching one costs no
-  request — the module has no `fetch`, no `await` and no API import at all.
+  request, the module has no `fetch`, no `await` and no API import at all.
 * *Export PNG* repaints the chart as it is shown now, on a 2× canvas
   (1040×340), with a title line naming the image and the active options, so the
   PNG is self-describing.
 * Distance: the viewer measures image pixels; the Analysis ▸ Distance controls
   pick a unit (**px / mm / cm / inches**) and, for real units, the calibration
   the user types in (*pixels per unit*, e.g. 200 px/cm). Both numbers are
-  labelled: the value *on screen* and — when the upload was downscaled — the
+  labelled: the value *on screen* and, when the upload was downscaled, the
   value *at the original resolution*, which is `pixels / scale` using the
   `scale` from the upload response. Without a calibration number the UI asks
   for it instead of inventing one.
@@ -491,34 +491,34 @@ real. Nothing says "not implemented", "planned" or "coming soon", and the old
 *Recent files* / *Session images…* placeholders are gone entirely (the session
 image list they pointed at no longer exists).
 
-* **File** — Open image… (Ctrl+O) · Fetch Sentinel-2 tile… · — · Export current
+* **File**: Open image… (Ctrl+O) · Fetch Sentinel-2 tile… · ,  · Export current
   image (PNG)… (Ctrl+S) · *Export raw label map (PNG)…* · Compress to .gch
-  (GCH2)… · Open .gch file (decompress)… · — · New session.
+  (GCH2)… · Open .gch file (decompress)… · ,  · New session.
   The label-map entry is not a greyed-out promise: it **appears** once
   `state.kmeans` exists (the label map is one of K-Means' outputs) and disappears
   again when a new image takes over the Original viewport. **New session asks
   first** (`confirmDialog`): the dialog says the current session, its images and
   the undo history are discarded, and cancelling keeps everything. The status-bar
   *New session* button goes through the same `startNewSession()`.
-* **Edit** (between File and View) — Undo (Ctrl+Z) · Redo (Ctrl+Y). They were
+* **Edit** (between File and View). Undo (Ctrl+Z) · Redo (Ctrl+Y). They were
   taken out of the File menu; the toolbar buttons and the shortcuts are unchanged.
-* **View** — Fit to view · Actual size · Zoom in · Zoom out · — · Show toolbox ·
+* **View**: Fit to view · Actual size · Zoom in · Zoom out · ,  · Show toolbox ·
   Show assistant · Show result viewport. Zoom 25 %/50 %, Pixel readout, Pan tool,
   Measure distance, Synchronise and Map composer were removed from the menu; the
   **toolbar keeps those buttons and the shortcuts still work**.
-* **Processing** — Grayscale · Negative · Laplacian · — · Brightness · Threshold ·
-  Mean filter · — · Clear result. The right-hand notes ("uses {value: 40}") are
+* **Processing**: Grayscale · Negative · Laplacian · ,  · Brightness · Threshold ·
+  Mean filter · ,  · Clear result. The right-hand notes ("uses {value: 40}") are
   gone. Grayscale/Negative/Laplacian run immediately (they take no parameters);
   **Brightness/Threshold/Mean filter open the Filters panel and put the cursor on
   their slider** (`focusOperation` → `focusSection("filters")` +
   `revealParams()`), so a menu click can never apply a value the user has not
   seen. The slider itself is the readout now.
-* **Analysis** — Run K-Means… · Histogram · — · Map composer… . *Histogram* (the
+* **Analysis**: Run K-Means… · Histogram · ,  · Map composer… . *Histogram* (the
   renamed "Histogram & statistics") emits `histogram:request`, which opens a
   histogram **window**, not a section. Classification editor, Map legend and Map
-  export were removed — the legend and the export scale live in the composer
+  export were removed, the legend and the export scale live in the composer
   itself.
-* **Help** — Keyboard shortcuts · — · About. Both open a small **modal dialog**
+* **Help**: Keyboard shortcuts · ,  · About. Both open a small **modal dialog**
   (`js/dialogs.js`): `role="dialog"`, `aria-modal="true"`, labelled by its own
   heading, focus moved inside on open and returned to whatever had it on close,
   Tab/Shift+Tab trapped, Escape closes. Shortcuts is a two-column list built from
@@ -526,11 +526,11 @@ image list they pointed at no longer exists).
   product, shows `APP_VERSION` and carries the two required credits
   (`CREDITS`): "Contains modified Copernicus Sentinel data." and "Place search by
   OpenStreetMap contributors." Neither dialog mentions a host, a port or any
-  developer wording — the old About toast printed the API base and the page
+  developer wording, the old About toast printed the API base and the page
   origin, which is exactly what the user asked to have removed.
 
 Entries that are unavailable **right now** are disabled and carry the reason in
-their **tooltip only** — the `.menu-item-note` span and its CSS rule are gone, so
+their **tooltip only**, the `.menu-item-note` span and its CSS rule are gone, so
 no row can grow to two lines or print a wrapped sentence beside its label. The
 toolbar buttons explain themselves the same way, and boot tests assert both (no
 inline notes anywhere in `#menubar`, and every disabled entry has a title).
@@ -556,7 +556,7 @@ inline notes anywhere in `#menubar`, and every disabled entry has a title).
   the browser blocks it.
 * **Nothing was blocked for the documented setup.** Two ways to break it by
   accident: (1) serving the page from a port that is not in
-  `ALLOWED_ORIGINS` — add it to `api/.env` and restart the API, or (2) opening
+  `ALLOWED_ORIGINS`, add it to `api/.env` and restart the API, or (2) opening
   `index.html` via `file://`, where the browser sends `Origin: null` and CORS
   fails. Always use the dev server.
 * If the API runs somewhere else, point the page at it without editing code:
@@ -566,13 +566,13 @@ inline notes anywhere in `#menubar`, and every disabled entry has a title).
 ### Two serving modes (and why CORS is only half the story)
 
 Browsers resolve `localhost` to the **user's** machine, so a page that is not
-served from the dev box must never call `http://localhost:8010` — that request
+served from the dev box must never call `http://localhost:8010`, that request
 would go to the visitor's own computer. `resolveApiBase` therefore picks:
 
 | Page host | API base | Path |
 | --- | --- | --- |
 | `localhost` / `127.0.0.1` (the documented dev flow) | `http://localhost:8010` | direct call, needs CORS |
-| anything else — hosted preview, LAN, reverse proxy | `/api` | `serve.py` proxies `/api/*` to the backend (same-origin, no CORS) |
+| anything else, hosted preview, LAN, reverse proxy | `/api` | `serve.py` proxies `/api/*` to the backend (same-origin, no CORS) |
 
 `serve.py` has `--api <base>` (proxy target, default `http://127.0.0.1:8010`)
 and `--no-proxy`. In the **unified** server (`SERVE_WEB=true`, see
@@ -586,8 +586,8 @@ serving, and byte-identical PNG/GCH downloads through the proxy. The boot test
 runs in both modes (see the table below).
 
 **Only the `web/` folder is published (Task 2).** `serve.py` answers **404** for
-any request whose path contains a dot-segment or a `..` segment — `/.env`,
-`/.git/config`, `/.env.example`, `/%2e%2e/api/.env`, `/js/../api/main.py` — so a
+any request whose path contains a dot-segment or a `..` segment, `/.env`,
+`/.git/config`, `/.env.example`, `/%2e%2e/api/.env`, `/js/../api/main.py`, so a
 stray file or symlink dropped into `web/` is not reachable by URL, and the API
 in `api/` can never be read as if it were static content. The smoke test
 asserts each of those paths plus that the responses carry no key material.
@@ -603,7 +603,7 @@ The frontend detects exactly that case (`ApiError.isSessionExpired`), then:
 1. starts a new session automatically (`POST /sessions`),
 2. drops the local image state and clears both viewers,
 3. tells the user: *"Your session expired (the server restarted or the
-   60-minute limit passed). A new session was created — please upload your
+   60-minute limit passed). A new session was created, please upload your
    image again."*
 
 The attempt is **not** retried, because the image no longer exists server-side.
@@ -620,8 +620,8 @@ missing image surfaces as a 404 and the user re-uploads.
 | 404 | the server's `detail` (e.g. "Unknown image: …") |
 | 413 | "That file is too large for the server." |
 | 415 | "That file isn't a supported image (JPEG, PNG, BMP or TIFF)." |
-| 422 | "Please check these values — value: Input should be less than or equal to 255; window: window must be an odd number" |
-| 429 | "Too many requests — wait a moment and try again." |
+| 422 | "Please check these values, value: Input should be less than or equal to 255; window: window must be an odd number" |
+| 429 | "Too many requests, wait a moment and try again." |
 | 502 | "The provider is unavailable right now. Try again shortly." |
 | 503 | "That feature isn't configured on the server." |
 | 507 | "The server's image memory is full. Try again or restart the API." |
@@ -632,14 +632,14 @@ message. Raw JSON is never displayed.
 
 ## Chat behaviour
 
-* Replies render with `textContent` (no `innerHTML` anywhere in `web/` — the
+* Replies render with `textContent` (no `innerHTML` anywhere in `web/`, the
   smoke test enforces this). LaTeX such as `\[ ... \]` therefore appears as
   plain text; math is intentionally **not** rendered.
 * The rule-based router needs no language model, so commands execute even when
   the model is unavailable:
   * `Show me F-8 imagery` → `{"action": "fetch_satellite", "location": "F-8"}`
   * `Run k-means` → `{"action": "run_kmeans"}` (it used to send
-    `run_operation/kmeans`, which the API does not have — K-Means is its own
+    `run_operation/kmeans`, which the API does not have. K-Means is its own
     route, so the command now goes through the Clusters panel's button path)
   * `Histogram` → `{"action": "open_histogram"}`
   * `Compress this image` → `{"action": "open_compress"}`
@@ -652,7 +652,7 @@ message. Raw JSON is never displayed.
   % of pixels) with **Generate map** (item 11; it was "Classify") and
   **Reset ranges**; the Last run table, the centroid line, the separate legend
   block and every hint line are gone. K-Means always displays the clustered
-  image — there is no image/label toggle — and the raw label map (which the API
+  image, there is no image/label toggle, and the raw label map (which the API
   already stores as `kmeans:labels`) is downloaded from the File menu's
   **Export raw label map (PNG)…** entry. Max iterations is not user-facing: the
   panel always sends `max_iter=100` and K is limited to 2..10.
@@ -663,7 +663,7 @@ message. Raw JSON is never displayed.
 
 ## Chat actions (Task 1: the assistant may run the app)
 
-* The model answers in JSON — `{"reply": "…", "action": null}` — and may pick
+* The model answers in JSON, `{"reply": "…", "action": null}`, and may pick
   at most **one** action from the fixed whitelist in
   `api/geocluster/assistant.py` (`AI_ACTIONS`). The API returns it as `action`
   and (identically) as the single entry of `commands`, so the browser keeps one
@@ -677,7 +677,7 @@ message. Raw JSON is never displayed.
 * Validation is **server-side**: an unknown action, an unknown parameter, a
   value outside the UI's range (brightness −255…255, threshold 0…255, mean
   filter odd 3…31, k 2…10) or an action the app cannot run (no image, no
-  K-Means result, nothing to undo/redo — taken from the state the page sends)
+  K-Means result, nothing to undo/redo, taken from the state the page sends)
   is dropped with a logged reason; the reply text stays. The browser repeats
   the range check before dispatching anything.
 * The model can **never** pick a satellite fetch or a coordinate: no such
@@ -685,14 +685,14 @@ message. Raw JSON is never displayed.
   router's own deterministic command, resolved server-side by place name.
 * Execution goes through the matching control, never a parallel path: point
   operations and the three slider operations use the Filters panel's
-  dispatcher (`run()` / the slider's `commit()` — the slider moves to the
+  dispatcher (`run()` / the slider's `commit()`, the slider moves to the
   applied value and the history gets the same single step a release creates),
   K-Means and classification use the Clusters panel's buttons, zoom/fit use the
   View menu's viewer calls, Measure uses the toolbar toggle, export/compress/
   histogram/map composer use the File/Analysis menu entries (`ctx.uiActions`
   holds that one table).
 * With nothing loaded (or an unclear request) the assistant answers in text and
-  asks — the app state travels with the message (`has_image`, `has_clusters`,
+  asks, the app state travels with the message (`has_image`, `has_clusters`,
   `has_history`, `can_undo`, `can_redo`), and the chat refuses an image action
   client-side with a plain-text bubble even if one arrived.
 * Provider: Groq `llama-3.3-70b-versatile`, JSON mode (`response_format:
@@ -723,18 +723,18 @@ message. Raw JSON is never displayed.
   user picked them (the date inputs live under the collapsed **Advanced** fold
   and are empty by default → no placeholder text is ever sent). Bad values come
   back as `502` with an `"Invalid date …"` message, which maps to a friendly
-  toast. An unknown location is a `404` — but only when the server has
+  toast. An unknown location is a `404`, but only when the server has
   Copernicus credentials; an unconfigured server answers `503` *before* any
   place lookup, so it never calls Nominatim for nothing.
 * The Source panel offers **Place** (sector code, alias or any place name, plus
   a 1/2/5 km size box, default 2) and **Coordinates** (two `lat, lon` corners
   pasted from Google Maps, sorted server-side) modes. A place that is not a
-  known sector/alias is geocoded by the API through Nominatim — the **center
+  known sector/alias is geocoded by the API through Nominatim, the **center
   point only**; its bbox is never used. Requests are throttled to 1/s, carry a
   proper User-Agent, are cached on disk, and the cache key includes the bbox,
   the size and the date window (so Refresh is meaningful).
 * Satellite crops are requested at 10 m per pixel, so a 5 km tile is 500×500 px
-  (0.25 MP) — far below the 4 MP downscale limit, i.e. satellite images are
+  (0.25 MP), far below the 4 MP downscale limit, i.e. satellite images are
   never silently downscaled. A test asserts this.
 * The old "Working image" metadata block and "Session files" list are gone from
   the Source panel; the logic behind them (`renderFiles`, `useAsOriginal`) is
@@ -748,7 +748,7 @@ message. Raw JSON is never displayed.
   instead carries **one native tooltip line** (`title`): the four
   point-operation buttons, the section header, the Brightness / Threshold /
   Mean filter labels and their number fields, and the Clear-result button all
-  use the exact sentences from the brief — the same strings the assistant's
+  use the exact sentences from the brief, the same strings the assistant's
   glossary ships in `api/geocluster/data/app_help.json`, so the tooltip and the
   AI's offline answer can never drift apart (asserted on both sides).
 * Grayscale, Negative, Laplacian and Clear result are a clean 2 × 2 button grid
@@ -757,9 +757,9 @@ message. Raw JSON is never displayed.
   tool does" and the first suggested hint is "What does the Mean filter do?".
   The rule-based router answers those questions from the glossary with **no
   LLM call**, so they work with no API key, while the provider is rate-limited
-  or down — see the assistant notes.
+  or down, see the assistant notes.
 * Brightness (−255…255), Threshold (0…255) and Mean filter (labelled **Kernel
-  size**, odd 3…31, shown as "5 x 5") are sliders with a synced number field —
+  size**, odd 3…31, shown as "5 x 5") are sliders with a synced number field,
   no Apply button. Dragging paints a **browser-side preview** of the operation
   in the Result viewport (`js/preview.js`, downscaled to 512 px for big images)
   using the already-cached Blob: **no requests, no history entries**. On release
@@ -795,11 +795,11 @@ message. Raw JSON is never displayed.
 | `node --test "web/tests/*.test.mjs"` | 172 logic tests: config resolution, error mapping, API client contract (URLs, bodies, multipart, session recovery), chat command mapping/execution (Task 1: every assistant action, the parameter validation that mirrors the server whitelist, and the app state sent with each message), the satellite request shapes, the filter preview maths (reflect-101 box average, threshold/brightness clipping, the 512 px preview cap), the slider snapping/help texts, the item-15 rule that no help popover survives
   anywhere and that the tooltip sentences equal the shipped assistant glossary, the history `dropEntry` replacement rule, the linked classification ranges (item 11) and the histogram maths of item 13 (the OpenCV gray weights, channel counting with alpha, the 0…10 smoothing slider, the channel→series mapping), the product copy and the required credits (item 14), and the item-16 composer maths (the nine legend placements, `scaleBarLayout` for satellite/drone/typed lengths, boundary labels and number formatting, the legend box sized to the longest class name, the image-derived default sizes, and the item-17 arrow placements/border/typed-length rules). No browser needed. |
 | `python web/tests/smoke_test.py` | Serves `web/` on 5173 (reuses a running server for the same root), checks assets + content types, that every relative module import resolves, that no key material exists under `web/`, that no `innerHTML` is used, the workstation layout contract (image workspace owns the flexible track, no `object-fit: cover`, technical corner radii), and that the API's CORS allows the frontend origin. |
-| `python web/tests/integration_check.py` | Live contract check against a running API: the exact call sequence the browser makes (session → upload → 6 filters → kmeans k=5 → classify → histogram → stats → GCH2 round trip → satellite validation and error paths → chat commands → 404/415). The three checks that need real Copernicus credentials report SKIP when the server has no `api/.env` instead of failing. Requires `uvicorn main:app --port 8010`. |
-| `node web/tests/boot_test.mjs --jsdom <dir>` | Boot test: loads `index.html` in jsdom, imports `js/app.js` and drives the UI through DOM events against the live API — 963 assertions covering the shell (menu bar, toolbar, status bar, dock collapse), viewport behaviour (pan, wheel zoom, pixel readout, distance measurement, sync mirroring), upload, the six filters, the Source panel's place/corner modes, the Filters panel's tooltips (item 15: no popovers, one-line titles) and slider sessions (preview without requests, one request per release, replace-not-stack, Escape, arrow-key commits, one slider at a time), the rendered K-Means range table (item 11: live linked ranges, clamped commits, locked ends, the browser-side preview with zero requests/history entries, the boundary bar, "Generate map" = one undo step), the File menu's four image actions (item 12: exact compress tooltip, label-map entry, GCH2 compress → decompress through the menu and the toolbar), histogram windows (item 13: the active-viewport rule with its Active badge, the per-footer Histogram buttons, the smoothing slider, the Channel dropdown's per-image option list, the resize/min/max clamps on all four edges), the composer's item-16 placements/scale bar/derived sizes and its item-17 typing fix (a whole string typed into every text/number field, with focus and value checked after each keystroke), the menus (item 14: the exact File/Edit/View/Processing/Analysis/Help contents, the conditional label-map entry, the New-session confirmation and its cancel path, the Help dialogs with their focus trap, Escape and credits, disabled reasons as tooltips and no inline notes anywhere), the chat (Task 1: router commands, the app state sent with every message, a model-chosen action executed through the Filters panel's slider commit, K-Means with the chosen k, and the plain-text refusal when nothing is loaded), session-expiry recovery, and a clean browser console. jsdom is optional (not a dependency of the app); without it the test skips. |
+| `python web/tests/integration_check.py` | Live contract check against a running API: the exact call sequence the browser makes (session → upload → 6 filters → kmeans k=5 → classify → histogram → stats → GCH2 round trip → satellite validation and error paths → chat commands → 404/415). The three checks that need real Copernicus credentials report SKIP when the server has no `api/.env` instead of failing. Requires the API on port 8010 (see the root README). |
+| `node web/tests/boot_test.mjs --jsdom <dir>` | Boot test: loads `index.html` in jsdom, imports `js/app.js` and drives the UI through DOM events against the live API, 963 assertions covering the shell (menu bar, toolbar, status bar, dock collapse), viewport behaviour (pan, wheel zoom, pixel readout, distance measurement, sync mirroring), upload, the six filters, the Source panel's place/corner modes, the Filters panel's tooltips (item 15: no popovers, one-line titles) and slider sessions (preview without requests, one request per release, replace-not-stack, Escape, arrow-key commits, one slider at a time), the rendered K-Means range table (item 11: live linked ranges, clamped commits, locked ends, the browser-side preview with zero requests/history entries, the boundary bar, "Generate map" = one undo step), the File menu's four image actions (item 12: exact compress tooltip, label-map entry, GCH2 compress → decompress through the menu and the toolbar), histogram windows (item 13: the active-viewport rule with its Active badge, the per-footer Histogram buttons, the smoothing slider, the Channel dropdown's per-image option list, the resize/min/max clamps on all four edges), the composer's item-16 placements/scale bar/derived sizes and its item-17 typing fix (a whole string typed into every text/number field, with focus and value checked after each keystroke), the menus (item 14: the exact File/Edit/View/Processing/Analysis/Help contents, the conditional label-map entry, the New-session confirmation and its cancel path, the Help dialogs with their focus trap, Escape and credits, disabled reasons as tooltips and no inline notes anywhere), the chat (Task 1: router commands, the app state sent with every message, a model-chosen action executed through the Filters panel's slider commit, K-Means with the chosen k, and the plain-text refusal when nothing is loaded), session-expiry recovery, and a clean browser console. jsdom is optional (not a dependency of the app); without it the test skips. |
 
 The boot test runs in both serving modes: the default (page on localhost →
-direct API calls) and hosted (`--page-host 5173-demo.e2b.app` → everything
+direct API calls) and hosted (`--page-host app.example.com` → everything
 through the `/api` proxy, resolved against `--web http://127.0.0.1:5173`).
 
 The boot test earned its place immediately: it caught a `ReferenceError` in
@@ -812,7 +812,7 @@ are `0–80, 81–117, 118–155, 156–194, 195–255`, matching the desktop re
 
 ## Known issues we did not touch
 
-* **`api/tests/test_memory.py` is Unix-only** — it imports the `resource`
+* **`api/tests/test_memory.py` is Unix-only**: it imports the `resource`
   module, which does not exist on Windows, so the API test suite cannot run
   there without skipping it. Left alone on purpose; on Windows run
   `pytest api/tests -q --ignore=api/tests/test_memory.py` or add a local
@@ -820,16 +820,16 @@ are `0–80, 81–117, 118–155, 156–194, 195–255`, matching the desktop re
   here as requested.)
 * **"FIREWORKS" naming** was left as-is at the time; **Task 1 renamed the
   identifiers** to `GROQ_*` (`GROQ_API_KEY`, `GROQ_BASE_URL`, `GROQ_MODEL`,
-  `LEGACY_API_KEY_ENV`) — the old `FIREWORKS_API_KEY` variable is still read as
+  `LEGACY_API_KEY_ENV`), the old `FIREWORKS_API_KEY` variable is still read as
   a fallback, and the log line now says "Groq chat completion failed".
 * The satellite **success** path was not exercised in the build sandbox (no
-  Copernicus credentials there) — only the 503/404/502 paths. The 260×260 tile
+  Copernicus credentials there), only the 503/404/502 paths. The 260×260 tile
   behaviour is confirmed by the user's local run.
 * The AI **reply** path needs `GROQ_API_KEY` (Task 1; `FIREWORKS_API_KEY` still
   works as a legacy name); without a key `/ai/chat` answers 503 for questions
   (commands still work). Verified by unit test with a stubbed client plus the
   user's local run.
-* **Item 15 — the assistant answers "what is …?" itself, with no LLM call.**
+* **Item 15, the assistant answers "what is …?" itself, with no LLM call.**
   `api/geocluster/data/app_help.json` ships one entry per tool (id, name,
   aliases, short description; the six filter sentences are exactly the brief's
   wording) and two things read it: the system prompt embeds the whole glossary
@@ -838,7 +838,7 @@ are `0–80, 81–117, 118–155, 156–194, 195–255`, matching the desktop re
   does / how do I use <tool>" against the names and aliases and returns
   `{"intent": "help", "tool": …, "answer": "Name - description."}` **before**
   any provider check. The endpoint therefore returns 200 with the answer when
-  no key is configured or the provider is down or rate-limited — verified for
+  no key is configured or the provider is down or rate-limited, verified for
   both cases. Bare commands (`histogram`, `run k-means`, `show me F-8`) stay
   commands, and questions the glossary does not cover (`what is NDVI?`) still
   reach the model; `show histogram` keeps its desktop-era `fetch_satellite`
@@ -846,7 +846,7 @@ are `0–80, 81–117, 118–155, 156–194, 195–255`, matching the desktop re
   the kernel size" finds the mean filter and "what is invert colors" finds
   Negative.
 * **"FIREWORKS" naming** (second note, updated for Task 1): the provider is
-  still the owner's Groq endpoint — base URL `https://api.groq.com/openai/v1` —
+  still the owner's Groq endpoint, base URL `https://api.groq.com/openai/v1`,
   but the model is `llama-3.3-70b-versatile` with JSON output
   (`response_format={"type":"json_object"}`), `temperature=0.2`,
   `max_tokens=600` and no `reasoning_effort`, because Task 1 needs a

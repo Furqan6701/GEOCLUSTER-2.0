@@ -9,8 +9,8 @@ not ported.
 
 The desktop has **two** processing implementations:
 
-* `desktop/frontend/ui.py` — what users actually run (cv2-based, alpha-aware).
-* `desktop/frontend/backend_py.py` — a second, subtly different copy used
+* `desktop/frontend/ui.py`, what users actually run (cv2-based, alpha-aware).
+* `desktop/frontend/backend_py.py`, a second, subtly different copy used
   through the file-IPC path.
 
 Both were read end to end. Per the task, **ui.py wins wherever the two
@@ -40,13 +40,13 @@ throughout:
 * initialization: centroid of each initial range `(low + high) / 2`, where the
   ranges are the UI's `calculate_default_ranges(k)` (even 0..255 buckets);
 * assignment: nearest centroid per intensity through a 256-entry LUT
-  (first-minimum tie-break) — the histogram formulation;
+  (first-minimum tie-break), the histogram formulation;
 * update: centroid = mean of its members; empty clusters keep their centroid;
 * convergence: `max |new - old| < 0.5`, default `max_iter = 30`;
 * output ranges: midpoints of sorted final centroids; first starts at 0, last
   ends at 255;
 * output labels: pixels are labeled by the **final ranges** (the same masking
-  pass as the desktop's `output[mask] = cluster_index`), stored as uint8 —
+  pass as the desktop's `output[mask] = cluster_index`), stored as uint8,
   identical in meaning to the desktop's `output.csv`.
 
 All sums are integers below 2^53 written in float64, so accumulation order
@@ -61,7 +61,7 @@ the algorithm.
 **Fixture caveat (important):** torch is not installable in the build sandbox
 (PyPI and `download.pytorch.org` unreachable), so the K-Means fixture was
 produced by a deliberately naive reference implementation of `run_kmeans`
-(per-intensity loops, per-cluster sums) — *not* by torch. Provenance is
+(per-intensity loops, per-cluster sums), not by torch. Provenance is
 recorded in `api/tests/fixtures/expected_values.json` →
 `kmeans_k5.generator`, and the port under test is a different, vectorized
 implementation, so the comparison is still independent.
@@ -79,8 +79,8 @@ implementation, so the comparison is still independent.
 * The curated six-cluster preset (`SIX_CLUSTER_DEFAULTS`: names, colors and
   0..69/70..85/86..130/131..145/146..216/217..255 ranges) is reproduced, as is
   the HSV fallback palette for other counts. `qt_hsv_to_rgb` reproduces
-  `QColor.fromHsv(h, 180, 220)` exactly — verified against PyQt5 for **all 360
-  hues** during fixture generation — because the desktop uses Qt for that
+  `QColor.fromHsv(h, 180, 220)` exactly, verified against PyQt5 for **all 360
+  hues** during fixture generation, because the desktop uses Qt for that
   palette.
 * The unused `method` parameter of `default_cluster_assignments` was dropped
   (the desktop function ignores it too).
@@ -98,7 +98,7 @@ implementation, so the comparison is still independent.
   transition table (8 bits per lookup) with the tail byte walked bit-by-bit;
   this is not a pure bit-parallel decoder because Huffman decoding is
   inherently sequential, but it is ~1.2 s for the 1.7 MP desktop fixture and
-  ~2.4 s for a worst-case 4 MP noise image (12 M symbols) — measured, see the
+  ~2.4 s for a worst-case 4 MP noise image (12 M symbols), measured, see the
   report in the repository history.
 * Corrupt/truncated/absurd-header files raise `HuffmanError` → HTTP 400.
 
@@ -122,7 +122,7 @@ deserializers are not ported.
   desktop's frozen `2026-05-01 … 2026-07-01`.
 * OAuth token is cached for under 10 minutes (`min(expires_in − 30 s, 540 s)`)
   and is never logged or returned; credentials come from the environment only.
-  Missing credentials do **not** fail startup — the endpoint answers 503.
+  Missing credentials do **not** fail startup, the endpoint answers 503.
 * Unchanged from the desktop: token/process URLs, request payload, the
   `leastCC` mosaicking order, the true-color evalscript and the native
   resolution calculation.
@@ -163,17 +163,17 @@ deserializers are not ported.
   `{"action":"run_kmeans"}` (the desktop ran it through the Clusters panel;
   `POST /operations/kmeans` does not exist).
 
-### What the desktop had that the API lost — and what Task 1 restores
+### What the desktop had that the API lost, and what Task 1 restores
 
 | Capability | Desktop | API before Task 1 | Now |
 | --- | --- | --- | --- |
 | Router | `command_router.CommandRouter`, rule-based | same rules, ported as-is | unchanged (still model-free) |
 | Executing an operation from chat | `ui.py::handle_ai_prompt` called `execute_operation(op)` directly | returned `commands`; the browser executed them with fixed defaults | the model may choose one action + its parameters; the browser executes it through the matching UI control |
-| Parameterising a command | dialog input | none — `OPERATION_DEFAULTS` only | validated parameters from the model (or the documented defaults) |
+| Parameterising a command | dialog input | none, `OPERATION_DEFAULTS` only | validated parameters from the model (or the documented defaults) |
 | Model's role | chat only (`ai_assistant.ask`) | chat only (`{"reply"}`) | JSON `{"reply", "action"}`; the action is whitelisted and range-checked server-side |
 | Satellite | `fetch_sector_image(location)` from the router | `fetch_satellite` command from the router | unchanged; **no** satellite action is offered to the model, and no coordinates ever travel |
 
-The desktop never had a JSON action protocol — the capability that was lost in
+The desktop never had a JSON action protocol, the capability that was lost in
 the port is the chat *applying* things, not a protocol. Task 1 restores it with
 a protocol that is safe by construction: a fixed whitelist, server-side range
 validation, app-state awareness, and execution through the app's own controls.
@@ -184,7 +184,7 @@ validation, app-state awareness, and execution through the app's own controls.
   image cap (default 6, least-recently-used eviction), global memory budget
   (default 512 MB) that evicts globally LRU images and answers **507** when a
   single image cannot fit. Nothing is persisted.
-* `dependencies.require_auth` is a no-op dependency attached to every router —
+* `dependencies.require_auth` is a no-op dependency attached to every router,
   the single hook to add auth later.
 * In-process sliding-window rate limiting on `/ai/chat` (default 10/min) and
   `/satellite/fetch` (default 5/min) → 429 + `Retry-After`.
@@ -202,7 +202,7 @@ validation, app-state awareness, and execution through the app's own controls.
   session/image/operation/location, 413 too large, 415 unsupported/undecodable
   image, 422 invalid parameters, 429 rate limited, 502 provider failure,
   503 not configured, 507 memory budget exhausted. Errors are always
-  `{"detail": …}` — never error text inside a 200.
+  `{"detail": …}`, never error text inside a 200.
 * New modules beyond the requested tree, each small and documented:
   `settings.py` (env configuration), `dependencies.py` (auth hook + store
   accessors), `ratelimit.py`, `uploads.py` (capped streaming read),
@@ -219,17 +219,17 @@ validation, app-state awareness, and execution through the app's own controls.
 * GCH1, the file-IPC layer, `process_operation`, the `Timer` logging helper
   and `write_csv_matrix`/`read_csv_matrix`.
 * `torch` (never needed: the algorithm is a 1-D histogram method), `PyQt5`,
-  `matplotlib`, `pillow` — the API requirements contain none of them.
+  `matplotlib`, `pillow`, the API requirements contain none of them.
 * Dockerfile/deployment config, databases, job queues, auth.
 
 ## 10. Known limitations / deviations
 
 * K-Means fixtures were reference-generated, not torch-generated
-  (see §2) — the one place where the "call the desktop code" instruction could
+  (see §2), the one place where the "call the desktop code" instruction could
   not be followed literally.
 * The synthetic 4 MP timing image has near-maximum entropy, so its Huffman
   `compressed_bytes ≈ original_bytes`; real photographs compress much better
   (the desktop sample: 5.12 MB → 4.91 MB).
 * The API is synchronous. Measured worst case on 4 MP: K-Means 0.40 s,
-  Huffman compress 0.84 s, decode 2.36 s — all well under the ~10 s budget, so
+  Huffman compress 0.84 s, decode 2.36 s, all well under the ~10 s budget, so
   no job queue was added.

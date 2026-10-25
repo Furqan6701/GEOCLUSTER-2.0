@@ -22,7 +22,7 @@ application with every route at the root, which is what `api/tests`, the smoke
 test, the integration script and the documented `cd api && uvicorn main:app`
 loop expect.
 
-## The `import schemas` question — decision
+## The `import schemas` question: decision
 
 **Keep the flat imports and keep `cd api && uvicorn main:app` working.** The two
 supported ways to start the server are:
@@ -39,10 +39,10 @@ supported and `api/__init__.py` is deliberately absent: turning `api` into a
 package would either break `cd api` (imports would then need `from api import
 schemas` everywhere) or force a dual-import arrangement that breaks the test
 suite and every documented command. `--app-dir api` gives the same convenience
-from the repository root — and it is what the Render start command uses, because
+from the repository root, and it is what the Render start command uses, because
 the unified server has to find `web/` one level above `api/`.
 
-## Local run — exactly one command
+## Local run: exactly one command
 
 ```bash
 # once
@@ -53,7 +53,7 @@ pip install -r api/requirements.txt
 SERVE_WEB=true python -m uvicorn main:app --app-dir api --host 127.0.0.1 --port 8010
 ```
 
-* App: <http://localhost:8010/> — the same origin also answers `/api/health`.
+* App: <http://localhost:8010/>, the same origin also answers `/api/health`.
 * Windows PowerShell (same command): `$env:SERVE_WEB="true"` then the `python -m uvicorn …` line above.
 * Frontend dev loop (unchanged, for iterating on `web/` alone):
   `python web/serve.py` on <http://localhost:5173>, which proxies `/api/*` to
@@ -70,7 +70,7 @@ on the server, and a hosted page never does.
 | Setting | Value |
 | --- | --- |
 | Environment | Python 3 |
-| **Root Directory** | *(leave empty — the repository root)* |
+| **Root Directory** | *(leave empty, the repository root)* |
 | **Build Command** | `pip install -r api/requirements.txt` |
 | **Start Command** | `python -m uvicorn main:app --app-dir api --host 0.0.0.0 --port $PORT` |
 | Health Check Path | `/api/health` |
@@ -110,19 +110,19 @@ Recommended for the 512 MB instance:
 
 Secrets are read server-side only; nothing here is ever sent to the browser and
 nothing key-shaped reaches a log line (`api/log_safety.py`). The audit of the
-repository and its git history is in `docs/security-audit.md` — no credential
+repository and its git history is in `docs/security-audit.md`, no credential
 was ever committed, so there is nothing to rotate from git.
 
 ### Why one worker
 
 Sessions, uploaded images and the rate-limit buckets live in the process, so the
-deployment must run a **single** worker (`uvicorn --workers 1`, the default —
+deployment must run a **single** worker (`uvicorn --workers 1`, the default,
 never add `--workers`). The free tier spins the service down after ~15 minutes
 idle: the first request then takes a few seconds longer, the in-memory state is
 gone, and the frontend's documented 404 handling creates a fresh session and
 asks for the image again.
 
-## requirements.txt — pins and what is actually used
+## requirements.txt: pins and what is actually used
 
 `api/requirements.txt` is fully pinned; nothing in it is unused, so no line was
 removed:
@@ -170,11 +170,11 @@ deployment ever gets an OOM kill (Render shows "Ran out of memory (used over
 PyQt app and `desktop/frontend/backend_py.py::run_kmeans`); the API never
 imports it. `api/geocluster/kmeans.py` is a step-by-step port of that function:
 
-* initialization: centroid of each initial range, `(low + high) / 2` — identical
+* initialization: centroid of each initial range, `(low + high) / 2`, identical
   to the desktop's `calculate_default_ranges(K)` input;
 * assignment: each of the 256 possible intensities goes to its nearest centroid
   with the first-minimum tie-break (the desktop's behaviour), then pixels look
-  up their label — an intensity-histogram LUT;
+  up their label, an intensity-histogram LUT;
 * update: `centroid := mean intensity of its members`, empty clusters keep their
   centroid;
 * convergence: `max |new − old| < 0.5`, at most 30 iterations;
@@ -182,7 +182,7 @@ imports it. `api/geocluster/kmeans.py` is a step-by-step port of that function:
   final ranges (including the desktop's closing masking pass).
 
 The arithmetic is float64 over integer sums, so the result does not depend on
-accumulation order — the reason torch and NumPy agree bit-for-bit here, and the
+accumulation order, the reason torch and NumPy agree bit-for-bit here, and the
 reason the port is safe without importing torch at all. Behaviour is pinned by
 `api/tests/test_golden_kmeans.py` against `api/tests/fixtures/expected_values.json`.
 Honest caveat: torch is not installable in the build sandbox, so the fixture was
@@ -208,7 +208,7 @@ file from disk. A container restart therefore loses nothing but the caches, and
 the next request simply re-downloads. The one-off cost is one extra Copernicus
 token request and Nominatim lookup per fresh instance.
 
-## After deploying — five checks
+## After deploying: five checks
 
 1. `https://<app>.onrender.com/api/health` → `{"status":"ok", …}` with
    `ai_configured`/`satellite_configured` reflecting your keys.

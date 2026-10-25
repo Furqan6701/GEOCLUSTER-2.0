@@ -233,7 +233,7 @@ Move into the project folder:
 cd "GEOCLUSTER 2.0"
 ```
 
-> **Note:** The repository contains a nested folder — the actual application lives inside `GEOCLUSTER 2.0/GEOCLUSTER 2.0/`. Make sure you `cd` into the **inner** folder before continuing:
+> **Note:** The repository contains a nested folder, the actual application lives inside `GEOCLUSTER 2.0/GEOCLUSTER 2.0/`. Make sure you `cd` into the **inner** folder before continuing:
 >
 > ```bash
 > cd "GEOCLUSTER 2.0"
@@ -263,7 +263,7 @@ The application will launch with the integrated AI assistant and geospatial anal
 
 # 🐳 Docker Support (Optional)
 
-GEOCLUSTER 2.0 includes optional Docker support for reproducible builds and deployment. **This is not required to run the app** — if you followed the steps above, you already have everything you need to run GEOCLUSTER locally with Python.
+GEOCLUSTER 2.0 includes optional Docker support for reproducible builds and deployment. **This is not required to run the app**, if you followed the steps above, you already have everything you need to run GEOCLUSTER locally with Python.
 
 Docker is provided mainly as a convenience for packaging the app and its dependencies consistently across environments.
 
@@ -279,7 +279,7 @@ docker build -t geocluster .
 docker run geocluster
 ```
 
-> **Note:** GEOCLUSTER 2.0 is a PyQt5 desktop application. Since it has a graphical interface, running it inside a Docker container requires additional display configuration (e.g. X11 forwarding on Linux, or a tool like VcXsrv on Windows) — it won't just work out of the box the way a typical containerized web app would. For most users, running the app natively with Python (as shown above) is the simplest path.
+> **Note:** GEOCLUSTER 2.0 is a PyQt5 desktop application. Since it has a graphical interface, running it inside a Docker container requires additional display configuration (e.g. X11 forwarding on Linux, or a tool like VcXsrv on Windows), it won't just work out of the box the way a typical containerized web app would. For most users, running the app natively with Python (as shown above) is the simplest path.
 
 ---
 
