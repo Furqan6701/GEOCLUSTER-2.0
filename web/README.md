@@ -1,9 +1,13 @@
-# GeoCluster 2.0 — web workstation
+# GeoCluster 2.0: web frontend
 
-Static HTML/CSS/JavaScript frontend for the GeoCluster API (`api/`). No build
-step, no framework, no keys: the browser talks straight to the API.
+> **Setup and first run:** see the [root README](../README.md). This file is the
+> technical reference for the frontend: its layout, its features, how it finds the
+> API, and its tests.
 
-The UI is laid out like desktop remote-sensing software (QGIS / ENVI style)
+Static HTML, CSS and JavaScript for the GeoCluster API (`api/`). There is no build
+step, no framework and no keys: the browser talks straight to the API.
+
+The UI is laid out like desktop remote-sensing software (QGIS or ENVI style)
 rather than a dashboard:
 
 ```
@@ -23,226 +27,217 @@ rather than a dashboard:
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-* **Image workspace first** — the two viewports own the flexible grid track;
-  the toolbox and assistant are fixed-width docks that can be collapsed (their
-  width goes back to the imagery). At narrow widths the viewports stack.
-* **Viewports, not cards** — dark image-processing panes, framed image,
-  fit-to-view with the aspect ratio preserved, cursor-anchored wheel zoom,
-  drag panning, nearest-neighbour pixels at ≥1:1, pixel readout, distance
-  measurement, image name + dimensions in the header, zoom % in the footer.
-* **Sync** — one toggle mirrors zoom and pan between Original and Result
-  (they stay independent when it is off). The active viewport is highlighted
-  and named in the status bar.
-* **Toolbox** — collapsible sections: Source, Filters, Clusters, Analysis.
-* **Toolbar / menus** — Open, Satellite, Export, Compress, Undo/Redo, Pan,
-  Pixel, Measure, Sync, dock toggles; menus for File, **Edit** (Undo/Redo),
-  View, Processing, Analysis, Help. One non-wrapping row: from 1600 px the
-  words sit next to the icons, below that they drop to icons only, and a row
-  that would still overflow compacts further rather than wrapping.
-* **Help → Keyboard shortcuts / About** — two small modal dialogs (focus trap
-  and Escape; no hostnames or developer notes in either). About names the
-  product, its version and the Copernicus/OpenStreetMap credits.
-* **Undo/redo** — the last 15 states are kept in the browser as Blobs, so
-  undoing paints instantly without a server call; if the server has evicted
-  that image (LRU), the stored Blob is re-uploaded and the step retried
-  silently. Toolbar buttons, the **Edit** menu and `Ctrl+Z`/`Ctrl+Y` all drive it.
-* **Zoom** — lives in exactly one place, the per-viewport footers (the toolbar
-  duplicate was removed); the View menu keeps the same commands.
-* **Map composer** — a large modal (toolbar **Map**, Analysis → *Map composer…*
-  or a Classify run) that draws the classified image, its legend, a scale bar,
-  a north arrow, the title/subtitle, the credit line and optional corner
-  coordinates **on one canvas** — the preview *is* that canvas and the PNG
-  export re-renders it at 1x/2x/3x. Legend names/colours are shared with the
-  Clusters table.
-  * **Legend placement**: Outside right (default), Outside left, Outside bottom
-    left / center / right — every outside spot grows the canvas so the legend
-    never covers the image — or on the map in one of the four corners. The box
-    is measured for the longest class name, so nothing is ever truncated.
-  * **Scale bar**: a label at every division boundary (0 … total with its unit),
-    bottom left / center / right, 1–10 divisions, live. Exact when the image has
-    a ground scale (the default length is a round number near a fifth of the
-    width) or once you enter **Image width on the ground = …**; for an unscaled
-    photo it is a plain black/white bar with no numbers, no unit and no
-    invented distance.
-  * **Sizes** start from the image (title largest, legend/scale labels about
-    half the title, north arrow about 6 % of the image height) and every field
-    stays editable inside its own limits.
-  * **North arrow placement**: on the map in one of the four corners (top right
-    by default) or outside — top right / top left / top center in the margin
-    above the image, beside the title, which grows the export canvas. It never
-    covers the title, the legend or the scale bar.
-  * **Border**: always drawn; only its colour is a setting.
-  * **Typing is safe**: the sidebar updates the model and repaints the canvas
-    without rebuilding the field being typed in, so no keystroke is lost — in
-    the composer's fields and in the Clusters table's class names alike.
-* **Manual checks** — `docs/frontend-manual-checklist.md` lists what to confirm
-  by hand in Chrome at 1366 px and 1920 px (rendering, downloads, gestures).
-* **Shortcuts** — `Ctrl+O` open, `Ctrl+S` export PNG, `Ctrl+Z`/`Ctrl+Y`
-  undo/redo, `+`/`−` zoom, `0` fit, `1` actual size, `M` measure, `P` pixel
-  readout, `Y` sync viewers.
-* **No stub entries** — every menu entry does something real. Entries that are
-  unavailable *right now* (Export before an image, Clear result) are disabled
-  and say why in their **tooltip** — never in wrapped text beside the label —
-  and File → *Export raw label map* only appears once K-Means has run.
-  File → *New session* asks for confirmation before discarding the session.
-  The old "Recent files" / "Session images…" placeholders are gone.
+## Layout and interaction
 
-## What it does
+* **Image workspace first.** The two viewports own the flexible grid track. The
+  toolbox and assistant are fixed-width docks that can be collapsed, and their
+  width then goes back to the imagery. At narrow widths the viewports stack.
+* **Viewports, not cards.** Dark image-processing panes, a framed image,
+  fit-to-view with the aspect ratio kept, cursor-anchored wheel zoom, drag
+  panning, nearest-neighbour pixels at 1:1 or larger, a pixel readout, distance
+  measurement, the image name and dimensions in the header, and the zoom percentage
+  in the footer.
+* **Sync.** One toggle mirrors zoom and pan between Original and Result. They stay
+  independent when it is off. The active viewport is highlighted and named in the
+  status bar.
+* **Toolbox.** Collapsible sections: Source, Filters, Clusters, Analysis.
+* **Toolbar and menus.** Open, Satellite, Export, Compress, Undo and Redo, Pan,
+  Pixel, Measure, Sync and dock toggles. Menus for File, Edit (Undo and Redo), View,
+  Processing, Analysis and Help. The toolbar is one non-wrapping row: from 1600 px
+  the words sit next to the icons, below that they drop to icons only.
+* **Help.** Keyboard shortcuts and About are two small modal dialogs with a focus
+  trap and Escape to close. About names the product, its version and the
+  Copernicus and OpenStreetMap credits.
+* **Undo and redo.** The last 15 states are kept in the browser as Blobs, so
+  undoing paints instantly without a server call. If the server has evicted that
+  image (least recently used), the stored Blob is uploaded again and the step is
+  retried silently. The toolbar buttons, the Edit menu and `Ctrl+Z` and `Ctrl+Y` all
+  drive it.
+* **Zoom.** Lives in one place: the per-viewport footers. The View menu offers the
+  same commands.
 
-* **Source** — upload an image (drag & drop or file picker; JPEG/PNG/BMP/TIFF)
-  or fetch a Sentinel-2 tile for an Islamabad sector/alias (F-8, NUST, …) with
-  optional start/end dates.
-* **Filters** — grayscale, negative, laplacian, brightness, threshold and mean
-  filter. Each result is a new image id; the original is never overwritten.
-* **Clusters** — K-Means (K 2–20, max iterations) with ranges, centroids and
-  pixel counts, then a classify editor (per-cluster min/max, land-cover name,
-  colour) that returns the recoloured image and legend percentages.
-* **Analysis** — floating histogram windows (one per image, opened from the
-  sidebar, each viewport footer or the Analysis menu) with the API's 256 bins,
-  log scale, a 0…10 smoothing slider, Counts/Density/Cumulative, light/dark
-  canvas, a Compare overlay and a browser-computed Channel dropdown
-  (Gray/Red/Green/Blue/RGB overlay) — every option recomputed in the browser,
-  no extra requests. Plus the distance tool for the active viewport, with
-  px/mm/cm/m/km/inch/ft/mile units from a user-entered ground scale — and, for
-  downscaled uploads, the distance at the original resolution as well.
-* **Files** — GCH2 Huffman compress to `.gch` (desktop-compatible), decompress
+## Features
+
+* **Source.** Upload an image (drag and drop or the file picker), or fetch a
+  Sentinel-2 crop for a sector or alias (F-8, NUST and others) with optional start
+  and end dates. A place can also be given as coordinates (two corners).
+* **Filters.** Grayscale, negative, Laplacian, brightness, threshold and mean
+  filter. Each result is a new image id; the original is never overwritten. The
+  brightness and threshold sliders preview in the browser while you drag, and the
+  server's result replaces the preview on release.
+* **Clusters.** K-Means (K from 2 to 20, with a maximum number of iterations),
+  with ranges, centroids and pixel counts. A classify editor (per-cluster min and
+  max, land-cover name, colour) returns the recoloured image and legend percentages.
+* **Analysis.** Floating histogram windows (one per image, opened from the sidebar,
+  each viewport footer or the Analysis menu) with the API's 256 bins, a log scale,
+  a 0 to 10 smoothing slider, Counts, Density or Cumulative, a light or dark canvas,
+  a Compare overlay and a Channel dropdown (Gray, Red, Green, Blue or RGB overlay).
+  Every option is recomputed in the browser with no extra requests. The distance
+  tool measures in pixels or in px, mm, cm, m, km, inch, ft and mile units from a
+  ground scale that the user enters. For downscaled uploads it also shows the
+  distance at the original resolution.
+* **Files.** GCH2 Huffman compression to `.gch` (desktop-compatible), decompression
   back into the session, and PNG export of the current image.
-* **Assistant** — chat with the API's AI assistant. Router commands such as
-  `Show me F-8 imagery`, `Run k-means`, `Histogram` and `Compress this image`
-  work even when the model is unavailable, and the model may now **run a tool
-  for you** with the value you asked for (`Smooth this image with a 5 by 5 mean
-  filter`). Every action is one of the app's own controls and is executed
-  through the very same code path as that button/slider, so the undo history,
-  result viewport and toasts behave identically; the parameter is validated
-  server-side first. Replies are shown as plain text.
-
-## Run it (Windows PowerShell)
-
-```powershell
-# from the repository root (venv in api/.venv, .env copied from api/.env.example)
-$env:SERVE_WEB="true"
-python -m uvicorn main:app --app-dir api --host 127.0.0.1 --port 8010
-# then open http://localhost:8010/
-```
-
-### One process instead (no second terminal)
-
-`api` also serves this folder, which is the deployment shape
-(`docs/deployment-render.md`):
-
-```bash
-# from the repository root
-SERVE_WEB=true python -m uvicorn main:app --app-dir api --host 127.0.0.1 --port 8010
-```
-
-Then the whole app is <http://localhost:8010/>: the page comes from `web/`, the
-API answers at `/api` *and* at the root (so the frontend's local default needs no
-configuration), and everything private — `/.env`, `/.git/config`, `/api/main.py`,
-`/tests/…` — answers 404. `web/serve.py` stays the fastest loop when you are only
-editing the frontend.
-
-Open <http://localhost:5173>: the right side of the title bar shows the API
-address, the session and whether the AI/satellite credentials are configured
-on the server; the status bar at the bottom shows the image dimensions, the
-channel layout, zoom, cursor position, pixel value and the active viewport.
-
-## Run it (macOS / Linux)
-
-```bash
-cd api && python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt && cp .env.example .env
-cd .. && SERVE_WEB=true python -m uvicorn main:app --app-dir api --host 127.0.0.1 --port 8010
-# then open http://localhost:8010/
-```
+* **Map composer.** A large modal (toolbar Map, Analysis, Map composer, or a
+  Classify run). It draws the classified image, its legend, a scale bar, a north
+  arrow, the title and subtitle, the credit line and optional corner coordinates
+  on one canvas. The preview is that canvas, and the PNG export re-renders it at
+  1x, 2x or 3x. Legend names and colours are shared with the Clusters table.
+  * **Legend placement:** outside right (default), outside left, outside bottom
+    left, centre or right (the canvas grows so the legend never covers the image),
+    or on the map in one of four corners.
+  * **Scale bar:** a label at every division boundary, bottom left, centre or
+    right, with 1 to 10 divisions, updated live. It is exact when the image has a
+    ground scale, or once you enter the image width on the ground. For an unscaled
+    photo it is a plain black and white bar with no numbers and no invented distance.
+  * **North arrow:** on the map in one of four corners, or outside in the margin
+    above the image (top right, top left or top centre). It never covers the title,
+    the legend or the scale bar.
+  * **Typing is safe.** The sidebar updates the model and repaints the canvas without
+    rebuilding the field being typed in, so no keystroke is lost.
+* **Assistant.** Chat with the API's AI assistant. Router commands such as
+  `Show me F-8 imagery`, `Run k-means`, `Histogram` and `Compress this image` work
+  even when the model is unavailable. The model can also run a tool for you with
+  the value you asked for (for example, `Smooth this image with a 5 by 5 mean
+  filter`). Every action is one of the app's own controls and runs through the same
+  code path as that control, so the undo history, the result viewport and the toasts
+  behave identically. The parameter is validated on the server first. Replies are
+  shown as plain text, never as HTML.
+* **Shortcuts.** `Ctrl+O` open, `Ctrl+S` export PNG, `Ctrl+Z` and `Ctrl+Y`
+  undo and redo, `+` and `-` zoom, `0` fit, `1` actual size, `M` measure, `P` pixel
+  readout, `Y` sync viewers.
+* **No stub entries.** Every menu entry does something real. Entries that are
+  unavailable right now (Export before an image, Clear result) are disabled, and
+  their tooltip says why. File, Export raw label map, appears only once K-Means has
+  run. File, New session asks for confirmation before it discards the session.
+* **Manual checks.** [`docs/frontend-manual-checklist.md`](../docs/frontend-manual-checklist.md)
+  lists what to confirm by hand in Chrome at 1366 px and 1920 px (rendering,
+  downloads, gestures).
 
 ## Where the API request goes
 
 The frontend picks its API base in this order:
 
-1. `?api=…` on the page URL,
-2. `localStorage.geocluster.apiBase`,
-3. the page's hostname — **localhost** pages call `http://localhost:8010`
-   directly (the normal dev flow, allowed by the API's CORS list); any other
-   host uses the same-origin **`/api`** path.
+1. `?api=...` on the page URL.
+2. `localStorage.geocluster.apiBase`.
+3. The page's hostname. **localhost** pages call `http://localhost:8010` directly
+   (the normal local flow, allowed by the API's CORS list). Any other host uses the
+   same-origin **`/api`** path.
 
-`serve.py` forwards `/api/*` to the backend, so the page works when the
-browser is not on the machine running the API (hosted preview, another device
-on the LAN, a reverse proxy). Browsers must never be told to call `localhost`
-for a service that runs on the server — that would mean *their* machine.
+`serve.py` forwards `/api/*` to the backend, so the page also works when the browser
+is not on the machine running the API (a hosted preview, another device on the
+network, a reverse proxy). A browser must never be told to call `localhost` for a
+service that runs on the server, because that would mean the visitor's own machine.
 
-```powershell
-python serve.py                                   # /api/* → http://127.0.0.1:8010
-python serve.py --api http://127.0.0.1:9000       # proxy another backend
-python serve.py --no-proxy                        # static files only
+`serve.py` is the fastest loop when you are only editing the frontend:
+
+```bash
+python web/serve.py                                  # /api/* -> http://127.0.0.1:8010, page on :5173
+python web/serve.py --api http://127.0.0.1:9000      # proxy another backend
+python web/serve.py --no-proxy                       # static files only
 ```
+
+On Windows, run the same commands with `python web\serve.py`. Open
+<http://localhost:5173/> for this mode. The API must be running on port 8010.
 
 ## Configuration
 
 | Setting | How |
 | --- | --- |
-| API address | `http://localhost:5173/?api=http://127.0.0.1:8010`, `?api=/api` (force the proxy), or `localStorage.geocluster.apiBase` |
-| API port / credentials | `api/.env` (see `api/.env.example`) |
-| CORS | only needed for the direct flow: serve the page from an origin listed in the API's `ALLOWED_ORIGINS` (defaults include localhost:5173). Hosted pages go through `/api`, which is same-origin — no CORS involved |
-| Frontend port | `python serve.py --port 5174` — remember to add that origin to `ALLOWED_ORIGINS` |
+| API address | `http://localhost:8010/?api=http://127.0.0.1:8010`, `?api=/api` (force the proxy), or `localStorage.geocluster.apiBase` |
+| API port and credentials | `api/.env` (see `api/.env.example` and [`api/README.md`](../api/README.md)) |
+| CORS | Only needed for the direct flow: serve the page from an origin listed in the API's `ALLOWED_ORIGINS`. Pages served through `/api` are same-origin, so CORS does not apply |
+| Frontend port (`serve.py`) | `python web/serve.py --port 5174` (or `WEB_PORT`). Add that origin to `ALLOWED_ORIGINS` if the page calls the API directly |
 
-Never put keys in `web/`: everything here is served to the browser verbatim.
-The frontend only ever calls the API.
+Never put keys in `web/`: everything here is served to the browser verbatim. The
+frontend only ever calls the API.
 
 ## Tests
 
-```powershell
-# logic tests (Node 18+; no browser, no API needed)
-node --test "web/tests/*.test.mjs"
+Run these from the repository root. On Windows, use the venv Python from the
+[root README](../README.md#step-1-create-the-virtual-environment-and-install-the-requirements).
 
-# static checks: assets, imports, no keys, no innerHTML, CORS (API optional)
+**Logic tests** (Node 18 or newer; no browser and no API needed):
+
+```bash
+node --test web/tests/logic.test.mjs
+```
+
+**Static checks** (assets, imports, no keys, no `innerHTML`, CORS; the API is optional):
+
+```bash
 python web/tests/smoke_test.py
-
-# live contract check (the app must be running on :8010)
-python web/tests/integration_check.py
-
-# boot test: runs the real UI in jsdom against the live API (needs jsdom)
-npm install --prefix /tmp/geocluster-jsdom jsdom
-node web/tests/boot_test.mjs --jsdom /tmp/geocluster-jsdom/node_modules
 ```
 
-The boot test is optional but the strongest signal short of a real browser: it
-loads `index.html`, boots `js/app.js`, uploads the fixture image through the
-file input and then clicks through the filters, K-Means, the Clusters editor
-table, classify → the Map composer modal (aria, focus trap, one-canvas export),
-histogram/stats, GCH2 compress → decompress, the chat (the router commands, the
-app state sent with every message, a model-chosen action executed through the
-panel action, and the plain-text refusal when nothing is loaded), and the
-session-expired recovery path. It skips itself (exit 0) when jsdom or the API is
-missing.
+**Live contract check** (the API must be running on port 8010):
 
-The two live suites exercise `/satellite/fetch` validation more often than the
-default `SATELLITE_RATE_LIMIT_PER_MINUTE=5`, so when you run them back to back
-start the API with a raised limit for that session (the limiter itself is
-covered by `api/tests/test_rate_limit.py`): `SATELLITE_RATE_LIMIT_PER_MINUTE=60
-python -m uvicorn main:app` — or wait a minute between runs.
+```bash
+python web/tests/integration_check.py
+```
 
-Run it twice to cover both ways the page is served:
+The two live suites exercise `/api/satellite/fetch` validation more often than the
+default limit of `SATELLITE_RATE_LIMIT_PER_MINUTE=5`. When you run them back to
+back, start the API with a higher limit for that session (the limiter itself is
+covered by `api/tests/test_rate_limit.py`), or wait a minute between runs.
+
+**Boot test** (the real UI in jsdom against the live API). jsdom is not a dependency
+of the app. Install it in a folder of your choice, outside the repository:
+
+macOS and Linux:
+
+```bash
+npm install --prefix ~/geocluster-jsdom jsdom
+node web/tests/boot_test.mjs --jsdom ~/geocluster-jsdom/node_modules
+```
+
+Windows PowerShell:
 
 ```powershell
-node web/tests/boot_test.mjs --jsdom /tmp/geocluster-jsdom/node_modules
-# hosted mode: the page is not on localhost, so every call goes through /api
-node web/tests/boot_test.mjs --jsdom /tmp/geocluster-jsdom/node_modules `
-     --page-host 5173-demo.e2b.app --web http://127.0.0.1:5173
+npm install --prefix "$env:USERPROFILE\geocluster-jsdom" jsdom
+node web\tests\boot_test.mjs --jsdom "$env:USERPROFILE\geocluster-jsdom\node_modules"
 ```
 
-`node --test` also works from inside `web/`: `node --test "tests/*.test.mjs"`.
+The boot test also looks for `GEOCLUSTER_JSDOM` (the `node_modules` folder) and for
+a global `jsdom` install. Without jsdom it skips itself and exits with code 0.
+
+It loads `index.html`, boots `js/app.js`, uploads the fixture image
+(`api/tests/fixtures/sample.jpg`) through the file input, and then clicks through the
+filters, K-Means, the Clusters editor table, classify and the Map composer modal (aria,
+focus trap, one-canvas export), histogram and stats, GCH2 compress and decompress,
+the chat (router commands, the app state sent with each message, a model-chosen
+action run through the panel's own action, and the plain-text refusal when nothing
+is loaded), and the session-expired recovery path.
+
+Run it twice to cover both ways the page is served. The first run is the local flow
+(the page on localhost, calls go straight to the API). The second run is the hosted
+flow, where the page is on a non-local host and every call goes through `/api`. It
+needs `python web/serve.py` running on port 5173, which forwards `/api` to the API:
+
+macOS and Linux:
+
+```bash
+node web/tests/boot_test.mjs --jsdom ~/geocluster-jsdom/node_modules --page-host app.example.com --web http://127.0.0.1:5173
+```
+
+Windows PowerShell:
+
+```powershell
+node web\tests\boot_test.mjs --jsdom "$env:USERPROFILE\geocluster-jsdom\node_modules" --page-host app.example.com --web http://127.0.0.1:5173
+```
+
+`app.example.com` is a placeholder. Any hostname that is not `localhost` works.
 
 ## Troubleshooting
 
 | Symptom | Fix |
 | --- | --- |
-| Banner "Can't reach the API…" | start the API (`uvicorn main:app --port 8010`) and confirm the base URL |
-| Banner mentions `/api` and the server could not reach the API | the proxy target is down — start the API, or point `serve.py --api http://host:port` at the right one |
-| Browser console shows a CORS error | the page's origin is missing from `ALLOWED_ORIGINS` (or you opened `file://`) — add the origin and restart the API |
-| "Your session expired…" toast | expected after an API restart or 60 minutes idle — the image must be uploaded again |
-| AI chip says "not configured" | `GROQ_API_KEY` is missing in `api/.env`; commands still work |
-| Satellite chip says "not configured" | `COPERNICUS_CLIENT_ID`/`SECRET` missing in `api/.env` |
-| Chat answers 502 | the AI provider errored; commands still run — see `docs/frontend-notes.md` |
+| Banner "Can't reach the API..." | Start the API (see the root README, step 4) and check the base URL. |
+| Banner mentions `/api` and the server could not reach the API | The proxy target is down. Start the API, or point `serve.py --api http://host:port` at the right one. |
+| Browser console shows a CORS error | The page's origin is missing from `ALLOWED_ORIGINS`, or you opened `file://`. Add the origin and restart the API. |
+| "Your session expired..." toast | Expected after an API restart or 60 minutes of inactivity. Upload the image again. |
+| AI chip says "not configured" | `GROQ_API_KEY` is missing in `api/.env`. Commands still work. |
+| Satellite chip says "not configured" | `COPERNICUS_CLIENT_ID` or `COPERNICUS_CLIENT_SECRET` is missing in `api/.env`. |
+| Chat answers 502 | The AI provider errored. Commands still run. See [`docs/frontend-notes.md`](../docs/frontend-notes.md). |
 
-More detail (error mapping, chat rules, viewer behaviour, known issues) is in
+More detail (error mapping, chat rules, viewer behaviour and known issues) is in
 [`docs/frontend-notes.md`](../docs/frontend-notes.md).

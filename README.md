@@ -91,65 +91,146 @@ Browser (web/)                           FastAPI server (api/)
 * **The frontend has no build step.** Open-source readers can follow it file
   by file under `web/js/`.
 
-More detail: [`api/README.md`](api/README.md) (endpoints, limits, environment),
-[`web/README.md`](web/README.md) (frontend, tests),
+More detail: [`api/README.md`](api/README.md) (endpoints, limits, environment
+variables), [`web/README.md`](web/README.md) (frontend and its tests),
 [`docs/deployment-render.md`](docs/deployment-render.md) (hosting),
 [`docs/security-audit.md`](docs/security-audit.md) (security review).
 
 ## Setup Instructions
 
-You need Python 3.11 and a Git checkout of this repository.
+You need **Python 3.11** and a copy of this repository. Every command below runs
+from the repository root, the folder that contains `api/`, `web/` and `docs/`.
 
-**1. Create a virtual environment and install the requirements**
+Get the code:
 
 ```bash
-python3.11 -m venv .venv
-source .venv/bin/activate            # Windows PowerShell: .\.venv\Scripts\Activate.ps1
+git clone https://github.com/Furqan6701/GEOCLUSTER-2.0.git
+cd GEOCLUSTER-2.0
+```
+
+### Step 1: Create the virtual environment and install the requirements
+
+**Windows (PowerShell):**
+
+```powershell
+python -m venv venv
+.\venv\Scripts\python.exe -m pip install -r api\requirements.txt
+```
+
+If `python` is not Python 3.11, use the launcher instead: `py -3.11 -m venv venv`.
+
+You do not need to activate the environment. Calling `.\venv\Scripts\python.exe`
+directly always uses it. This matters when PowerShell blocks `Activate.ps1` with
+its execution policy. If you do want to activate it, run
+`.\venv\Scripts\Activate.ps1` and then use `python` as usual.
+
+**macOS and Linux:**
+
+```bash
+python3.11 -m venv venv
+source venv/bin/activate
 pip install -r api/requirements.txt
 ```
 
-**2. Create your `.env` file and fill in the values**
+### Step 2: Create your `.env` file
 
-```bash
-cp api/.env.example api/.env         # Windows PowerShell: Copy-Item api\.env.example api\.env
+**Windows (PowerShell):**
+
+```powershell
+Copy-Item api\.env.example api\.env
 ```
 
-Open `api/.env` and set:
+**macOS and Linux:**
 
-| Variable | What to put there |
-| --- | --- |
-| `GROQ_API_KEY` | Your Groq key, for the AI assistant. Leave empty to run without it. |
-| `COPERNICUS_CLIENT_ID` | Your Copernicus Data Space client ID. Leave empty to run without satellite fetch. |
-| `COPERNICUS_CLIENT_SECRET` | Your Copernicus Data Space client secret. |
-| `ALLOWED_ORIGINS` | Pre-filled with `http://localhost:8010,http://127.0.0.1:8010`. Change only when you serve the app from another address. |
+```bash
+cp api/.env.example api/.env
+```
 
-`api/.env` is git-ignored. Never commit it.
+Open `api/.env` in a text editor and fill in the keys you have (step 3). Every
+key is optional: without a Groq key the AI chat answers with a notice, and
+without Copernicus credentials satellite fetch is unavailable. Everything else
+keeps working. `api/.env` is git-ignored, so it stays on your machine. Never
+commit it.
 
-**3. Run the app with one command** (from the repository root, venv active)
+### Step 3: Get your keys (optional)
+
+**Groq key (AI assistant):**
+
+1. Sign in at [console.groq.com](https://console.groq.com) (you can use a Google account).
+2. Open **API Keys** at [console.groq.com/keys](https://console.groq.com/keys).
+3. Click **Create API Key**, give it a name, and copy the key. Groq shows it once.
+4. Paste it into `api/.env` as `GROQ_API_KEY=` followed by the key.
+
+**Copernicus client ID and secret (satellite fetch):**
+
+1. Create a free account at [dataspace.copernicus.eu](https://dataspace.copernicus.eu) and sign in.
+2. Open your profile menu, choose **Sentinel Hub**, and open the **Sentinel Hub Dashboard**.
+3. Go to **User settings** and find the **OAuth clients** section.
+4. Click **Create**, give the client a name, choose an expiry date, and set the supported flow to **Client Credentials**.
+5. Click **Create**. The **client ID** and **client secret** appear. Copy both now: the secret is shown **once** and cannot be retrieved later.
+6. Paste them into `api/.env` as `COPERNICUS_CLIENT_ID=` and `COPERNICUS_CLIENT_SECRET=`.
+
+Restart the server after you edit `api/.env`.
+
+The other settings in `api/.env` have safe defaults. The full list is in
+[`api/README.md`](api/README.md#environment-variables-apienv).
+
+### Step 4: Start the app
+
+Start the server from the repository root. It runs in the foreground, so keep
+the terminal open while you use the app.
+
+**Windows (PowerShell):**
+
+```powershell
+$env:SERVE_WEB="true"
+.\venv\Scripts\python.exe -m uvicorn main:app --app-dir api --host 127.0.0.1 --port 8010
+```
+
+**macOS and Linux:**
 
 ```bash
 SERVE_WEB=true python -m uvicorn main:app --app-dir api --host 127.0.0.1 --port 8010
 ```
 
-Windows PowerShell:
+The app is set up for port 8010 on localhost. Keep that port unless you also read
+[`web/README.md`](web/README.md#where-the-api-request-goes), which explains how the page finds the API.
+
+### Step 5: Open the app
+
+| What | Address |
+| --- | --- |
+| The app | <http://localhost:8010/> |
+| Health check | <http://localhost:8010/api/health> |
+| Interactive API reference | <http://localhost:8010/api/docs> |
+
+The health check reports whether the AI and satellite credentials are configured,
+without showing their values. Stop the server with `Ctrl+C`.
+
+### Run the tests (optional)
+
+Install the test requirements once (they go on top of the runtime requirements):
+
+**Windows (PowerShell):**
 
 ```powershell
-$env:SERVE_WEB="true"
-python -m uvicorn main:app --app-dir api --host 127.0.0.1 --port 8010
+.\venv\Scripts\python.exe -m pip install -r api\requirements.txt -r api\requirements-dev.txt
+.\venv\Scripts\python.exe -m pytest api\tests -q --ignore api\tests\test_memory.py
+node --test web/tests/logic.test.mjs
 ```
 
-**4. Open the app** at **<http://localhost:8010/>**.
-
-The health check is at <http://localhost:8010/api/health>, and the interactive
-API reference is at <http://localhost:8010/api/docs>.
-
-**Run the tests** (optional):
+**macOS and Linux:**
 
 ```bash
-pip install -r api/requirements-dev.txt
+pip install -r api/requirements.txt -r api/requirements-dev.txt
 python -m pytest api/tests -q
 node --test web/tests/logic.test.mjs
 ```
+
+`api/tests/test_memory.py` uses the Unix-only `resource` module, so it is skipped
+on Windows with `--ignore`. The Node tests need Node 18 or newer and no browser.
+The browser-level boot test and the live API checks are described in
+[`web/README.md`](web/README.md#tests).
 
 ## Demo
 
