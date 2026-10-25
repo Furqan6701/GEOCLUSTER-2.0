@@ -50,6 +50,8 @@ Non-secret settings (defaults in brackets):
 | `SESSION_MAX_IMAGES` | `6` | Images per session; the least recently used is evicted. |
 | `GLOBAL_MEMORY_MB` | `512` | Global in-memory image budget (507 when exhausted). |
 | `SATELLITE_MAX_KM` | `5` | Largest satellite crop, per side, in kilometres. A 5 × 5 km square is the largest crop by default. Larger requests get a 422. |
+| `COPERNICUS_CONNECT_TIMEOUT_SECONDS` | `15` | Seconds to wait to connect to Copernicus. A connection error or timeout is retried 3 times with a short backoff (0.5 s, 1 s, 2 s), then the request fails with a 502: "Could not reach Copernicus. Check your internet connection and try again." |
+| `COPERNICUS_READ_TIMEOUT_SECONDS` | `90` | Seconds to wait for Copernicus to answer once connected. Same retries and 502 as above. Worst case with a silent server: about 6 minutes before the 502. Lower it if you would rather fail faster. |
 | `SATELLITE_CACHE_DIR` | the OS temp folder, `geocluster-satellite-cache` | Satellite PNG and place-lookup cache. Disposable and never served over HTTP. |
 | `NOMINATIM_USER_AGENT` | `GeoCluster/2.0 (Sentinel-2 crop fetch; +repository URL)` | Identifying User-Agent for OpenStreetMap place lookups. Set your own contact URL for long-running use. |
 | `AI_RATE_LIMIT_PER_MINUTE` | `10` | `/api/ai/chat` limit per client IP. `0` disables it. |
@@ -84,7 +86,7 @@ examples from the repository root so the sample path resolves. The sample is
 Status codes: 201 created · 400 bad Huffman payload · 404 unknown
 session, image, operation or location · 413 upload too large · 415 unsupported
 or undecodable image · 422 invalid parameters · 429 rate limited (with
-`Retry-After`) · 500 unexpected error (generic message) · 502 provider failure
+`Retry-After`) · 500 unexpected error (generic message) · 502 provider failure (Copernicus unreachable, or the credentials rejected: each has its own message, and neither carries a secret)
 (AI or Copernicus) · 503 not configured · 507 memory budget exhausted.
 
 Every error body is `{"detail": "..."}`. Validation errors list `{type, loc, msg}`
@@ -162,7 +164,7 @@ scale bar exact.
 ## Tests
 
 ```bash
-pytest api/tests -q                      # 342 tests, offline (network mocked)
+pytest api/tests -q                      # 361 tests, offline (network mocked)
 ```
 
 On Windows, skip `test_memory.py` because it imports the Unix-only `resource`
