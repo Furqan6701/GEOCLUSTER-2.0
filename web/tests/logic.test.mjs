@@ -241,13 +241,13 @@ test("resolveApiBase uses the same-origin /api path off the dev machine", () => 
   assert.equal(resolveApiBase({ hostname: "localhost" }), DEFAULT_API_BASE);
   assert.equal(resolveApiBase({ hostname: "127.0.0.1" }), DEFAULT_API_BASE);
   assert.equal(resolveApiBase({ hostname: "" }), DEFAULT_API_BASE);
-  assert.equal(resolveApiBase({ hostname: "5173-abc.e2b.app" }), PROXY_API_BASE);
+  assert.equal(resolveApiBase({ hostname: "app.example.com" }), PROXY_API_BASE);
   assert.equal(resolveApiBase({ hostname: "192.168.1.20" }), PROXY_API_BASE);
   // an explicit choice always wins over the host default
-  assert.equal(resolveApiBase({ hostname: "5173-abc.e2b.app", search: "?api=http://127.0.0.1:9000" }),
+  assert.equal(resolveApiBase({ hostname: "app.example.com", search: "?api=http://127.0.0.1:9000" }),
     "http://127.0.0.1:9000");
-  assert.equal(resolveApiBase({ hostname: "5173-abc.e2b.app", search: "?api=/api" }), "/api");
-  assert.equal(resolveApiBase({ hostname: "5173-abc.e2b.app", search: "?api=//evil.example" }), PROXY_API_BASE);
+  assert.equal(resolveApiBase({ hostname: "app.example.com", search: "?api=/api" }), "/api");
+  assert.equal(resolveApiBase({ hostname: "app.example.com", search: "?api=//evil.example" }), PROXY_API_BASE);
 });
 
 test("isUsableApiBase accepts http(s) URLs and same-origin paths only", () => {

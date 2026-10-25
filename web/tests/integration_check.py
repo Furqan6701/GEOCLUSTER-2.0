@@ -21,7 +21,7 @@ import urllib.request
 
 API = "http://localhost:8010"
 REPO = pathlib.Path(__file__).resolve().parents[2]
-SAMPLE = REPO / "desktop" / "images" / "sample.jpg"
+SAMPLE = REPO / "api" / "tests" / "fixtures" / "sample.jpg"  # same bytes as the verified desktop sample
 
 FAILURES: list[str] = []
 SKIPS: list[str] = []
@@ -102,7 +102,7 @@ def main() -> int:
 
     # ----------------------------------------------------------------- upload
     if not SAMPLE.exists():
-        skip("upload desktop/images/sample.jpg", f"missing {SAMPLE}")
+        skip("upload the fixture sample.jpg", f"missing {SAMPLE}")
     else:
         status, _, payload = multipart(f"/sessions/{session_id}/images", "sample.jpg", SAMPLE.read_bytes())
         check(status == 201, "POST image → 201", str(payload)[:200])

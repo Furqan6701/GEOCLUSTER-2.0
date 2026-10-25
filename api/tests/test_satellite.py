@@ -5,6 +5,7 @@ Everything is mocked: no test touches the network.
 
 from __future__ import annotations
 
+import tempfile
 from datetime import date
 from pathlib import Path
 
@@ -75,8 +76,9 @@ class FakeNominatimSession:
 def fake_places(results=None, tmp_path=None, *, error=None, throttle=None):
     """A PlaceLookup wired to a fake Nominatim session (no network, no waiting)."""
     session = FakeNominatimSession(results, error=error)
+    cache = tmp_path or tempfile.mkdtemp(prefix="geocluster-test-places-")
     lookup = PlaceLookup(
-        cache_dir=tmp_path or "/tmp/geocluster-test-places",
+        cache_dir=cache,
         session=session,
         throttle=throttle or NominatimThrottle(min_interval=0, clock=lambda: 0.0, sleep=lambda _s: None),
     )

@@ -341,9 +341,9 @@ def test_api_rejects_bad_coordinates_with_a_422_sentence(app, client):
         assert expected in bad.json()["detail"]
 
 
-def test_api_rejects_an_area_beyond_the_limit(app, client, monkeypatch):
+def test_api_rejects_an_area_beyond_the_limit(app, client, monkeypatch, tmp_path):
     monkeypatch.setenv("SATELLITE_MAX_KM", "5")
-    app.state.satellite = SatelliteClient(client_id="id", client_secret="secret", cache_dir="/tmp/nope")
+    app.state.satellite = SatelliteClient(client_id="id", client_secret="secret", cache_dir=tmp_path / "satellite")
     session_id = client.post("/sessions").json()["session_id"]
     response = client.post(
         "/satellite/fetch",
@@ -378,11 +378,11 @@ def test_api_passes_refresh_through(app, client):
     assert seen["refresh"] is True
 
 
-def test_api_keeps_the_original_request_shape_working(app, client):
+def test_api_keeps_the_original_request_shape_working(app, client, tmp_path):
     """{session_id, location, start, end} — the shape the desktop-era tests use."""
     app.state.satellite = SatelliteClient(
-        client_id="id", client_secret="secret", cache_dir="/tmp/does-not-matter",
-        places=fake_places(results=[], tmp_path="/tmp/does-not-matter-places")[0],
+        client_id="id", client_secret="secret", cache_dir=tmp_path / "satellite",
+        places=fake_places(results=[], tmp_path=tmp_path / "places")[0],
     )
     session_id = client.post("/sessions").json()["session_id"]
     response = client.post("/satellite/fetch", json={"session_id": session_id, "location": "F-8", "start": "2026-10-01", "end": "2026-09-01"})

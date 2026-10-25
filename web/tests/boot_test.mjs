@@ -10,9 +10,11 @@
  * Requirements:
  *   - a running API at http://localhost:8010 (uvicorn main:app --port 8010)
  *   - jsdom, which is NOT a dependency of the app (it has none). Install it
- *     outside the repo, e.g.:
- *         npm install --prefix /tmp/geocluster-jsdom jsdom
- *     and run:  node web/tests/boot_test.mjs --jsdom /tmp/geocluster-jsdom/node_modules
+ *     outside the repo (any folder you like), e.g. on macOS/Linux:
+ *         npm install --prefix ~/geocluster-jsdom jsdom
+ *     and run:  node web/tests/boot_test.mjs --jsdom ~/geocluster-jsdom/node_modules
+ *     On Windows PowerShell use $env:USERPROFILE\geocluster-jsdom in both places.
+ *     Or set GEOCLUSTER_JSDOM to the node_modules folder.
  *     Without jsdom the test SKIPs (exit 0) so the rest of the suite still runs.
  *
  * Usage: node web/tests/boot_test.mjs [--jsdom <node_modules dir>] [--api <base>]
@@ -53,8 +55,6 @@ async function loadJsdom() {
     process.env.GEOCLUSTER_JSDOM,
     "jsdom",
     path.join(REPO, "node_modules"),
-    "/tmp/geocluster-jsdom/node_modules",
-    "/tmp/webtest/node_modules",
   ].filter(Boolean);
 
   for (const candidate of candidates) {
