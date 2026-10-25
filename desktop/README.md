@@ -4,7 +4,7 @@
 
 GEOCLUSTER 2.0 is an AI-powered desktop application that combines satellite imagery retrieval, GIS visualization, and classical image processing into a single intelligent geospatial analysis platform.
 
-Developed for the **AMD Developer Hackathon: ACT II (Unicorn Track)**, GEOCLUSTER 2.0 enables users to retrieve satellite imagery, apply spatial filters and radiometric enhancements, perform clustering and classification, measure real-world distances, and interact with the system using natural language.
+GEOCLUSTER 2.0 enables users to retrieve satellite imagery, apply spatial filters and radiometric enhancements, perform clustering and classification, measure real-world distances, and interact with the system using natural language.
 
 ---
 
@@ -341,7 +341,7 @@ The following screenshots demonstrate GEOCLUSTER 2.0 in action.
 | 📊 Clustering | K-Means clustering and classification |
 | 📏 Distance Tool | Pixel-to-unit distance measurement |
 
-> Screenshots will be added before the final submission.
+> Screenshots will be added.
 
 ---
 
@@ -363,12 +363,9 @@ Although GEOCLUSTER 2.0 already provides an integrated AI-powered geospatial ana
 
 # 🙏 Acknowledgements
 
-This project was proudly developed for the **AMD Developer Hackathon: ACT II (Unicorn Track)**.
-
 Special thanks to:
 
 - ❤️ AMD
-- 🚀 lablab.ai
 - 🤖 Fireworks AI
 - 🐍 Python Community
 - 📦 Open Source Contributors
@@ -377,6 +374,6 @@ Special thanks to:
 
 # 📜 License
 
-This project was developed for educational purposes and as part of the **AMD Developer Hackathon: ACT II**.
+This project was developed for educational purposes.
 
 Feel free to explore, learn from, and build upon the project while respecting the licenses of all third-party libraries and services used.
