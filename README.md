@@ -232,6 +232,37 @@ on Windows with `--ignore`. The Node tests need Node 18 or newer and no browser.
 The browser-level boot test and the live API checks are described in
 [`web/README.md`](web/README.md#tests).
 
+## Troubleshooting
+
+### Satellite fetch fails with "Could not reach Copernicus" or "Could not authenticate"
+
+Run the connection check from the repository root. It tests each step in turn (DNS, TCP,
+TLS, sign-in and one small imagery request), prints PASS or FAIL with the exact error for
+each, and ends with the first failing step and its likely cause. It never prints your
+client secret or the access token.
+
+Windows (PowerShell):
+
+```powershell
+.\venv\Scripts\python.exe scripts\check_copernicus.py
+```
+
+macOS and Linux:
+
+```bash
+python scripts/check_copernicus.py
+```
+
+Read the summary at the bottom:
+
+- **DNS** or **TCP** fails: the network blocks or drops the connection. Try another network.
+  If only IPv6 fails, set `COPERNICUS_FORCE_IPV4=true` in `api/.env`.
+- **TLS** fails with a certificate error: a proxy or antivirus re-signs HTTPS. Set
+  `COPERNICUS_CA_BUNDLE` in `api/.env` to its root certificate (see [`api/README.md`](api/README.md)).
+- **Sign-in** is rejected: check `COPERNICUS_CLIENT_ID` and `COPERNICUS_CLIENT_SECRET` in `api/.env`.
+- **Proxy** errors: check the proxy address in `HTTPS_PROXY` or the Windows proxy setting.
+
+
 ## Demo
 
 > Placeholders. Replace each one before the public release.
