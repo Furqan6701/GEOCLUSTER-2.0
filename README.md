@@ -93,7 +93,7 @@ Browser (web/)                           FastAPI server (api/)
 
 More detail: [`api/README.md`](api/README.md) (endpoints, limits, environment
 variables), [`web/README.md`](web/README.md) (frontend and its tests),
-[`docs/deployment-render.md`](docs/deployment-render.md) (hosting),
+[`docs/deployment.md`](docs/deployment.md) (hosting),
 [`docs/security-audit.md`](docs/security-audit.md) (security review).
 
 ## Setup Instructions

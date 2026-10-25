@@ -1,9 +1,9 @@
 # Manual test checklist: Chrome @ 1366 px and 1920 px
 
 Companion to `web/README.md`. Everything below was verified automatically where
-possible (see `docs/frontend-notes.md` and the task report); this list is for the
-things only a real browser can confirm, pixel rendering, downloads, wheel and
-pointer behaviour, and layout at the two widths the user asked about.
+possible (see the Tests section of `web/README.md`); this list is for the
+things only a real browser can confirm: pixel rendering, downloads, wheel and
+pointer behaviour, and layout at the two required widths (1366 px and 1920 px).
 
 ## 0. Setup
 

@@ -7,8 +7,7 @@
 The API is a FastAPI backend. It ports the desktop processing code (`desktop/`)
 into a framework-independent package (`geocluster/`) and exposes it over HTTP.
 It has no PyQt, no torch, no matplotlib and no file-based IPC. The desktop app is
-untouched; the duplicated logic lives here on purpose (see
-[`docs/migration-decisions.md`](../docs/migration-decisions.md)).
+untouched; the duplicated logic lives here on purpose.
 
 Requirements: Python 3.11. No GL libraries are needed (`opencv-python-headless`).
 
@@ -25,7 +24,7 @@ The examples below use the canonical `/api` prefix on `http://localhost:8010`.
 `--app-dir api` from the repository root. `uvicorn api.main:app` is not
 supported (see the deployment document for why). Hosting, Render settings and
 memory on the free tier are in
-[`docs/deployment-render.md`](../docs/deployment-render.md).
+[`docs/deployment.md`](../docs/deployment.md).
 
 ## Environment variables (api/.env)
 

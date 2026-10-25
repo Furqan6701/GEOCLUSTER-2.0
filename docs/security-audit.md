@@ -2,7 +2,7 @@
 
 Scope: the whole repository, including its full git history (every commit and
 every blob, text and binary), plus the working tree. The last run was on
-2026-10-25, on the cleanup branch `arena/01a0f8a7-geocluster-2-0`.
+2026-10-25.
 
 ## Result: nothing to rotate
 

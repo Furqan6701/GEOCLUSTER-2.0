@@ -237,7 +237,7 @@ node web\tests\boot_test.mjs --jsdom "$env:USERPROFILE\geocluster-jsdom\node_mod
 | "Your session expired..." toast | Expected after an API restart or 60 minutes of inactivity. Upload the image again. |
 | AI chip says "not configured" | `GROQ_API_KEY` is missing in `api/.env`. Commands still work. |
 | Satellite chip says "not configured" | `COPERNICUS_CLIENT_ID` or `COPERNICUS_CLIENT_SECRET` is missing in `api/.env`. |
-| Chat answers 502 | The AI provider errored. Commands still run. See [`docs/frontend-notes.md`](../docs/frontend-notes.md). |
+| Chat answers 502 | The AI provider errored. Commands still run. |
 
-More detail (error mapping, chat rules, viewer behaviour and known issues) is in
-[`docs/frontend-notes.md`](../docs/frontend-notes.md).
+Error handling, chat rules and viewer behaviour are described in the sections
+above.
