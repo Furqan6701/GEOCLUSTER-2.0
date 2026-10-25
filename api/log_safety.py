@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Mapping
 
 REDACTED = "***"
 
@@ -40,17 +41,41 @@ def redact(text: str) -> str:
     return redacted
 
 
+def _redact_argument(value: object) -> object:
+    """Redact one `%`-format argument without changing its type.
+
+    Strings are redacted directly. Numbers, booleans and None cannot carry a
+    key, so they pass through unchanged (a `%d` placeholder keeps working). Any
+    other object is redacted through its text form, and only if that text
+    actually contained a key.
+    """
+    if isinstance(value, str):
+        return redact(value)
+    if value is None or isinstance(value, (int, float, bool)):
+        return value
+    text = str(value)
+    cleaned = redact(text)
+    return value if cleaned == text else cleaned
+
+
 class SecretRedactionFilter(logging.Filter):
-    """Rewrites the record's message, so even a friendly formatter is safe."""
+    """Redacts the record's message template and its arguments in place.
+
+    The record keeps its arguments: formatters that read them by position
+    (uvicorn's access log reads five fields) still format the line. Only the
+    secret-shaped text is replaced, so the line keeps its layout and context.
+    """
 
     def filter(self, record: logging.LogRecord) -> bool:
         try:
-            message = record.getMessage()
-        except Exception:  # noqa: BLE001 - a broken record is not our problem
+            if isinstance(record.msg, str):
+                record.msg = redact(record.msg)
+            if isinstance(record.args, Mapping):
+                record.args = {key: _redact_argument(value) for key, value in record.args.items()}
+            elif isinstance(record.args, tuple):
+                record.args = tuple(_redact_argument(value) for value in record.args)
+        except Exception:  # noqa: BLE001 - a broken record must never stop logging
             return True
-        if message != redact(message):
-            record.msg = redact(message)
-            record.args = ()
         return True
 
 

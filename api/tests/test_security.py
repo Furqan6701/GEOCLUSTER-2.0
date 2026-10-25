@@ -329,6 +329,36 @@ def test_redaction_filter_covers_a_formatter_and_a_traceback():
     assert any(isinstance(entry, SecretRedactionFilter) for entry in handler.filters)
 
 
+def test_access_log_line_with_a_secret_fragment_still_formats():
+    """uvicorn's access formatter reads five positional arguments. Redacting the
+    fragment must keep them, so the line still formats and still shows status."""
+    import logging
+
+    from uvicorn.logging import AccessFormatter
+
+    from log_safety import SecretRedactionFilter
+
+    path = f"/api/sessions/abc123/images/x?token={GROQ_SAMPLE}"
+    record = logging.LogRecord(
+        "uvicorn.access",
+        logging.INFO,
+        __file__,
+        1,
+        '%s - "%s %s HTTP/%s" %d',
+        ("127.0.0.1:5000", "GET", path, "1.1", 201),
+        None,
+    )
+    assert SecretRedactionFilter().filter(record) is True
+    assert len(record.args) == 5, "the filter must not clear the arguments"
+    assert record.args[4] == 201 and isinstance(record.args[4], int)
+
+    line = AccessFormatter().format(record)
+    assert GROQ_SAMPLE not in line
+    assert "***" in line
+    assert '"GET /api/sessions/abc123/images/x' in line
+    assert line.endswith(" 201")
+
+
 def test_installed_redaction_is_idempotent():
     from log_safety import SecretRedactionFilter, install_secret_redaction
 
