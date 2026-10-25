@@ -1,39 +1,46 @@
 # Freebuff agent metadata — never commit this
 .freebuff/
 
-# Environment variables — keep real credentials out of git.
-# .env.example files are templates with placeholder names only; they ARE tracked.
+# Environment and secrets. Real values never belong in git.
+# The .env.example templates are placeholder names only and ARE tracked
+# (they are un-ignored below).
 .env
 .env.*
+api/.env
 !.env.example
+!api/.env.example
 *.env.local
 .envrc
-
-# Python
-__pycache__/
-*.py[cod]
-venv/
-.venv/
-
-# IDE / OS
-.vscode/
-.idea/
-.DS_Store
-Thumbs.db
-
-# Logs
-*.log
-
-# Key/certificate material can never be committed by accident
 *.pem
 *.key
 *.p12
 *.pfx
 id_rsa*
 
-# Node (only used by the optional jsdom boot test — the web frontend has no
+# Python
+__pycache__/
+*.py[cod]
+*.pyc
+venv/
+.venv/
+.pytest_cache/
+
+# Node (only used by the optional jsdom boot test; the web frontend has no
 # build step and no runtime dependencies)
 node_modules/
+
+# IDE and OS folders
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Satellite download cache. The app writes it under the OS temp directory by
+# default; this entry covers a cache folder configured inside the repository.
+geocluster-satellite-cache/
 
 # Regenerable runtime artifacts under the project's data dir.
 # These are produced by the app/tests on every run (K-Means output files,
