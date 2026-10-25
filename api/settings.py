@@ -89,7 +89,7 @@ def _flag(name: str, default: bool) -> bool:
 
 
 def serve_web() -> bool:
-    """Whether this process also serves the frontend folder (Task 3).
+    """Whether this process also serves the frontend folder.
 
     Default **false**: unset means the historical API-only application with
     every route at the root, which is what `api/tests` and the documented

@@ -7,7 +7,7 @@
  * the metadata needed to put it back (label, server image id, info).
  *
  * A state is a snapshot of both viewports as they were *after* that step, so
- * undoing restores the whole workspace — including "Clear result", which has
+ * undoing restores the whole workspace - including "Clear result", which has
  * no image of its own.
  *
  * Restoring normally needs no server call at all (the Blob is local). When an

@@ -255,7 +255,7 @@ def test_chat_rate_limit_returns_429():
         assert limited.headers["retry-after"] == "60"
 
 
-# ------------------------------------------------- Task 1: the action whitelist
+# ------------------------------------------------- The action whitelist
 
 FULL_STATE = {"has_image": True, "has_clusters": True, "has_history": True, "can_undo": True, "can_redo": True}
 IMAGE_ONLY = {"has_image": True}

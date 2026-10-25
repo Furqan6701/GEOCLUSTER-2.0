@@ -11,7 +11,7 @@ Checks, without needing a browser or the API:
   3. no key material is present anywhere under web/;
   4. no `.innerHTML` usage (chat replies must render through textContent);
   5. if the API is running on :8010, its CORS headers allow the frontend origin
-     — reported as SKIP when the API is down.
+     - reported as SKIP when the API is down.
 
 Usage:
     python web/tests/smoke_test.py
@@ -44,14 +44,14 @@ def check(condition: bool, label: str, detail: str = "") -> bool:
     if condition:
         print(f"PASS  {label}")
         return True
-    FAILURES.append(label + (f" — {detail}" if detail else ""))
-    print(f"FAIL  {label}{f' — {detail}' if detail else ''}")
+    FAILURES.append(label + (f" - {detail}" if detail else ""))
+    print(f"FAIL  {label}{f' - {detail}' if detail else ''}")
     return False
 
 
 def skip(label: str, why: str) -> None:
     SKIPS.append(label)
-    print(f"SKIP  {label} — {why}")
+    print(f"SKIP  {label} - {why}")
 
 
 def port_open(host: str, port: int, timeout: float = 0.4) -> bool:
@@ -80,7 +80,7 @@ def serving(directory: pathlib.Path, port: int):
             ours = False
         if not ours:
             raise RuntimeError(f"port {port} is in use by a different server; free it and retry") from None
-        print(f"note  port {port} already serves this web/ — reusing the running server")
+        print(f"note  port {port} already serves this web/ - reusing the running server")
         yield
         return
 
@@ -224,7 +224,7 @@ def check_workstation_layout() -> None:
     check(".toolbar.tb-compact .tb-label { display: none; }" in css,
           "a compacted toolbar drops the words")
     check(".toolbar.tb-wide:not(.tb-tight) .tb-label { display: inline; }" in css,
-          "from 1600 px they come back — the item 13 rule")
+          "from 1600 px they come back - the item 13 rule")
     app_js = _js_text("js/app.js")
     check("WIDE_TOOLBAR_MIN = 1600" in app_js and '"tb-wide"' in app_js and '"tb-tight"' in app_js,
           "app.js decides wide/tight from the window width AND a real measurement, "
@@ -289,7 +289,7 @@ def check_workstation_layout() -> None:
         check(f"export function {token}" in map_js or f"export async function {token}" in map_js,
               f"map.js exports {token}")
     check("composeMap" not in map_js and "drawLegend" not in map_js,
-          "map.js holds no second composer — one canvas, one renderer")
+          "map.js holds no second composer - one canvas, one renderer")
     studio_js = _js_text("js/mapstudio.js")
     for token in ["drawStudioMap", "composeStudioMap", "drawScaleBar", "drawNorthArrow",
                   "drawLegendBox", "groundWidthMeters", "cornerLabels", "roundScaleLength",
@@ -443,7 +443,7 @@ def check_workstation_layout() -> None:
     check(re.search(r'label: "Fetch Sentinel-2 tile…"', app_js) is not None,
           "the File menu still offers the satellite fetch")
     # item 14: the menu keeps ONE map entry. Map export and Map legend are gone
-    # from it — the composer's own footer chooses the scale and its properties
+    # from it - the composer's own footer chooses the scale and its properties
     # panel owns the legend.
     check(re.search(r'label: "Map composer…"', app_js) is not None and
           "openMapStudio" in app_js,
@@ -612,7 +612,7 @@ def check_workstation_layout() -> None:
         check(f"export function {token}" in hist_js or f"export const {token}" in hist_js,
               f"histogram.js exports {token}")
     check("fetch(" not in hist_js and "ApiClient" not in hist_js and "await " not in hist_js,
-          "the histogram module is pure maths — no request, no await (options recompute in the browser)")
+          "the histogram module is pure maths - no request, no await (options recompute in the browser)")
     histo_js = _js_text("js/histowindow.js")
     for control in ["image", "channel", "scale", "smoothing", "display", "theme", "compare"]:
         check(f"{control}:" in histo_js,
@@ -842,7 +842,7 @@ def check_distance_panel() -> None:
 
 
 def main() -> int:
-    print(f"web frontend smoke test — root: {WEB}\n")
+    print(f"web frontend smoke test - root: {WEB}\n")
     check_serving()
     print()
     check_references()

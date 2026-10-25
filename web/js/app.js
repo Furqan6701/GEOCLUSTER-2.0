@@ -50,7 +50,7 @@ const ctx = { api, session, state, bus, apiBase, gate };
 // ------------------------------------------------------------------- viewers
 /**
  * Open a histogram window for ONE viewport's image (the small Histogram button
- * in each footer — item 13). The manager owns the window; this only resolves
+ * in each footer - item 13). The manager owns the window; this only resolves
  * "which image is in that viewport".
  */
 function openHistogramFor(role) {
@@ -108,7 +108,7 @@ async function showImage(role, info) {
 
 bus.on("image:loaded", ({ role, info }) => {
   showImage(role, info);
-  bus.emit("status", { message: `${role === "original" ? "Working image" : "Result"} — ${info.name ?? "image"} (${info.width}×${info.height})` });
+  bus.emit("status", { message: `${role === "original" ? "Working image" : "Result"} - ${info.name ?? "image"} (${info.width}×${info.height})` });
 });
 
 // STEP 3: a slider drag previews the filter client-side; nothing is committed
@@ -157,15 +157,15 @@ bus.on("distance:clear", () => {
 });
 
 bus.on("viewer:distance-mode", ({ enabled, role }) => {
-  if (enabled) toast(`Distance tool on the ${role} viewer — click two points (Esc clears).`, "", { timeout: 6000 });
+  if (enabled) toast(`Distance tool on the ${role} viewer - click two points (Esc clears).`, "", { timeout: 6000 });
   bus.emit("status", { message: enabled ? `Measure tool active on ${role}` : "Measure tool off" });
 });
 
 // ------------------------------------------------------------- map composer
 /**
  * Map composer (redesign): a large in-page modal, not a docked viewport. The
- * toolbar's Map button and a Generate map run open it, and everything it shows —
- * image, legend, scale bar, north arrow, credit, corner coordinates — is drawn
+ * toolbar's Map button and a Generate map run open it, and everything it shows -
+ * image, legend, scale bar, north arrow, credit, corner coordinates - is drawn
  * on ONE canvas by js/mapstudio.js. The dialog shows that canvas and an export
  * re-renders it at 1x/2x/3x, which is why the PNG always matches the preview.
  * Settings persist for the session inside the MapStudio instance.
@@ -188,7 +188,7 @@ function legendRowsForComposer() {
 async function openMapStudio({ image = null } = {}) {
   const active = activeImage(state);
   if (!active && !image) {
-    toast("Load, fetch or generate a map from an image first — the composer has nothing to draw.", "warn");
+    toast("Load, fetch or generate a map from an image first - the composer has nothing to draw.", "warn");
     return false;
   }
   try {
@@ -237,18 +237,18 @@ bus.on("map:updated", async ({ legend, imageId, name }) => {
   const rows = legendRowsForComposer();
   if (mapStudio.isOpen()) {
     mapStudio.setLegendRows(rows);
-    toast(`Map composer updated — ${rows.length} classes.`, "ok");
+    toast(`Map composer updated - ${rows.length} classes.`, "ok");
     return;
   }
   await openMapStudio();
-  toast(`Map composer open — ${rows.length} classes from the classification.`, "ok");
+  toast(`Map composer open - ${rows.length} classes from the classification.`, "ok");
 });
 
 // ------------------------------------------------------------------ history
 /**
  * Undo/redo (STEP 3): the last HISTORY_LIMIT displayed states, each with the
- * Blob that produced it. Nothing here needs the server — restoring paints the
- * stored Blob — except when a server id has since been evicted, in which case
+ * Blob that produced it. Nothing here needs the server - restoring paints the
+ * stored Blob - except when a server id has since been evicted, in which case
  * the stored Blob is re-uploaded and the state is re-pointed (see `revive`).
  */
 const history = new ImageHistory();
@@ -260,7 +260,7 @@ function stateLabel(role, info) {
   if (role === "result") {
     const last = state.lastOperation;
     if (last && !last.error && last.imageId === info.image_id) return last.operation;
-    return info.source ? `Result — ${info.source}` : "Result";
+    return info.source ? `Result - ${info.source}` : "Result";
   }
   return `Opened ${info.name ?? info.image_id}`;
 }
@@ -301,14 +301,14 @@ function updateHistoryControls() {
   if (undoButton) {
     undoButton.disabled = !history.canUndo;
     undoButton.title = history.canUndo
-      ? `Undo ${history.current?.label ?? "the last step"} (Ctrl+Z) — ${history.summary} states kept`
-      : "Nothing to undo yet — run an operation first";
+      ? `Undo ${history.current?.label ?? "the last step"} (Ctrl+Z) - ${history.summary} states kept`
+      : "Nothing to undo yet - run an operation first";
   }
   if (redoButton) {
     redoButton.disabled = !history.canRedo;
     redoButton.title = history.canRedo
       ? "Redo the step you undid (Ctrl+Y)"
-      : "Nothing to redo — undo a step first";
+      : "Nothing to redo - undo a step first";
   }
   if (sb.history) {
     setCell(
@@ -378,7 +378,7 @@ async function applyHistory(entry, verb) {
       bus.emit("operation:applied", { label: entry.label, info: entry.info });
     }
     toast(`${verb === "undo" ? "Undone" : "Redone"}: ${entry.label}`, "ok");
-    bus.emit("status", { message: `${verb === "undo" ? "Undo" : "Redo"} — ${entry.label}` });
+    bus.emit("status", { message: `${verb === "undo" ? "Undo" : "Redo"} - ${entry.label}` });
     return entry;
   } catch (error) {
     report(error, `Could not ${verb} that step`);
@@ -485,8 +485,8 @@ const syncToggle = toggleButton("sync", {
     resultViewer.setMirror(originalViewer, enabled);
     if (enabled) resultViewer.applyCamera(originalViewer.camera());
     const text = enabled
-      ? "Viewer sync on — zoom/pan in one viewport mirrors the other."
-      : "Viewer sync off — the viewports navigate independently.";
+      ? "Viewer sync on - zoom/pan in one viewport mirrors the other."
+      : "Viewer sync off - the viewports navigate independently.";
     toast(text, enabled ? "ok" : "", { timeout: 5000 });
     bus.emit("status", { message: text });
   },
@@ -563,7 +563,7 @@ assistantReopen.addEventListener("click", () => setDockVisible("assistant", true
 // ------------------------------------------------------------------- toolbar
 const byId = (id) => document.getElementById(id);
 
-// Hide/show the result viewport (presentation only — the image stays loaded).
+// Hide/show the result viewport (presentation only - the image stays loaded).
 let resultVisible = true;
 function setResultVisible(visible) {
   resultVisible = Boolean(visible);
@@ -575,7 +575,7 @@ function setResultVisible(visible) {
 function withActiveViewer(action) {
   const viewer = activeViewer();
   if (!viewer.hasImage) {
-    toast("Load an image first — the viewport controls need something to navigate.", "warn");
+    toast("Load an image first - the viewport controls need something to navigate.", "warn");
     return;
   }
   viewer.setActive(true);
@@ -597,7 +597,7 @@ wireToolbarButton("tb-satellite", "satellite", "Satellite", () => {
 });
 wireToolbarButton("tb-export", "download", "Export", () => bus.emit("export:request"));
 wireToolbarButton("tb-compress", "archive", "Compress", () => bus.emit("huffman:compress-request"));
-// Zoom lives in the viewport footers (per-viewport) and the View menu — there
+// Zoom lives in the viewport footers (per-viewport) and the View menu - there
 // is deliberately no second set of zoom buttons in the toolbar.
 
 const panToggle = toggleButton("pan", {
@@ -606,7 +606,7 @@ const panToggle = toggleButton("pan", {
   onChange: (enabled) => {
     originalViewer.setPanEnabled(enabled);
     resultViewer.setPanEnabled(enabled);
-    bus.emit("status", { message: enabled ? "Pan tool on — drag the image to move it" : "Pan tool off" });
+    bus.emit("status", { message: enabled ? "Pan tool on - drag the image to move it" : "Pan tool off" });
   },
 });
 const pixelToggle = toggleButton("pixel", {
@@ -646,7 +646,7 @@ bus.on("viewer:distance-mode", ({ role, enabled }) => {
  * which is measured on every resize rather than guessed from a breakpoint.
  *
  * One deliberate exception (item 13): from 1600 px the words next to the icons
- * come back — Export (download) and Compress (archive) are otherwise two small
+ * come back - Export (download) and Compress (archive) are otherwise two small
  * glyphs that are easy to confuse. `.tb-tight` is the escape hatch: if the row
  * would still overflow with its labels, they go again rather than wrap.
  */
@@ -726,7 +726,7 @@ window.addEventListener("keydown", (event) => {
 
 // ----------------------------------------------------------- shared UI actions
 /**
- * The one table of UI entry points the assistant may run (Task 1). Each entry
+ * The one table of UI entry points the assistant may run. Each entry
  * is the SAME function the matching menu item, toolbar button or panel control
  * calls, so a command from the chat produces exactly the undo history, result
  * viewport and toast a click would - there is no second execution path.
@@ -769,7 +769,7 @@ ctx.appState = () => ({
 // -------------------------------------------------------------------- menus
 /**
  * Every menu/toolbar entry point funnels through the Filters panel's `run()`,
- * which is the single place that knows the parameters each operation needs —
+ * which is the single place that knows the parameters each operation needs -
  * so a menu click can never dispatch an operation without its body.
  */
 const runOperation = (operation) => () => {
@@ -783,7 +783,7 @@ const runOperation = (operation) => () => {
  * Item 14: the three operations whose result depends on a value open the
  * Filters panel and put the cursor ON their slider, instead of running with
  * whatever number happened to be there. The menu no longer prints that number
- * beside the entry (the right-hand notes are gone) — the slider itself shows it.
+ * beside the entry (the right-hand notes are gone) - the slider itself shows it.
  */
 const focusOperation = (operation) => () => {
   const filters = panelById.get("filters");
@@ -803,7 +803,7 @@ async function startNewSession() {
   if (!confirmed) return false;
   try {
     await session.restart();
-    toast("New session started — upload your image again.", "ok");
+    toast("New session started - upload your image again.", "ok");
     renderChips();
     return true;
   } catch (error) {
@@ -830,7 +830,7 @@ const menuBar = createMenuBar([
         onClick: uiActions.exportPng,
       },
       // The raw label map is one of K-Means' outputs, so the entry APPEARS with
-      // the first K-Means run (item 14) — it is never a greyed-out promise.
+      // the first K-Means run (item 14) - it is never a greyed-out promise.
       ...(state.kmeans
         ? [{
           label: "Export raw label map (PNG)…",
@@ -868,7 +868,7 @@ const menuBar = createMenuBar([
         icon: "undo",
         shortcut: "Ctrl+Z",
         disabled: !history.canUndo,
-        reason: "nothing to undo — run an operation first",
+        reason: "nothing to undo - run an operation first",
         onClick: uiActions.undo,
       },
       {
@@ -876,7 +876,7 @@ const menuBar = createMenuBar([
         icon: "redo",
         shortcut: "Ctrl+Y",
         disabled: !history.canRedo,
-        reason: "nothing to redo — undo a step first",
+        reason: "nothing to redo - undo a step first",
         onClick: uiActions.redo,
       },
     ],
@@ -909,7 +909,7 @@ const menuBar = createMenuBar([
         label: "Clear result",
         icon: "trash",
         disabled: !state.result,
-        reason: "there is no result yet — run a filter or K-Means first",
+        reason: "there is no result yet - run a filter or K-Means first",
         onClick: uiActions.clearResult,
       },
     ],
@@ -944,7 +944,7 @@ function renderChips() {
   if (state.sessionId) {
     nodes.push(chip(`session ${state.sessionId.slice(0, 8)}… · ${state.ttlMinutes ?? "?"} min`, "", `Max ${state.maxImages ?? "?"} images per session`));
   } else {
-    nodes.push(chip("session —", "warn", "No session yet"));
+    nodes.push(chip("session -", "warn", "No session yet"));
   }
   const health = state.health;
   if (health) {
@@ -976,7 +976,7 @@ function setBanner(message, kind = "") {
 function report(error, prefix) {
   if (error instanceof SessionExpiredError) {
     toast(error.message, "warn", { timeout: 15000 });
-    bus.emit("status", { message: "Session expired — new session created, re-upload the image" });
+    bus.emit("status", { message: "Session expired - new session created, re-upload the image" });
     return;
   }
   if (error instanceof ApiError && error.isNetwork) {
@@ -1042,12 +1042,12 @@ function updateStatusBar() {
     : null;
   const shown = viewer?.image ? { width: viewer.image.width, height: viewer.image.height } : null;
 
-  setCell(sb.viewer, viewer?.hasImage ? `Viewport: ${viewerLabel(viewer)}` : "Viewport: —");
-  setCell(sb.size, shown ? `${shown.width} × ${shown.height} px` : "—",
+  setCell(sb.viewer, viewer?.hasImage ? `Viewport: ${viewerLabel(viewer)}` : "Viewport: -");
+  setCell(sb.size, shown ? `${shown.width} × ${shown.height} px` : "-",
     shown ? `${shown.width} × ${shown.height} pixels (${viewerLabel(viewer).toLowerCase()})` : "No image");
-  setCell(sb.mode, channelLabel(info), info ? `${channelLabel(info)} — ${info.channels} channel(s), ${info.name ?? ""}`.trim() : "No image");
-  setCell(sb.zoom, viewer?.hasImage ? `Zoom ${Math.round(viewer.scale * 100)}%` : "Zoom —",
-    viewer?.hasImage ? `Zoom ${Math.round(viewer.scale * 100)}% — ${viewer.image.width} × ${viewer.image.height} px image` : "No image");
+  setCell(sb.mode, channelLabel(info), info ? `${channelLabel(info)} - ${info.channels} channel(s), ${info.name ?? ""}`.trim() : "No image");
+  setCell(sb.zoom, viewer?.hasImage ? `Zoom ${Math.round(viewer.scale * 100)}%` : "Zoom -",
+    viewer?.hasImage ? `Zoom ${Math.round(viewer.scale * 100)}% - ${viewer.image.width} × ${viewer.image.height} px image` : "No image");
   setCell(sb.source, viewer !== originalViewer && state.result?.info
     ? `Result: ${state.result.info.source ?? "derived"}`
     : state.original?.info
@@ -1056,7 +1056,7 @@ function updateStatusBar() {
   // short id in the bar, the full details on hover
   setCell(
     sb.session,
-    state.sessionId ? `Session ${state.sessionId.slice(0, 6)}…` : "Session —",
+    state.sessionId ? `Session ${state.sessionId.slice(0, 6)}…` : "Session -",
     state.sessionId
       ? `Session ${state.sessionId}\nTTL ${state.ttlMinutes ?? "?"} minutes\nMax ${state.maxImages ?? "?"} images per session`
       : "No session yet",
@@ -1120,7 +1120,7 @@ async function bootstrap() {
     report(error, "Could not start a session");
   }
   renderChips();
-  setStatusMessage("Ready — open an image or fetch a Sentinel-2 tile.", { sticky: true });
+  setStatusMessage("Ready - open an image or fetch a Sentinel-2 tile.", { sticky: true });
 }
 
 bootstrap();

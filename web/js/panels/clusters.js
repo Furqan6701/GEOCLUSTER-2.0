@@ -3,19 +3,19 @@
  *
  * K-Means mirrors the desktop: k clusters over the grayscale intensities, with
  * the algorithm returning ranges, counts and per-cluster assignments. After a
- * run there is exactly ONE table — the classification editor.
+ * run there is exactly ONE table - the classification editor.
  *
  * The editor's ranges are ALWAYS contiguous over 0..255 (item 11): the first
  * class starts at 0, the last one ends at 255, both locked and shown read-only,
- * and moving a boundary moves exactly one neighbour, live, on every keystroke —
+ * and moving a boundary moves exactly one neighbour, live, on every keystroke -
  * there is no Apply step. All of that maths lives in js/clusterranges.js, a
  * pure, unit-tested module; this file only renders it.
  *
  * Nothing the user types while editing reaches the server and nothing lands in
  * the history: the % column is recomputed from the image's 256-bin histogram
  * (fetched ONCE per image) and the Result viewport is recoloured through a
- * 256-entry lookup table in the browser. Only "Generate map" talks to the API —
- * ONE classify request, ONE undo step — and then opens the map composer.
+ * 256-entry lookup table in the browser. Only "Generate map" talks to the API -
+ * ONE classify request, ONE undo step - and then opens the map composer.
  */
 
 import { humanizeError } from "../errors.js";
@@ -102,7 +102,7 @@ export function createClustersPanel(ctx) {
   /** Segments / boundary handles of the 0..255 bar. */
   let barSegments = [];
   let barHandles = [];
-  /** The image's 256-bin histogram — fetched ONCE, then only computed with. */
+  /** The image's 256-bin histogram - fetched ONCE, then only computed with. */
   let bins = null;
   let binsFor = null;
   let binsPending = null;
@@ -114,9 +114,9 @@ export function createClustersPanel(ctx) {
   /**
    * Run K-Means on the working image.
    *
-   * `requestedK` is optional (Task 1): the assistant's validated k is written
+   * `requestedK` is optional: the assistant's validated k is written
    * into the panel's own field first, so the number on screen is the number
-   * that ran — exactly as if the user had typed it and clicked the button. A
+   * that ran - exactly as if the user had typed it and clicked the button. A
    * click event (the button passes one) is not a number and is ignored.
    */
   async function runKMeans(requestedK = null) {
@@ -180,16 +180,16 @@ export function createClustersPanel(ctx) {
   /**
    * Raw label map (one grey value per cluster) as a PNG download. The API
    * already stores it as the K-Means `labels_image_id`, so this asks the
-   * session for that image and saves it — no second request is invented.
+   * session for that image and saves it - no second request is invented.
    */
   async function downloadLabelMap() {
     const labelId = state.kmeans?.labels_image_id;
-    if (!labelId) return toast("Run K-Means first — the label map comes from its response.", "warn");
+    if (!labelId) return toast("Run K-Means first - the label map comes from its response.", "warn");
     try {
       const blob = await session.imageBlob(labelId);
       const sourceName = String(state.kmeans.sourceInfo?.name ?? "image").replace(/\.[^.]+$/, "");
       downloadBlob(blob, `labels-${sourceName}.png`);
-      toast("Label map downloaded — one grey value per cluster.", "ok");
+      toast("Label map downloaded - one grey value per cluster.", "ok");
       return { ok: true, blob };
     } catch (error) {
       report(error, "Could not download the label map");
@@ -200,7 +200,7 @@ export function createClustersPanel(ctx) {
   // -------------------------------------------------------- editor table
   /**
    * (Re)build the editor. `keepEdits` carries the names and colours the user
-   * already typed into the next render — used by "Reset ranges", which must
+   * already typed into the next render - used by "Reset ranges", which must
    * only put the min/max values back.
    */
   function renderEditor(result, { keepEdits = false } = {}) {
@@ -211,7 +211,7 @@ export function createClustersPanel(ctx) {
     const counts = result?.counts ?? ranges.map((range) => range.count);
     const total = (counts ?? []).reduce((sum, value) => sum + Number(value || 0), 0);
 
-    // the model: contiguous, 0..255, one value per class — never a gap
+    // the model: contiguous, 0..255, one value per class - never a gap
     entries = normalizeEntries(ranges);
     rows = entries.map((entry, index) => {
       const assignment = assignments[String(entry.cluster)] ?? {};
@@ -235,7 +235,7 @@ export function createClustersPanel(ctx) {
       maxInput.classList.add("cluster-bound");
       minInput.setAttribute("aria-label", `Minimum for cluster ${index + 1}`);
       maxInput.setAttribute("aria-label", `Maximum for cluster ${index + 1}`);
-      const share = el("span", { class: "cluster-share", text: "—" });
+      const share = el("span", { class: "cluster-share", text: "-" });
       const row = {
         cluster: entry.cluster,
         minInput,
@@ -300,7 +300,7 @@ export function createClustersPanel(ctx) {
     updateShares();
     syncBar();
     emitLegend();
-    // the % column turns exact as soon as the histogram arrives — ONE request
+    // the % column turns exact as soon as the histogram arrives - ONE request
     // per image, and none at all while the user edits
     ensureBins();
     // a fresh editor starts as "not edited": the Result viewport keeps showing
@@ -310,8 +310,8 @@ export function createClustersPanel(ctx) {
 
   // ------------------------------------------------------- live linked edits
   /**
-   * A keystroke in a Min/Max field. The value is applied — and the neighbour
-   * follows — only while it is valid; an out-of-range keystroke is simply left
+   * A keystroke in a Min/Max field. The value is applied - and the neighbour
+   * follows - only while it is valid; an out-of-range keystroke is simply left
    * in the field so the user can keep typing, and is clamped on Enter/blur.
    */
   function handleTyped(kind, index, input) {
@@ -402,7 +402,7 @@ export function createClustersPanel(ctx) {
         return bins;
       })
       .catch((error) => {
-        // the K-Means counts stay as the fallback — the editor keeps working
+        // the K-Means counts stay as the fallback - the editor keeps working
         if (error instanceof SessionExpiredError) report(error, "Histogram failed");
         return null;
       })
@@ -546,7 +546,7 @@ export function createClustersPanel(ctx) {
 
   /**
    * The Map composer's legend editor changed a name or colour: write it back
-   * into the table so the two editors cannot drift apart. Silence is fine —
+   * into the table so the two editors cannot drift apart. Silence is fine -
    * the composer already rendered the change.
    */
   function setLegendRows(rows_) {
@@ -558,7 +558,7 @@ export function createClustersPanel(ctx) {
       if (!row) continue;
       const name = String(incoming.name ?? "");
       const hex = rgbToHex(incoming.color);
-      // item 17: never write into the field the user is typing in right now —
+      // item 17: never write into the field the user is typing in right now -
       // that would move the caret (or drop a character) mid-word
       const active = (node) => doc.activeElement === node;
       if (name && row.nameInput.value !== name && !active(row.nameInput)) {
@@ -606,7 +606,7 @@ export function createClustersPanel(ctx) {
 
   /**
    * "Generate map": commit the editor with ONE classify request (which is ONE
-   * history entry — nothing else in this path touches the history) and open
+   * history entry - nothing else in this path touches the history) and open
    * the map composer from its response.
    */
   async function classify() {
@@ -621,7 +621,7 @@ export function createClustersPanel(ctx) {
     }
 
     // any half-typed field is clamped to its valid value first, exactly as
-    // blurring the field would do — the model is always contiguous
+    // blurring the field would do - the model is always contiguous
     commitPendingEdits();
 
     const ranges = {};

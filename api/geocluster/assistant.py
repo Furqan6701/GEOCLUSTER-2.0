@@ -20,7 +20,7 @@ is not:
   * provider failures raise AssistantProviderError (logged server-side) so the
     endpoint can answer 502 instead of returning "Error code: 404 ..." in a 200
   * `build_commands` turns router output into structured client commands
-  * `ask_with_action` (Task 1) asks the model for a JSON object with the reply
+  * `ask_with_action` asks the model for a JSON object with the reply
     text AND an optional action. The action is validated here against
     AI_ACTIONS: an unknown action name, a parameter outside the range the UI
     accepts, or an action that needs state the app does not have (no image, no

@@ -3,7 +3,7 @@
  *
  * A large in-page dialog (not a docked viewport): the live preview sits in the
  * middle, the properties sidebar on the right, and every change recomposes the
- * SAME canvas the export uses — so the PNG always matches what is on screen.
+ * SAME canvas the export uses - so the PNG always matches what is on screen.
  *
  * Modal behaviour: `role="dialog"` + `aria-modal`, Escape closes it, Tab is
  * trapped inside, focus returns to whatever opened it, and the background is
@@ -144,7 +144,7 @@ export class MapStudio {
 
   /**
    * Item 17: the total length only means something once the image's ground
-   * scale is known — without one the field is disabled and says why, and a
+   * scale is known - without one the field is disabled and says why, and a
    * typed value can never be mistaken for a ground scale.
    */
   _lengthField() {
@@ -245,14 +245,14 @@ export class MapStudio {
         settings.legend.fontSize = Math.max(TEXT_SIZE_RANGE.min, Math.min(TEXT_SIZE_RANGE.max, Math.round(Number(value) || MAP_DEFAULTS.legend.fontSize)));
         settings.sizesTouched = true;
       }), { key: "legendFont", min: TEXT_SIZE_RANGE.min, max: TEXT_SIZE_RANGE.max })),
-      el("p", { class: "map-field-hint", text: "Class names and colours are edited here or in the Clusters table — they stay in sync." }),
+      el("p", { class: "map-field-hint", text: "Class names and colours are edited here or in the Clusters table - they stay in sync." }),
       rowsHost,
     ];
   }
 
   _scaleControls() {
     this.fields.scaleNote = el("p", { class: "map-field-hint", text: "" });
-    // "Image width on the ground = [value] [unit]" — the one entry that turns
+    // "Image width on the ground = [value] [unit]" - the one entry that turns
     // the plain bar of an unscaled photo into an exact one
     const widthInput = this._number(null, (value) => this._update((settings) => {
       settings.scaleBar.imageWidth = value;
@@ -334,7 +334,7 @@ export class MapStudio {
     this.fields.coordsWrap = coordsWrap;
     return [
       this._field("Background", this._color("#0d1115", (value) => this._update((settings) => { settings.background = value; }), "background")),
-      // item 17: the border is always drawn — no checkbox, colour only
+      // item 17: the border is always drawn - no checkbox, colour only
       this._field("Border colour", this._color(MAP_DEFAULTS.borderColor, (value) => this._update((settings) => {
         settings.borderColor = cssColor(value, MAP_DEFAULTS.borderColor);
       }), "borderColor"), "the border is always drawn"),
@@ -354,7 +354,7 @@ export class MapStudio {
 
   /**
    * Item 17: the REDRAW path. It composes the canvas again and paints nothing
-   * but the preview — it never rebuilds a sidebar field, so an input the user
+   * but the preview - it never rebuilds a sidebar field, so an input the user
    * is typing in keeps its value, its caret and its focus.
    */
   renderPreview() {
@@ -362,7 +362,7 @@ export class MapStudio {
     const image = this.image;
     if (!image) {
       setChildren(this.previewHost ?? this.root.querySelector(".map-preview-host"),
-        el("p", { class: "empty-note", text: "Load an image or generate a map first — the composer needs pixels." }));
+        el("p", { class: "empty-note", text: "Load an image or generate a map first - the composer needs pixels." }));
       this.canvas = null;
       return null;
     }
@@ -403,11 +403,11 @@ export class MapStudio {
         this.fields.scaleLength.placeholder = `${suggested}`;
       }
     } else {
-      note.textContent = "The bar has no numbers until the real image width is known — "
+      note.textContent = "The bar has no numbers until the real image width is known - "
         + "enter it below and the distances appear.";
     }
     // item 17: the width fields disappear only when the API already knows the
-    // ground scale — NEVER while the user is typing a width into them
+    // ground scale - NEVER while the user is typing a width into them
     manual.hidden = hasMetadata;
     // …and the total length can only do its job once a scale is known
     const length = this.fields.scaleLength;
@@ -441,7 +441,7 @@ export class MapStudio {
     if (!rows.length) {
       this._legendRowNodes = [];
       if (host.querySelector(".empty-note") == null || host.childElementCount !== 1) {
-        setChildren(host, el("p", { class: "empty-note", text: "No classes yet — run K-Means and Generate map." }));
+        setChildren(host, el("p", { class: "empty-note", text: "No classes yet - run K-Means and Generate map." }));
       }
       return;
     }
@@ -476,7 +476,7 @@ export class MapStudio {
     const rows = this.settings.legend.rows;
     if (!rows[index]) return;
     rows[index] = { ...rows[index], ...patch };
-    // item 17: redraw the canvas only — the field being typed in stays exactly
+    // item 17: redraw the canvas only - the field being typed in stays exactly
     // where it is, so no keystroke is ever lost
     this.renderPreview();
     // tell the Clusters table so the two editors cannot drift apart
@@ -563,7 +563,7 @@ export class MapStudio {
     const first = this.dialog.querySelector(FOCUSABLE);
     if (first && typeof first.focus === "function") first.focus();
     this.bus?.emit?.("map:studio", { open: true });
-    this.bus?.emit?.("status", { message: "Map composer open — the preview is exactly what the PNG contains" });
+    this.bus?.emit?.("status", { message: "Map composer open - the preview is exactly what the PNG contains" });
     return this.settings;
   }
 
@@ -676,7 +676,7 @@ export class MapStudio {
 
 function percentLabel(value) {
   const amount = Number(value);
-  if (!Number.isFinite(amount)) return "—";
+  if (!Number.isFinite(amount)) return "-";
   return amount >= 10 ? `${amount.toFixed(1)}%` : `${amount.toFixed(2)}%`;
 }
 

@@ -1,5 +1,5 @@
 /**
- * GeoCluster 2.0 — remote-sensing workstation stylesheet.
+ * GeoCluster 2.0 - remote-sensing workstation stylesheet.
  *
  * Visual language: technical, dense, dark. Panels are separated by 1px rules
  * rather than floating cards; corner radii stay small; typography is compact.
@@ -371,7 +371,7 @@ details.advanced[open] > summary { color: var(--text); }
 .viewer-canvas-wrap canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
 .viewer-canvas-wrap canvas.panning { cursor: grabbing; }
 .viewer-canvas-wrap canvas.distance-mode { cursor: crosshair; }
-/* pan tool off: no drag cursor — but the measure tool still wins */
+/* pan tool off: no drag cursor - but the measure tool still wins */
 .viewer-canvas-wrap.tool-pan-off canvas { cursor: default; }
 .viewer-canvas-wrap.tool-pan-off canvas.distance-mode { cursor: crosshair; }
 .viewer-canvas-wrap.tool-pixel-off canvas { cursor: default; }
@@ -783,7 +783,7 @@ table.grid.cluster-table input.cluster-bound.locked {
 .cluster-handle:hover, .cluster-handle:focus-visible { background: var(--text); outline: none; }
 
 /* ───────────────────────── Map composer modal ──────────────────────────── */
-/* The overlay starts below the app header (-—map-modal-top is measured and
+/* The overlay starts below the app header (--map-modal-top is measured and
    set by js/mapstudio_ui.js on open/resize, with a CSS fallback), so the
    dialog's own header can never sit on top of the page toolbar. */
 .map-modal {
@@ -816,7 +816,7 @@ table.grid.cluster-table input.cluster-bound.locked {
 .map-preview-host {
   min-width: 0; min-height: 0; padding: 12px; overflow: auto;
   display: flex; align-items: center; justify-content: center;
-  /* opaque checkerboard — a transparent pane let the page show through */
+  /* opaque checkerboard - a transparent pane let the page show through */
   background: repeating-conic-gradient(#141a1f 0% 25%, #171e24 0% 50%) 50% / 24px 24px;
   background-color: #141a1f;
 }

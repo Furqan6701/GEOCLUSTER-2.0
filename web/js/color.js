@@ -5,7 +5,7 @@
  * `toGray` is the fixed-point form of OpenCV's 8-bit `COLOR_BGR2GRAY`
  * (0.299R + 0.587G + 0.114B). The API converts every colour image to gray with
  * exactly this formula before K-Means, classify and the histogram endpoint, so
- * the browser must use the same numbers — this is the ONE copy of it.
+ * the browser must use the same numbers - this is the ONE copy of it.
  */
 
 /** OpenCV-compatible luminance of an (r, g, b) triple, 0..255. */

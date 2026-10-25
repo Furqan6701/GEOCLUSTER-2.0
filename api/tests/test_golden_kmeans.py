@@ -1,6 +1,6 @@
 """Golden tests: K-Means K=5 must reproduce the reference fixture.
 
-Fixture provenance: torch is not installable in the build sandbox, so the
+Fixture provenance: torch is not installable in the build environment, so the
 fixture was produced by a deliberately naive reference implementation of
 backend_py.run_kmeans (see tests/fixtures/generate_fixtures.py and
 expected_values.json -> kmeans_k5.generator). The port itself is a different,

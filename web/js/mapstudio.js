@@ -2,7 +2,7 @@
  * Map studio: the composition behind the Map composer modal.
  *
  * Everything the modal shows and everything it exports is drawn by
- * `drawStudioMap` into ONE canvas — the preview is that canvas scaled to fit
+ * `drawStudioMap` into ONE canvas - the preview is that canvas scaled to fit
  * the pane, and an export is the same drawing at 1x, 2x or 3x. There is no
  * second rendering path, so the PNG cannot disagree with the preview.
  *
@@ -51,11 +51,11 @@ export const TITLE_ALIGNS = Object.freeze([
 export const TEXT_SIZE_RANGE = Object.freeze({ min: 8, max: 96 });
 
 /**
- * Where the legend goes — item 16. Five placements sit NEXT TO the image (the
+ * Where the legend goes - item 16. Five placements sit NEXT TO the image (the
  * composed canvas grows by a band so the legend never covers a pixel of the
  * map) and four overlay it in a corner.
  *
- *   edge   "left" | "right" | "bottom" — which side of the image the band is on
+ *   edge   "left" | "right" | "bottom" - which side of the image the band is on
  *   align  for the bottom band: "left" | "center" | "right" within the image
  */
 export const LEGEND_PLACEMENTS = Object.freeze([
@@ -64,10 +64,10 @@ export const LEGEND_PLACEMENTS = Object.freeze([
   { key: "outside-bottom-left", label: "Outside bottom left", outside: true, edge: "bottom", align: "left", corner: null },
   { key: "outside-bottom-center", label: "Outside bottom center", outside: true, edge: "bottom", align: "center", corner: null },
   { key: "outside-bottom-right", label: "Outside bottom right", outside: true, edge: "bottom", align: "right", corner: null },
-  { key: "onmap-tl", label: "On map — top left", outside: false, edge: null, align: null, corner: "tl" },
-  { key: "onmap-tr", label: "On map — top right", outside: false, edge: null, align: null, corner: "tr" },
-  { key: "onmap-bl", label: "On map — bottom left", outside: false, edge: null, align: null, corner: "bl" },
-  { key: "onmap-br", label: "On map — bottom right", outside: false, edge: null, align: null, corner: "br" },
+  { key: "onmap-tl", label: "On map - top left", outside: false, edge: null, align: null, corner: "tl" },
+  { key: "onmap-tr", label: "On map - top right", outside: false, edge: null, align: null, corner: "tr" },
+  { key: "onmap-bl", label: "On map - bottom left", outside: false, edge: null, align: null, corner: "bl" },
+  { key: "onmap-br", label: "On map - bottom right", outside: false, edge: null, align: null, corner: "br" },
 ]);
 
 export const DEFAULT_LEGEND_PLACEMENT = "outside-right";
@@ -149,7 +149,7 @@ export const MAP_DEFAULTS = Object.freeze({
     divisions: 4,          // 1..10, a label at every boundary
     fontSize: 12,
     position: DEFAULT_SCALE_POSITION,
-    // "Image width on the ground = X unit" — the one entry that turns a plain
+    // "Image width on the ground = X unit" - the one entry that turns a plain
     // bar into an exact one for an image whose API metadata has no scale
     imageWidth: null,
     imageWidthUnit: "m",
@@ -163,7 +163,7 @@ export const MAP_DEFAULTS = Object.freeze({
   creditTouched: false,
   credit: "",
   cornerCoordinates: false,
-  // item 17: the border is always drawn — there is no switch to remove it,
+  // item 17: the border is always drawn - there is no switch to remove it,
   // only the colour it is drawn in
   borderColor: "#e8f1f5",
   background: "#0d1115",
@@ -181,7 +181,7 @@ export function mapFont(font) {
 }
 
 /**
- * One CSS font shorthand for every text on the map — same family everywhere,
+ * One CSS font shorthand for every text on the map - same family everywhere,
  * only the size/weight differ.
  */
 export function fontSpec(size, { font = DEFAULT_MAP_FONT, weight = "", style = "" } = {}) {
@@ -248,7 +248,7 @@ export function toMeters(value, unit) {
   return Number.isFinite(amount) ? amount * factor : 0;
 }
 
-/** Round a value to the nearest 1/2/5 × 10ⁿ — the shape scale bars use. */
+/** Round a value to the nearest 1/2/5 × 10ⁿ - the shape scale bars use. */
 export function niceRoundNumber(value) {
   const amount = Number(value);
   if (!Number.isFinite(amount) || amount <= 0) return 0;
@@ -274,10 +274,10 @@ export function roundScaleLength(groundWidthMeters, unit = "m") {
   return rounded > inUnit ? niceRoundNumber(inUnit) : rounded;
 }
 
-/** "1.5", "250", "0.25" — up to two decimals, never a trailing zero. */
+/** "1.5", "250", "0.25" - up to two decimals, never a trailing zero. */
 export function formatNumber(value) {
   const amount = Number(value);
-  if (!Number.isFinite(amount)) return "—";
+  if (!Number.isFinite(amount)) return "-";
   return String(Number(amount.toFixed(2)));
 }
 
@@ -285,7 +285,7 @@ export function formatNumber(value) {
 export const PLAIN_BAR_WIDTH_RATIO = 0.4;
 
 /**
- * Pure scale-bar computation — no canvas, no settings object (item 16).
+ * Pure scale-bar computation - no canvas, no settings object (item 16).
  *
  * Two cases:
  *   1. a ground width (API metadata or the user's "Real image width") → an
@@ -347,7 +347,7 @@ export function scaleBarLayout({
 /** Compact label: "500 m", "1.5 km", "0.25 mi". */
 export function formatLength(value, unit) {
   const amount = Number(value);
-  if (!Number.isFinite(amount)) return "—";
+  if (!Number.isFinite(amount)) return "-";
   const text = amount >= 10 ? String(Math.round(amount)) : String(Number(amount.toFixed(2)));
   return `${text} ${unit}`;
 }
@@ -618,7 +618,7 @@ export function fitToWidth(ctx, text, maxWidth) {
  * Alternating black/white scale bar (item 16).
  *
  * `labels` is what `scaleBarLayout` produced: one entry per division boundary,
- * `{ text, align }`, drawn UNDER the bar at that boundary — the total carries
+ * `{ text, align }`, drawn UNDER the bar at that boundary - the total carries
  * the unit. A plain bar (`labels: []`) is exactly that: black/white stripes,
  * no numbers, no unit and no note of any kind.
  */
@@ -754,10 +754,10 @@ export function drawLegendBox(ctx, {
   return { x, y, width, height };
 }
 
-/** "42.3%" — one decimal for big slices, two for slivers. */
+/** "42.3%" - one decimal for big slices, two for slivers. */
 export function percentTextFor(row) {
   const value = Number(row?.percentage);
-  if (!Number.isFinite(value)) return "—";
+  if (!Number.isFinite(value)) return "-";
   if (value === 0) return "0%";
   if (value < 0.1) return "<0.1%";
   if (value < 10) return `${value.toFixed(2)}%`;
@@ -767,8 +767,8 @@ export function percentTextFor(row) {
 /**
  * Legend layout (used by the modal, the outside band and the box itself).
  *
- * Item 16: the box is as wide as the LONGEST class name needs — measured with
- * the very font it is drawn with — so no name is ever cut off or ellipsised
+ * Item 16: the box is as wide as the LONGEST class name needs - measured with
+ * the very font it is drawn with - so no name is ever cut off or ellipsised
  * (the title and the percentage column are measured too).
  */
 export function legendBoxSize(ctx, rows, {
@@ -806,7 +806,7 @@ export function legendBoxSize(ctx, rows, {
 
 /**
  * Paint the whole map into `ctx`. The canvas must already be sized by
- * `composeStudioMap`/`studioSize` — this only draws.
+ * `composeStudioMap`/`studioSize` - this only draws.
  */
 /**
  * Everything the composition needs to know BEFORE a canvas size is chosen:
@@ -880,7 +880,7 @@ export function drawStudioMap(ctx, {
   ctx.fillRect(0, 0, metrics.width, metrics.height);
   ctx.restore();
 
-  // title + subtitle — one alignment for the block, centred at the top by default
+  // title + subtitle - one alignment for the block, centred at the top by default
   const align = TITLE_ALIGNS.some((entry) => entry.key === settings.titleAlign)
     ? settings.titleAlign
     : MAP_DEFAULTS.titleAlign;
@@ -905,7 +905,7 @@ export function drawStudioMap(ctx, {
 
   if (image) ctx.drawImage(image, metrics.image.x, metrics.image.y, width, height);
 
-  // item 17: the border is ALWAYS drawn — only its colour is a setting
+  // item 17: the border is ALWAYS drawn - only its colour is a setting
   {
     ctx.save();
     ctx.strokeStyle = cssColor(settings.borderColor, MAP_DEFAULTS.borderColor);
@@ -940,7 +940,7 @@ export function drawStudioMap(ctx, {
     }
   }
 
-  // legend — outside the image (the canvas grew for it) or over a corner
+  // legend - outside the image (the canvas grew for it) or over a corner
   boxes.outsideLegend = metrics.outsideLegend;
   if (settings.legend?.visible && legendRows.length) {
     const legendUnit = plan.legendUnit;
@@ -955,7 +955,7 @@ export function drawStudioMap(ctx, {
     let y;
     if (outside) {
       // the canvas grew by exactly this band, so the box goes where it was
-      // reserved — right, left or under the image, aligned as chosen
+      // reserved - right, left or under the image, aligned as chosen
       x = metrics.legendArea.x;
       y = metrics.legendArea.y;
     } else {
@@ -975,7 +975,7 @@ export function drawStudioMap(ctx, {
   }
 
   // north arrow: on the map in a corner, or outside in the band above the
-  // title (item 17) — either way it is never drawn over the title or the legend
+  // title (item 17) - either way it is never drawn over the title or the legend
   if (plan.arrowVisible && plan.arrow) {
     const size = Math.round((settings.northArrow.size ?? MAP_DEFAULTS.northArrow.size) * scale);
     const margin = Math.round(12 * scale);

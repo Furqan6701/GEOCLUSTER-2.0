@@ -1,4 +1,4 @@
-"""Keep secrets out of the server log (Task 2).
+"""Keep secrets out of the server log.
 
 Errors raised by an HTTP client or an SDK sometimes quote the request they made
 - and a request may carry a key in a header or a query string. The rule this

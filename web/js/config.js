@@ -43,7 +43,7 @@ export function isValidHttpUrl(value) {
  * Resolve the API base URL from (in order):
  *   1. ?api= query string (an http(s) URL or a same-origin path like /api),
  *   2. localStorage["geocluster.apiBase"],
- *   3. the page's hostname — a local dev machine talks to
+ *   3. the page's hostname - a local dev machine talks to
  *      http://localhost:8010 directly, anything else (hosted preview, LAN,
  *      reverse proxy) uses the same-origin /api path that serve.py forwards
  *      to the backend. Browsers must never call localhost for a service that

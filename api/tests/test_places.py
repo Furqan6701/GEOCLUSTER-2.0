@@ -379,7 +379,7 @@ def test_api_passes_refresh_through(app, client):
 
 
 def test_api_keeps_the_original_request_shape_working(app, client, tmp_path):
-    """{session_id, location, start, end} — the shape the desktop-era tests use."""
+    """{session_id, location, start, end} - the shape the desktop-era tests use."""
     app.state.satellite = SatelliteClient(
         client_id="id", client_secret="secret", cache_dir=tmp_path / "satellite",
         places=fake_places(results=[], tmp_path=tmp_path / "places")[0],

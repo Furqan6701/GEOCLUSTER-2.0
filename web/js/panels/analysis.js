@@ -11,8 +11,8 @@
  * The distance tool measures image pixels in the viewer (two clicks; Esc
  * clears). The controls here are the unit and the ground length of one pixel
  * (js/measure.js), prefilled from `meters_per_pixel` for satellite imagery and
- * defaulting to pixels otherwise. The latest measurement is one line —
- * "Distance: 450.20 px" — plus a Clear button, and the original-resolution
+ * defaulting to pixels otherwise. The latest measurement is one line -
+ * "Distance: 450.20 px" - plus a Clear button, and the original-resolution
  * pixel count is mentioned only when the upload was downscaled.
  */
 
@@ -28,7 +28,7 @@ export function createAnalysisPanel(ctx) {
   const histogramButton = button("Histogram", openHistogram, {
     variant: "primary",
     size: "small",
-    title: "Histogram of the ACTIVE viewport — press again for the other one",
+    title: "Histogram of the ACTIVE viewport - press again for the other one",
   });
   histogramButton.prepend(icon("chart", { size: 12 }));
 
@@ -54,7 +54,7 @@ export function createAnalysisPanel(ctx) {
   }, UNIT_ORDER.map((id) => el("option", { value: id, text: UNITS[id].label })));
   const pixelSizeInput = el("input", {
     type: "number", class: "input", min: "0", step: "any", id: "measure-pixel-size",
-    placeholder: "—", title: "Ground length of one image pixel, in the chosen unit",
+    placeholder: "-", title: "Ground length of one image pixel, in the chosen unit",
   });
   pixelSizeInput.style.maxWidth = "104px";
   const pixelSizeUnit = el("span", { class: "note", text: "" });
@@ -66,8 +66,8 @@ export function createAnalysisPanel(ctx) {
 
   /**
    * Prefill both controls from the image itself: satellite imagery (anything
-   * carrying `meters_per_pixel`) starts in metres — kilometres for a coarse
-   * mosaic — with its own pixel size; every other image starts in pixels. This
+   * carrying `meters_per_pixel`) starts in metres - kilometres for a coarse
+   * mosaic - with its own pixel size; every other image starts in pixels. This
    * runs for each image that arrives, because the pixel size describes THAT
    * image; edits the user makes apply until the next image loads.
    */

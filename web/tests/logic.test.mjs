@@ -493,7 +493,7 @@ test("describeCommand covers every router action", () => {
   assert.match(describeCommand({}), /unknown action/);
 });
 
-test("describeCommand covers every action the assistant may choose (Task 1)", () => {
+test("describeCommand covers every action the assistant may choose", () => {
   // the AI's validated parameters are described, not the defaults
   assert.equal(
     describeCommand({ action: "run_operation", operation: "meanfilter", params: { window: 5 } }),
@@ -579,7 +579,7 @@ test("executeCommands dispatches every action exactly once", async () => {
   assert.match(notes[2], /Ran negative/);
 });
 
-test("executeCommands runs every action the assistant may choose (Task 1)", async () => {
+test("executeCommands runs every action the assistant may choose", async () => {
   const calls = [];
   const note = (name) => async (...args) => calls.push([name, ...args]);
   const handlers = {
@@ -667,7 +667,7 @@ test("chat posts the message", async () => {
   assert.equal(response.reply, "hi");
 });
 
-test("chat forwards the app state and never a coordinate (Task 1)", async () => {
+test("chat forwards the app state and never a coordinate", async () => {
   const { calls, fetchImpl } = recordingFetch({ intent: "action", reply: "ok", action: { action: "fit_view" }, commands: [] });
   const api = new ApiClient({ fetchImpl });
   await api.chat("fit the image", {
@@ -982,7 +982,7 @@ test("formatPercentage keeps slivers readable and never prints '0%' for real dat
   assert.equal(formatPercentage(7.5), "7.50%");
   assert.equal(formatPercentage(0.04), "<0.1%");
   assert.equal(formatPercentage(0), "0%");
-  assert.equal(formatPercentage(undefined), "—");
+  assert.equal(formatPercentage(undefined), "-");
 });
 
 test("mapFileName derives a readable, safe filename", () => {
@@ -1029,7 +1029,7 @@ test("formatLength prints a compact label in the right unit", () => {
   assert.equal(formatLength(500, "m"), "500 m");
   assert.equal(formatLength(1.5, "km"), "1.5 km");
   assert.equal(formatLength(0.25, "mi"), "0.25 mi");
-  assert.equal(formatLength(Number.NaN, "m"), "—");
+  assert.equal(formatLength(Number.NaN, "m"), "-");
 });
 
 test("groundWidthMeters prefers meters_per_pixel, falls back to bbox and the manual width", () => {
@@ -1147,7 +1147,7 @@ test("percentTextFor keeps slivers readable", () => {
   assert.equal(percentTextFor({ percentage: 7.5 }), "7.50%");
   assert.equal(percentTextFor({ percentage: 0.02 }), "<0.1%");
   assert.equal(percentTextFor({ percentage: 0 }), "0%");
-  assert.equal(percentTextFor({}), "—");
+  assert.equal(percentTextFor({}), "-");
 });
 
 test("fitToWidth ellipsises to the available width", () => {
@@ -1403,7 +1403,7 @@ test("the title, subtitle and credit are drawn, and the border is always there",
   assert.ok(withExtras.canvas.__texts.includes("study area"));
   assert.ok(withExtras.canvas.__texts.includes("Sentinel-2 L2A"));
 
-  // item 17: no setting can switch the border off — only its colour changes
+  // item 17: no setting can switch the border off - only its colour changes
   const colours = [];
   const canvas = documentStub.createElement("canvas");
   const ctx = canvas.getContext("2d");
@@ -1531,17 +1531,17 @@ test("drawHistogram paints the chart, its title and both axes for every mode", (
     fillText: (text) => canvas.__texts.push(String(text)),
   };
   const painted = (options) => {
-    drawHistogram(ctx, { bins: BINS_SPIKE, width: 520, height: 170, title: "Histogram — x.png", ...options });
+    drawHistogram(ctx, { bins: BINS_SPIKE, width: 520, height: 170, title: "Histogram - x.png", ...options });
     return canvas.__texts.join(" | ");
   };
-  assert.match(painted({}), /Histogram — x\.png/);
+  assert.match(painted({}), /Histogram - x\.png/);
   assert.match(painted({}), /intensity \(0–255\)/);
   assert.match(painted({}), /pixels \|/);
   assert.match(painted({ scale: "log" }), /10\^/);
   assert.match(painted({ cumulative: true }), /pixels ≤ intensity/);
   assert.match(painted({ density: true }), /share of pixels/);
   assert.match(painted({ density: true }), /%/);
-  assert.match(painted({ theme: "light" }), /Histogram — x\.png/, "the light theme still titles the chart");
+  assert.match(painted({ theme: "light" }), /Histogram - x\.png/, "the light theme still titles the chart");
   drawHistogram(ctx, { bins: [], width: 520, height: 170 });
   assert.ok(canvas.__texts.includes("no histogram yet"));
   assert.equal(histogramFileName("sample.jpg"), "histogram-sample.png");
@@ -1618,7 +1618,7 @@ test("a missing pixel size is asked for in the same line, never invented", () =>
   const missing = describeDistance({ pixels: 500, unit: "cm" });
   assert.equal(missing.ok, false);
   assert.equal(missing.reason, "missing-pixel-size");
-  assert.match(missing.line, /^Distance: 500\.00 px — set the pixel size to convert to centimetres$/);
+  assert.match(missing.line, /^Distance: 500\.00 px - set the pixel size to convert to centimetres$/);
   assert.equal(describeDistance({ pixels: 500, unit: "cm", pixelSize: 0 }).ok, false);
   assert.equal(describeDistance({ pixels: 500, unit: "cm", pixelSize: -1 }).ok, false);
 });
@@ -1648,7 +1648,7 @@ test("formatMeasurement keeps small values readable", () => {
   assert.equal(formatMeasurement(250), "250.00");
   assert.equal(formatMeasurement(2.5), "2.50");
   assert.equal(formatMeasurement(0.0042), "0.0042");
-  assert.equal(formatMeasurement(undefined), "—");
+  assert.equal(formatMeasurement(undefined), "-");
 });
 
 // ───────────────────────── STEP 3: preview maths + slider helpers ───────────
@@ -2104,7 +2104,7 @@ test("the placement dropdown offers the five outside spots and the four on-map c
   assert.deepEqual(LEGEND_PLACEMENTS.map((entry) => entry.label), [
     "Outside right", "Outside left",
     "Outside bottom left", "Outside bottom center", "Outside bottom right",
-    "On map — top left", "On map — top right", "On map — bottom left", "On map — bottom right",
+    "On map - top left", "On map - top right", "On map - bottom left", "On map - bottom right",
   ]);
   assert.equal(DEFAULT_LEGEND_PLACEMENT, "outside-right", "outside right is the default");
   assert.equal(MAP_DEFAULTS.legend.placement, "outside-right");
@@ -2260,7 +2260,7 @@ test("binStats computes min, max, mean, std and the pixel count from the bins", 
   assert.deepEqual(binStats([]), { count: 0, min: null, max: null, mean: null, std: null });
   const shown = formatStats(stats).map((entry) => `${entry.label}=${entry.text}`);
   assert.deepEqual(shown, ["Min=10", "Max=20", "Mean=12.50", "Std dev=4.33", "Pixels=4"]);
-  assert.deepEqual(formatStats(null).map((entry) => entry.text), ["—", "—", "—", "—", "—"]);
+  assert.deepEqual(formatStats(null).map((entry) => entry.text), ["-", "-", "-", "-", "-"]);
 });
 
 test("drawHistogram can overlay a second image in its own colour with a legend", () => {
@@ -2302,7 +2302,7 @@ test("histogramTargets lists the original, the result and every history state", 
   };
   const targets = histogramTargets({ state, history });
   assert.deepEqual(targets.map((entry) => entry.id), ["img-orig", "img-neg", "img-blur"],
-    "original, then result, then the rest of the history — each id once");
+    "original, then result, then the rest of the history - each id once");
   assert.equal(targets[0].kind, "original");
   assert.equal(targets[1].kind, "result");
   assert.equal(targets[2].kind, "history");
@@ -2529,7 +2529,7 @@ test("the percentages follow the 256-bin histogram, not a request", () => {
   assert.deepEqual(first.counts, { 0: 30, 1: 50, 2: 20 });
   assert.deepEqual(first.percentages, { 0: 30, 1: 50, 2: 20 });
 
-  // move a boundary, recompute from the SAME bins — no request involved
+  // move a boundary, recompute from the SAME bins - no request involved
   const moved = moveBoundary(ranges, 0, 100).entries;
   const second = countsFromBins(moved, bins);
   assert.deepEqual(second.counts, { 0: 80, 1: 0, 2: 20 }, "the first class swallowed the second");
@@ -2726,9 +2726,9 @@ test("menu reasons read as tooltips, never as wrapped sentences", () => {
   const reasons = [
     "a request is in flight",
     "load, fetch or decompress an image first",
-    "nothing to undo — run an operation first",
-    "nothing to redo — undo a step first",
-    "there is no result yet — run a filter or K-Means first",
+    "nothing to undo - run an operation first",
+    "nothing to redo - undo a step first",
+    "there is no result yet - run a filter or K-Means first",
   ];
   for (const reason of reasons) {
     assert.ok(reason.length <= 60, `too long for a tooltip: ${reason}`);
@@ -2746,7 +2746,7 @@ test("formatNumber prints at most two decimals and no trailing zeros", () => {
   assert.equal(formatNumber(0.25), "0.25");
   assert.equal(formatNumber(1 / 3), "0.33", "two decimals at most");
   assert.equal(formatNumber(2.0000001), "2");
-  assert.equal(formatNumber(Number.NaN), "—");
+  assert.equal(formatNumber(Number.NaN), "-");
 });
 
 test("scaleBarLayout: a satellite image gets an exact bar with a label per boundary", () => {
@@ -2797,7 +2797,7 @@ test("scaleBarLayout: a drone photo gets a plain bar until a width is entered", 
   assert.equal(entered.total, 50, "a fifth of the 200 m width");
   assert.deepEqual(entered.labels.map((entry) => entry.text), ["0", "12.5", "25", "37.5", "50 m"]);
 
-  // item 17: a typed total length is NOT a ground scale — on its own it cannot
+  // item 17: a typed total length is NOT a ground scale - on its own it cannot
   // put numbers on the bar (the sidebar disables the field instead)
   const typedAlone = scaleBarLayout({ length: 120, unit: "m", divisions: 3 });
   assert.equal(typedAlone.plain, true, "a typed length alone leaves the bar plain");

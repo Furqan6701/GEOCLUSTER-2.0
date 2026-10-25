@@ -1,7 +1,7 @@
 /**
  * Floating histogram windows (items 9 and 13).
  *
- * The Analysis panel keeps a single "Histogram" button — it opens the window
+ * The Analysis panel keeps a single "Histogram" button - it opens the window
  * for the ACTIVE viewport's image, and if that image already has a window it
  * opens the other viewport's image instead, so Original-vs-Result is two
  * clicks. Each viewport footer also carries its own small Histogram button for
@@ -16,11 +16,11 @@
  * hides an existing one. At most four are open.
  *
  * Bins are fetched ONCE per image (the API's 256 counts) and cached; every
- * option — scale, smoothing, display, theme, compare — is recomputed in the
+ * option - scale, smoothing, display, theme, compare - is recomputed in the
  * browser from those numbers, so changing an option never causes a request.
  * The Channel dropdown adds Gray (the API series) plus Red / Green / Blue /
  * RGB overlay for colour images, computed here from the decoded pixels
- * (see channelHistograms in js/histogram.js) — still no API change.
+ * (see channelHistograms in js/histogram.js) - still no API change.
  */
 
 import { previewSize } from "./preview.js";
@@ -112,7 +112,7 @@ export function clipTitle(title, maxLength = TITLE_MAX) {
 }
 
 /**
- * "Histogram: sample.jpg#negative" — the image's name plus the step that
+ * "Histogram: sample.jpg#negative" - the image's name plus the step that
  * produced it. The API already chains the step into derived names
  * (`sample.jpg#negative`), so the suffix is only added when it is missing.
  */
@@ -120,7 +120,7 @@ export function targetTitle(info, label = "", { maxLength = TITLE_MAX } = {}) {
   const name = String(info?.name ?? "").trim() || "image";
   const suffix = String(label ?? "").trim();
   if (!suffix) return clipTitle(name, maxLength);
-  const slug = suffix.replace(/^(Opened|Result —)\s*/i, "").trim();
+  const slug = suffix.replace(/^(Opened|Result -)\s*/i, "").trim();
   if (!slug || plain(name).includes(plain(slug))) return clipTitle(name, maxLength);
   // "Negative" → "sample.jpg#negative", matching the history buttons' wording
   const title = `${name}#${slug.charAt(0).toLowerCase()}${slug.slice(1)}`;
@@ -188,7 +188,7 @@ export class HistogramWindows {
 
   /**
    * The sidebar button: the active viewport's image; if that already has a
-   * window, the other viewport's image instead — two clicks cover both.
+   * window, the other viewport's image instead - two clicks cover both.
    */
   openFromPanel() {
     const { active, other } = this.viewportPair();
@@ -201,7 +201,7 @@ export class HistogramWindows {
   /** Open a window; without a targetId it uses the working image. */
   open({ targetId = null } = {}) {
     if (this.isFull()) {
-      toast(`${this.limit} histogram windows are open — close one first.`, "warn");
+      toast(`${this.limit} histogram windows are open - close one first.`, "warn");
       return null;
     }
     const targets = histogramTargets({ state: this.state, history: this.history });
@@ -246,7 +246,7 @@ export class HistogramWindows {
 
   /**
    * The rectangles the open windows occupy: their real (possibly resized) size
-   * at their current position — the tiling, clamping and the tests all use this
+   * at their current position - the tiling, clamping and the tests all use this
    * one source.
    */
   rects() {
@@ -292,7 +292,7 @@ export class HistogramWindows {
 
   /**
    * Tile a new window into the first free slot of a grid that starts at the top
-   * left — a new window NEVER covers one that is already open. Only when the
+   * left - a new window NEVER covers one that is already open. Only when the
    * screen has no free slot left does it cascade the last one a little.
    */
   _place(win) {
@@ -548,7 +548,7 @@ export class HistogramWindows {
       if (win.title) win.title.textContent = `Histogram: ${targetId}`;
       win.status.textContent = "That image is no longer in the session.";
       this._draw(win);
-      toast("That image is no longer in the session — pick another one.", "warn");
+      toast("That image is no longer in the session - pick another one.", "warn");
       return { ok: false, reason: "missing-target" };
     }
     win.targetId = targetId;
@@ -699,7 +699,7 @@ export class HistogramWindows {
       win.compareBins = null;
       win.fields.compare.value = "off";
       this._draw(win);
-      toast("Compare needs a histogram for the second image — the API refused it.", "bad", { timeout: 12000 });
+      toast("Compare needs a histogram for the second image - the API refused it.", "bad", { timeout: 12000 });
       return { ok: false, error };
     }
   }
@@ -737,7 +737,7 @@ export class HistogramWindows {
     }
     const filename = histogramFileName(target?.info?.name ?? target?.title ?? "image");
     downloadBlob(blob, filename);
-    toast(`Histogram exported — ${exportCanvas.width}×${exportCanvas.height} PNG`, "ok");
+    toast(`Histogram exported - ${exportCanvas.width}×${exportCanvas.height} PNG`, "ok");
     return { ok: true, blob, width: exportCanvas.width, height: exportCanvas.height, filename };
   }
 
@@ -815,7 +815,7 @@ export class HistogramWindows {
   }
 
   /**
-   * Move a window, clamped so the WHOLE window stays on the page — including
+   * Move a window, clamped so the WHOLE window stays on the page - including
    * the bottom edge (the old clamp allowed it to hang 40 px below the fold).
    */
   _move(win, left, top) {

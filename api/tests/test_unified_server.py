@@ -1,4 +1,4 @@
-"""The unified app: one process serving the frontend *and* the API (Task 3).
+"""The unified app: one process serving the frontend *and* the API.
 
 The API-only default is checked too, because every existing test, README and
 script depends on `create_app()` keeping its root routes exactly where they

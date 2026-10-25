@@ -6,7 +6,7 @@ answered from `geocluster/data/app_help.json` and returns 200 with the glossary
 text even when no API key is configured or the provider is rate limited; only
 questions the glossary cannot answer reach the language model.
 
-Task 1: the model may both answer in text and pick ONE action from the fixed
+The model may both answer in text and pick ONE action from the fixed
 whitelist in `geocluster/assistant.py`. The action travels back in `action`
 (with the same object also present in `commands`, the list the client
 executes), is always range-checked server-side, and is dropped - not forwarded

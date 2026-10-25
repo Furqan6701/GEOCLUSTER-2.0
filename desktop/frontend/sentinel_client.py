@@ -12,7 +12,7 @@ load_dotenv()
 TOKEN_URL = "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token"
 PROCESS_URL = "https://sh.dataspace.copernicus.eu/api/v1/process"
 
-# NUST H-12 campus, Islamabad — bounding box derived from published
+# NUST H-12 campus, Islamabad - bounding box derived from published
 # GIS survey corner coordinates (west, south, east, north)
 NUST_H12_BBOX = [72.977942, 33.633664, 73.005167, 33.662233]
 

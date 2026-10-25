@@ -4,7 +4,7 @@
  *
  * These four used to be a "Files" sidebar section. The section is gone, so the
  * File menu and the two toolbar buttons (Export / Compress) drive the same code
- * through the bus — one owner, one implementation, one busy rule:
+ * through the bus - one owner, one implementation, one busy rule:
  *
  *   * the File menu asks the central action gate whether an action may run
  *     (`gate.canRun()` / `gate.isBusy()`), so the entries can never disagree
@@ -67,7 +67,7 @@ export function createImageActions(ctx) {
       const name = `${baseName()}.gch`;
       downloadBlob(gch, name);
       toast(`Saved ${name} (${fmtBytes(gch.size)}).`, "ok");
-      bus.emit("status", { message: `Compressed ${name} — ${fmtBytes(gch.size)}` });
+      bus.emit("status", { message: `Compressed ${name} - ${fmtBytes(gch.size)}` });
       return { ok: true, blob: gch, name };
     } catch (error) {
       report(error, "Compression failed");

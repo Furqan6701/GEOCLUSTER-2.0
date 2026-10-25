@@ -31,14 +31,14 @@ def check(condition: bool, label: str, detail: str = "") -> bool:
     if condition:
         print(f"PASS  {label}")
         return True
-    FAILURES.append(label + (f" — {detail}" if detail else ""))
-    print(f"FAIL  {label}{f' — {detail}' if detail else ''}")
+    FAILURES.append(label + (f" - {detail}" if detail else ""))
+    print(f"FAIL  {label}{f' - {detail}' if detail else ''}")
     return False
 
 
 def skip(label: str, why: str) -> None:
     SKIPS.append(label)
-    print(f"SKIP  {label} — {why}")
+    print(f"SKIP  {label} - {why}")
 
 
 def request(method: str, path: str, *, body=None, headers=None, raw=False):
@@ -81,7 +81,7 @@ def multipart(path: str, filename: str, payload: bytes, field: str = "file"):
 
 
 def main() -> int:
-    print(f"frontend ↔ API contract check — {API}\n")
+    print(f"frontend ↔ API contract check - {API}\n")
 
     status, _, health = request("GET", "/health")
     check(status == 200, "GET /health → 200", str(status))
@@ -196,7 +196,7 @@ def main() -> int:
 
     # -------------------------------------------------------------- satellite
     # STEP 2: the request shape is validated locally, so these hold whether or
-    # not credentials exist — they never reach Copernicus or Nominatim.
+    # not credentials exist - they never reach Copernicus or Nominatim.
     status, _, body = request("POST", "/satellite/fetch", body={"session_id": session_id, "location": "F-8", "size_km": 12})
     check(status == 422 and "limit is 5 km" in json.dumps(body), "oversized area → 422 naming the limit", f"{status} {str(body)[:160]}")
     status, _, body = request("POST", "/satellite/fetch", body={"session_id": session_id, "location": "F-8", "size_km": 0})
@@ -226,9 +226,9 @@ def main() -> int:
         check(status == 503, "satellite without credentials → 503", str(status))
         check("not configured" in json.dumps(probe), "503 explains the missing credentials", str(probe)[:160])
         check(corner_status == 503, "a valid corner request reaches the fetch step", f"{corner_status} {str(corner_body)[:160]}")
-        skip("unknown location → 404", "this sandbox has no api/.env, so the live fetch cannot run")
-        skip("bad date → 502 with Invalid date", "this sandbox has no api/.env, so the live fetch cannot run")
-        skip("satellite tile is 260×260", "this sandbox has no api/.env, so the live fetch cannot run")
+        skip("unknown location → 404", "this environment has no api/.env, so the live fetch cannot run")
+        skip("bad date → 502 with Invalid date", "this environment has no api/.env, so the live fetch cannot run")
+        skip("satellite tile is 260×260", "this environment has no api/.env, so the live fetch cannot run")
     else:
         status, _, body = request("POST", "/satellite/fetch", body={"session_id": session_id, "location": "atlantis"})
         check(status == 404, "unknown location → 404", f"{status} {str(body)[:120]}")

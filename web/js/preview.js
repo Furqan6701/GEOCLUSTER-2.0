@@ -5,7 +5,7 @@
  * would look like, without asking the server: the current image is drawn into
  * an offscreen canvas (downscaled for big images so the maths stays fast) and
  * the operation is applied to those pixels in JavaScript. Nothing here touches
- * the network, the session or the undo history — releasing the slider sends one
+ * the network, the session or the undo history - releasing the slider sends one
  * real request and the server's exact result replaces the preview.
  *
  * The maths mirrors api/geocluster/filters.py, which is the source of truth:

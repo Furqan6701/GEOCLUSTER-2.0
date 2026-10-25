@@ -4,9 +4,9 @@
  * The viewer measures a Euclidean distance in *image pixels*. Everything else
  * is arithmetic on that number plus one fact the app can often supply itself:
  *
- *   - `pixelSize` — the ground length of ONE image pixel, in the chosen unit
+ *   - `pixelSize` - the ground length of ONE image pixel, in the chosen unit
  *     (e.g. "10 m" for a Sentinel-2 crop, or a number the user calibrates);
- *   - `scale` — the factor the API applied when it downscaled the upload
+ *   - `scale` - the factor the API applied when it downscaled the upload
  *     (displayed = original × scale), used only to mention the distance in
  *     original-resolution pixels, and only when a downscale actually happened.
  *
@@ -72,7 +72,7 @@ export function defaultMeasureSettings(info) {
 /** Format a measurement: 1234.5 → "1,234.50" (keeps small values readable). */
 export function formatMeasurement(value) {
   const number = Number(value);
-  if (!Number.isFinite(number)) return "—";
+  if (!Number.isFinite(number)) return "-";
   const abs = Math.abs(number);
   const digits = abs >= 1 ? 2 : 4;
   return number.toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits });
@@ -108,7 +108,7 @@ export function describeDistance({ pixels, unit = "px", pixelSize = null, scale 
       downscaled,
       originalPixels,
       original: downscaled ? { pixels: originalPixels, text: `${formatMeasurement(originalPixels)} px` } : null,
-      line: `Distance: ${pixelsText} — set the pixel size to convert to ${meta.label}${originalNote}`,
+      line: `Distance: ${pixelsText} - set the pixel size to convert to ${meta.label}${originalNote}`,
     };
   }
 

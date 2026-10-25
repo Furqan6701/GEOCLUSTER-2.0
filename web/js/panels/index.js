@@ -1,6 +1,6 @@
 /**
  * Panel registry: every toolbox dock section is created here.
- * Order matters — the first entry is the first section in the dock.
+ * Order matters - the first entry is the first section in the dock.
  */
 
 import { createAnalysisPanel } from "./analysis.js";

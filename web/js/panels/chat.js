@@ -8,7 +8,7 @@
  *   - router commands are executed even when there is no model reply, because
  *     "Show me F-8 imagery" and friends need no language model at all.
  *
- * Task 1: one message can now carry a reply AND one action the model chose. It
+ * One message can now carry a reply AND one action the model chose. It
  * is executed through the same handler the matching UI control uses (the
  * Filters panel's slider commit, the Clusters panel's Run K-Means/Generate map
  * buttons, the View menu's zoom entries, the toolbar's Measure toggle), so the
@@ -110,17 +110,17 @@ export function createChatPanel(ctx) {
       if (error.status === 502) {
         return (
           "The AI assistant is unavailable right now (the provider returned an error). " +
-          'Commands that do not need the model still work — try "Show me F-8 imagery" or "Run k-means".'
+          'Commands that do not need the model still work - try "Show me F-8 imagery" or "Run k-means".'
         );
       }
       if (error.status === 503) {
         return (
           "The AI assistant is not configured on this server (no API key). " +
-          'Router commands still work without it — try "Show me F-8 imagery", "Histogram" or "Compress this image".'
+          'Router commands still work without it - try "Show me F-8 imagery", "Histogram" or "Compress this image".'
         );
       }
       if (error.status === 429) {
-        return "Too many chat requests — wait a minute and try again.";
+        return "Too many chat requests - wait a minute and try again.";
       }
     }
     return humanizeError(error, { apiBase: ctx.api.base });
@@ -133,7 +133,7 @@ export function createChatPanel(ctx) {
   }
 
   function requireImage(what) {
-    if (!activeImage(state)) throw new Error(`no image loaded — upload or fetch one first (${what})`);
+    if (!activeImage(state)) throw new Error(`no image loaded - upload or fetch one first (${what})`);
   }
 
   const handlers = {
@@ -151,13 +151,13 @@ export function createChatPanel(ctx) {
           filters.actions.revealParams?.(operation);
           const outcome = await filters.actions.commit(operation, sliderValue(operation, params));
           if (outcome?.ok === false && outcome.reason === "no-image") {
-            throw new Error("no image loaded — upload or fetch one first");
+            throw new Error("no image loaded - upload or fetch one first");
           }
           return;
         }
         const outcome = await filters.actions.run(operation, params);
         if (outcome?.ok === false && outcome.reason === "no-image") {
-          throw new Error("no image loaded — upload or fetch one first");
+          throw new Error("no image loaded - upload or fetch one first");
         }
         return;
       }
@@ -211,7 +211,7 @@ export function createChatPanel(ctx) {
     },
     async exportLabelMap() {
       requireImage("export");
-      if (!state.kmeans) throw new Error("run K-Means first — the label map comes from it");
+      if (!state.kmeans) throw new Error("run K-Means first - the label map comes from it");
       await callUi("exportLabelMap");
     },
     async undo() {
@@ -279,8 +279,8 @@ export function createChatPanel(ctx) {
 
   append(
     "assistant",
-    "Ask me what any tool does — for example \"What is the mean filter?\" or " +
-      "\"How do I use threshold?\" — and I will answer in plain text, even when the " +
+    "Ask me what any tool does - for example \"What is the mean filter?\" or " +
+      "\"How do I use threshold?\" - and I will answer in plain text, even when the " +
       "AI service is busy. I can also run the tools for you (filters, K-Means, zoom, " +
       "exports): try \"Run k-means with 6 clusters\", \"Smooth this image with a 5 by 5 " +
       "mean filter\" or \"Show me F-8 imagery\".",

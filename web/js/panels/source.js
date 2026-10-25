@@ -7,7 +7,7 @@
  *     place name + a 1/2/5 km size box) and **Coordinates** (two corners pasted
  *     from Google Maps, in any order).
  * Optional dates live under the collapsed "Advanced" fold and are only sent
- * when the user typed them — placeholder text is never sent.
+ * when the user typed them - placeholder text is never sent.
  *
  * The working-image metadata block and the session file table were removed
  * from the UI (they duplicated what the viewports and the status bar already
@@ -42,7 +42,7 @@ export function createSourcePanel(ctx) {
   uploadButton.prepend(icon("upload", { size: 12 }));
 
   // Kept for internal bookkeeping (never attached to the panel): see the
-  // module docstring — the UI no longer shows metadata or a file table.
+  // module docstring - the UI no longer shows metadata or a file table.
   const infoBox = el("div", {}, el("p", { class: "empty-note", text: "No image loaded yet." }));
   const filesBox = el("div", {}, el("p", { class: "empty-note", text: "No images in this session." }));
 
@@ -52,7 +52,7 @@ export function createSourcePanel(ctx) {
     try {
       setBusy(true);
       const info = await session.uploadImage(file, file.name);
-      toast(`Uploaded ${file.name} — ${describeSize(info)}`, "ok");
+      toast(`Uploaded ${file.name} - ${describeSize(info)}`, "ok");
       renderFiles();
     } catch (error) {
       reportError(error, "Upload failed");
@@ -110,7 +110,7 @@ export function createSourcePanel(ctx) {
     }
   }
 
-  /** "sample.jpg — 1600×1066 px" without pulling in the whole metadata block. */
+  /** "sample.jpg - 1600×1066 px" without pulling in the whole metadata block. */
   function describeSize(info) {
     if (!info) return "image";
     const size = info.width && info.height ? ` ${info.width}×${info.height} px` : "";
@@ -131,7 +131,7 @@ export function createSourcePanel(ctx) {
 
   const corner1Input = el("input", {
     type: "text", id: "sat-corner1", placeholder: "33.6844, 73.0479",
-    title: "Paste from Google Maps — any corner",
+    title: "Paste from Google Maps - any corner",
   });
   const corner2Input = el("input", {
     type: "text", id: "sat-corner2", placeholder: "33.6600, 73.1000",
@@ -160,11 +160,11 @@ export function createSourcePanel(ctx) {
 
   const startInput = el("input", {
     type: "date",
-    title: "Optional start date (YYYY-MM-DD) — leave it empty to use the server's rolling window",
+    title: "Optional start date (YYYY-MM-DD) - leave it empty to use the server's rolling window",
   });
   const endInput = el("input", {
     type: "date",
-    title: "Optional end date (YYYY-MM-DD) — leave it empty to use the server's rolling window",
+    title: "Optional end date (YYYY-MM-DD) - leave it empty to use the server's rolling window",
   });
   const advanced = el("details", { class: "advanced" }, [
     el("summary", { text: "Advanced" }),
@@ -223,7 +223,7 @@ export function createSourcePanel(ctx) {
       const corner1 = corner1Input.value.trim();
       const corner2 = corner2Input.value.trim();
       if (!corner1 || !corner2) {
-        toast("Paste both corners as 'lat, lon' — for example 33.6844, 73.0479.", "warn");
+        toast("Paste both corners as 'lat, lon' - for example 33.6844, 73.0479.", "warn");
         (corner1 ? corner2Input : corner1Input).focus();
         return null;
       }
@@ -247,7 +247,7 @@ export function createSourcePanel(ctx) {
       const what = request.mode === "bbox"
         ? `the area around ${request.corner1}`
         : `${request.location} (${request.sizeKm ?? DEFAULT_SIZE_KM} km)`;
-      toast(`Loaded satellite imagery for ${what} — ${describeSize(info)}`, "ok");
+      toast(`Loaded satellite imagery for ${what} - ${describeSize(info)}`, "ok");
       renderFiles();
       return { ok: true, info };
     } catch (error) {
@@ -297,7 +297,7 @@ export function createSourcePanel(ctx) {
     loadLocations();
   });
 
-  // the chat can fetch imagery too — keep this section's input in sync
+  // the chat can fetch imagery too - keep this section's input in sync
   bus.on("satellite:fetched", ({ location }) => {
     if (location) {
       placeModeRadio.checked = true;

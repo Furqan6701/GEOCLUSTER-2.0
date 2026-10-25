@@ -1,4 +1,4 @@
-# Freebuff agent metadata — never commit this
+# Local agent metadata folder: never commit this
 .freebuff/
 
 # Environment and secrets. Real values never belong in git.
@@ -44,7 +44,7 @@ geocluster-satellite-cache/
 
 # Regenerable runtime artifacts under the project's data dir.
 # These are produced by the app/tests on every run (K-Means output files,
-# processed images, satellite download cache) — do not commit them.
+# processed images, satellite download cache) - do not commit them.
 /GEOCLUSTER 2.0/data/cache/
 /GEOCLUSTER 2.0/data/params.txt
 /GEOCLUSTER 2.0/data/centroids.txt

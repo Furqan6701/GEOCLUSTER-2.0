@@ -4,7 +4,7 @@
  * Every operation returns a NEW image id; the original is never overwritten
  * (the result becomes the input for the next operation, like the desktop).
  *
- * Parameter contract (api/schemas.py — do not guess these):
+ * Parameter contract (api/schemas.py - do not guess these):
  *   grayscale / negative / laplacian → no body at all (the API 422s on extras)
  *   brightness → {"value": int}    -255…255   (required)
  *   threshold  → {"value": int}       0…255   (required)
@@ -18,7 +18,7 @@
  * Brightness, Threshold and Mean filter have no Apply button: their slider
  * drives the Result viewport live through a browser-side preview
  * (js/preview.js) and ONE request is sent when the slider is released. Further
- * releases of the same slider REPLACE that adjustment — it is always measured
+ * releases of the same slider REPLACE that adjustment - it is always measured
  * against the image as it was before the first touch, so the undo history
  * keeps exactly one step for the whole adjustment.
  */
@@ -42,7 +42,7 @@ export const OPERATION_LABELS = Object.freeze({
 export const OPERATIONS_WITH_PARAMS = Object.freeze(["brightness", "threshold", "meanfilter"]);
 
 /**
- * One short description per filter — the SAME sentences the assistant's
+ * One short description per filter - the SAME sentences the assistant's
  * glossary ships (api/geocluster/data/app_help.json), so the tooltip under a
  * control and the answer the AI gives can never drift apart.
  *
@@ -62,7 +62,7 @@ export const HELP_TEXTS = Object.freeze({
 
 /**
  * The four point operations, name first. Kept as data for the panel's own
- * contract (and the tests that assert the tooltips carry the exact texts) —
+ * contract (and the tests that assert the tooltips carry the exact texts) -
  * there is no grouped popover any more.
  */
 export const POINT_OPERATION_HELP = Object.freeze([
@@ -82,7 +82,7 @@ export const SLIDER_SPECS = Object.freeze({
 /** How long a lone arrow-key press waits before it commits (a "short pause"). */
 export const KEY_COMMIT_DELAY = 450;
 
-/** Short, human label for what was applied — used in toasts and the status bar. */
+/** Short, human label for what was applied - used in toasts and the status bar. */
 export function describeOperation(operation, params = null) {
   const label = OPERATION_LABELS[operation] ?? operation;
   if (!params) return label;
@@ -151,7 +151,7 @@ export function createOperationsPanel(ctx) {
     if (value % 2 === 0) {
       value += 1;
       inputs.meanfilter.value = String(value);
-      toast(`The window must be odd — using ${value}.`, "warn");
+      toast(`The window must be odd - using ${value}.`, "warn");
     }
     return value;
   }
@@ -171,7 +171,7 @@ export function createOperationsPanel(ctx) {
     const factory = PARAM_FACTORIES[operation];
     if (!factory) return null;
     const params = factory();
-    if (!params) return undefined; // invalid — the reader already explained why
+    if (!params) return undefined; // invalid - the reader already explained why
     if (Object.values(params).some((value) => value == null || !Number.isFinite(Number(value)))) {
       return undefined;
     }
@@ -181,7 +181,7 @@ export function createOperationsPanel(ctx) {
   // ------------------------------------------------------- live adjustments
   /**
    * One slider adjustment at a time. `baseId` is the image the adjustment is
-   * measured against — the image as it was before the first touch — so
+   * measured against - the image as it was before the first touch - so
    * re-releasing the same slider re-runs the operation on that same input and
    * this adjustment's previous history step is replaced instead of stacked.
    */
@@ -250,7 +250,7 @@ export function createOperationsPanel(ctx) {
 
   function ensureAdjustment(operation) {
     if (adjustment?.operation === operation) return adjustment;
-    endAdjustment(); // another slider was active — only one at a time
+    endAdjustment(); // another slider was active - only one at a time
     adjustment = { operation, baseId: activeImage(state)?.id ?? null, committedId: null };
     return adjustment;
   }
@@ -262,7 +262,7 @@ export function createOperationsPanel(ctx) {
     return dropped;
   }
 
-  /** One request per release — or per Enter/blur, or per key pause. */
+  /** One request per release - or per Enter/blur, or per key pause. */
   async function commit(operation, value) {
     const spec = SLIDER_SPECS[operation];
     const control = controls[operation];
@@ -377,7 +377,7 @@ export function createOperationsPanel(ctx) {
       if (raw < spec.min || raw > spec.max) {
         toast(`The ${spec.label.toLowerCase()} must be between ${spec.min} and ${spec.max}.`, "warn");
       } else if (snapped !== Math.round(raw)) {
-        toast(`The ${spec.label.toLowerCase()} must be odd — using ${snapped}.`, "warn");
+        toast(`The ${spec.label.toLowerCase()} must be odd - using ${snapped}.`, "warn");
       }
       return snapped;
     }
@@ -473,7 +473,7 @@ export function createOperationsPanel(ctx) {
       if (params === undefined) return { ok: false, reason: "invalid-params" };
       // Belt and braces: never dispatch a parameterised operation without a body.
       if (!params || Object.values(params).some((value) => value == null)) {
-        toast(`${OPERATION_LABELS[operation] ?? operation} needs its parameters — set them in the Filters panel.`, "warn");
+        toast(`${OPERATION_LABELS[operation] ?? operation} needs its parameters - set them in the Filters panel.`, "warn");
         return { ok: false, reason: "missing-params" };
       }
     } else if (paramsOverride) {
@@ -507,14 +507,14 @@ export function createOperationsPanel(ctx) {
    *  labelled toast and a persistent status-bar entry. */
   function applyFeedback(label, info) {
     toast(`${label} applied → ${info.width}×${info.height}`, "ok");
-    bus.emit("status", { message: `${label} applied — ${info.width}×${info.height}` });
+    bus.emit("status", { message: `${label} applied - ${info.width}×${info.height}` });
     bus.emit("operation:applied", { label, info });
   }
 
   /**
    * Request bookkeeping only: the buttons' enabled state is owned by the
    * action gate (js/gate.js), which re-evaluates it here and after every other
-   * state change — never as a side effect of this call alone.
+   * state change - never as a side effect of this call alone.
    */
   function setBusy(busy, operation = "") {
     ctx.gate.setBusy(busy, "filters");
@@ -538,7 +538,7 @@ export function createOperationsPanel(ctx) {
     }
     const text = humanizeError(error, { apiBase: ctx.api.base, operation });
     state.lastOperation = { operation: `${label} failed`, imageId: null, at: Date.now(), error: true };
-    toast(`${label} failed — ${text}`, "bad", { timeout: 12000 });
+    toast(`${label} failed - ${text}`, "bad", { timeout: 12000 });
     bus.emit("status", { message: `${label} failed: ${text}` });
   }
 
@@ -546,7 +546,7 @@ export function createOperationsPanel(ctx) {
     endAdjustment();
     state.result = null;
     bus.emit("image:cleared", { role: "result" });
-    bus.emit("status", { message: "Result cleared — operations now apply to the working image" });
+    bus.emit("status", { message: "Result cleared - operations now apply to the working image" });
   }
 
   /** Bring an operation's controls into view (used by the Processing menu). */
@@ -633,7 +633,7 @@ export function createOperationsPanel(ctx) {
       revealParams,
       endAdjustment,
       /**
-       * The slider's own commit path (Task 1): releasing a slider, pressing
+       * The slider's own commit path: releasing a slider, pressing
        * Enter in its number field and the assistant's validated value all end
        * up here, so the panel shows the applied value and the undo history gets
        * exactly one step per adjustment.

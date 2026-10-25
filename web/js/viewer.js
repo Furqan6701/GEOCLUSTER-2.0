@@ -1,5 +1,5 @@
 /**
- * Canvas image viewer — a real image-processing viewport, not a dashboard card.
+ * Canvas image viewer - a real image-processing viewport, not a dashboard card.
  *
  * Behaviour that matters for the GeoCluster workflow:
  *   - fit-to-view on load, including small images (satellite tiles are only
@@ -28,7 +28,7 @@ export class Viewer {
   constructor(root, { title = "Viewer", role = "viewer", bus = null, placeholder = "", footerExtras = [], onHistogram = null } = {}) {
     this.root = root;
     this.title = title;
-    this.placeholder = placeholder || `No image loaded — ${title} viewport`;
+    this.placeholder = placeholder || `No image loaded - ${title} viewport`;
     this.role = role;
     this.bus = bus;
     this.image = null;
@@ -72,18 +72,18 @@ export class Viewer {
     this.canvasWrap = el("div", { class: "viewer-canvas-wrap" }, this.canvas);
 
     this.nameLabel = el("span", { class: "viewer-name", text: "no image" });
-    this.metaLabel = el("span", { class: "meta", text: "—" });
+    this.metaLabel = el("span", { class: "meta", text: "-" });
     this.modeBadge = el("span", { class: "badge viewer-mode", text: "Pixel" });
     // which viewport the sidebar/panel actions would act on (item 13)
     this.activeBadge = el("span", {
       class: "badge viewer-active-badge",
       text: "Active",
       hidden: true,
-      title: "This is the active viewport — panel and menu actions use it",
+      title: "This is the active viewport - panel and menu actions use it",
     });
-    this.zoomLabel = el("span", { class: "zoom-label", text: "—" });
+    this.zoomLabel = el("span", { class: "zoom-label", text: "-" });
     this.previewBadge = el("span", { class: "badge viewer-preview", text: "preview", hidden: true });
-    this.readout = el("span", { class: "readout", text: "x: —, y: —, value: —" });
+    this.readout = el("span", { class: "readout", text: "x: -, y: -, value: -" });
 
     this.fitButton = button("Fit", () => this.fit(), { size: "small", title: "Fit the image to the pane" });
     this.oneToOneButton = button("1:1", () => this.zoomTo(1), { size: "small", title: "Zoom to 100%" });
@@ -155,7 +155,7 @@ export class Viewer {
 
   /**
    * Footer buttons that need pixels are disabled until this viewport has an
-   * image — an "active looking" tool on an empty pane is exactly the bug this
+   * image - an "active looking" tool on an empty pane is exactly the bug this
    * prevents (the Distance button in particular).
    */
   _syncFooterState() {
@@ -281,7 +281,7 @@ export class Viewer {
     return this.image != null;
   }
 
-  /** Camera state (zoom + pan) — the unit that synchronised viewers share. */
+  /** Camera state (zoom + pan) - the unit that synchronised viewers share. */
   camera() {
     return { scale: this.scale, offsetX: this.offsetX, offsetY: this.offsetY };
   }
@@ -431,7 +431,7 @@ export class Viewer {
     this.distanceButton.textContent = next ? "Distance ●" : "Distance";
     this.distanceButton.prepend(icon("measure", { size: 11 }));
     this.distanceButton.title = next
-      ? "Measuring — click two points (Esc clears)"
+      ? "Measuring - click two points (Esc clears)"
       : "Measure a pixel distance (Esc to clear)";
     this._updateModeBadge();
     this.bus?.emit("viewer:distance-mode", { role: this.role, enabled: next });
@@ -472,7 +472,7 @@ export class Viewer {
     if (!this.image) return;
     if (this.previewCanvas) {
       // the preview is a downscaled copy: its pixels are not the image's
-      this.readout.textContent = "preview — release the slider to apply";
+      this.readout.textContent = "preview - release the slider to apply";
       return;
     }
     const x = Math.floor(point.x);
@@ -496,7 +496,7 @@ export class Viewer {
   }
 
   _clearReadout() {
-    this.readout.textContent = "x: —, y: —, value: —";
+    this.readout.textContent = "x: -, y: -, value: -";
     this.bus?.emit("viewer:cursor", { role: this.role, inside: false });
   }
 
@@ -534,7 +534,7 @@ export class Viewer {
       ctx.save();
       ctx.translate(this.offsetX, this.offsetY);
       ctx.scale(this.scale, this.scale);
-      // nearest neighbour once we reach 1:1 or beyond — crisp pixels when
+      // nearest neighbour once we reach 1:1 or beyond - crisp pixels when
       // zoomed in, smooth only while downscaling
       ctx.imageSmoothingEnabled = this.scale < 1;
       ctx.imageSmoothingQuality = "high";
@@ -635,11 +635,11 @@ export class Viewer {
       this.zoomLabel.textContent = `${Math.round(this.scale * 100)}%`;
       this.zoomLabel.title = `Zoom ${Math.round(this.scale * 100)}% (image pixels × ${this.scale.toFixed(3)})`;
     } else {
-      this.metaLabel.textContent = "—";
+      this.metaLabel.textContent = "-";
       this.metaLabel.title = "";
       this.nameLabel.textContent = "no image";
       this.nameLabel.title = "";
-      this.zoomLabel.textContent = "—";
+      this.zoomLabel.textContent = "-";
       this.zoomLabel.title = "";
     }
     this._updateModeBadge();

@@ -8,13 +8,13 @@ Two ways to run it, one file:
 
   Everything is at the root: `/health`, `/sessions`, `/ai/chat`, …
 
-* **Unified** (one process serves the frontend *and* the API — this is what the
+* **Unified** (one process serves the frontend *and* the API - this is what the
   Render deployment and `python -m uvicorn main:app --app-dir api` use):
 
       SERVE_WEB=true uvicorn main:app --host 0.0.0.0 --port 8010
 
   The frontend is served at `/` (index.html, js/, css/, assets/) and the API
-  under `/api` — plus the same routes at the root, so a page opened on
+  under `/api` - plus the same routes at the root, so a page opened on
   `http://localhost:8010/` keeps working with the frontend's local default
   (`API_ROOT_ALIASES=false` turns the root copies off in a deployment).
 

@@ -7,7 +7,7 @@
  *       {"action": "run_kmeans"}
  *       {"action": "open_histogram" | "open_compress" | "open_distance"}
  *       {"action": "fetch_satellite", "location": "F-8"}
- *   - the AI's chosen action (Task 1): exactly the same names, but with the
+ *   - the AI's chosen action: exactly the same names, but with the
  *     parameters the model picked, e.g.
  *       {"action": "run_operation", "operation": "meanfilter", "params": {"window": 5}}
  *       {"action": "run_kmeans", "params": {"k": 7}}
@@ -15,7 +15,7 @@
  * `validateCommandParams()` is the client-side second check, so a command can
  * never reach a panel with a value the panel would reject.
  *
- * Commands without parameters are executed with the defaults below — they are
+ * Commands without parameters are executed with the defaults below - they are
  * the numbers the matching UI control starts at, so the effect is the same as
  * clicking that button.
  */
@@ -167,7 +167,7 @@ export async function executeCommands(commands, handlers = {}) {
         }
         case "classify_clusters":
           await handlers.classifyClusters?.();
-          notes.push("Classification applied — the map composer is ready.");
+          notes.push("Classification applied - the map composer is ready.");
           break;
         case "open_map_composer":
           await handlers.openMapComposer?.();
@@ -179,11 +179,11 @@ export async function executeCommands(commands, handlers = {}) {
           break;
         case "open_compress":
           await handlers.openCompress?.();
-          notes.push("Compression started — the .gch file downloads when it finishes.");
+          notes.push("Compression started - the .gch file downloads when it finishes.");
           break;
         case "open_distance":
           await handlers.openDistance?.();
-          notes.push("Distance tool enabled — click two points on a viewer.");
+          notes.push("Distance tool enabled - click two points on a viewer.");
           break;
         case "export_png":
           await handlers.exportPng?.();

@@ -3,7 +3,7 @@
 Ported from desktop/frontend/sentinel_client.py with these API-era changes
 (listed below):
   * ONE cache-key rule, and it names the whole request: bounding box, size, date
-    window and output resolution — not just the location name, which used to
+    window and output resolution - not just the location name, which used to
     make "F-8 in July" and "F-8 in October" the same file
   * cache directory configurable, defaulting to a folder under the OS temp dir
   * the default date window is rolling and ends today (the desktop hardcoded
@@ -16,7 +16,7 @@ Ported from desktop/frontend/sentinel_client.py with these API-era changes
     bounding box + size that is validated against SATELLITE_MAX_KM
   * the Process API is always asked for 10 m per pixel (output width/height are
     computed from the box), which keeps even the 5 km maximum at 500×500 px,
-    far below the upload megapixel rule — satellite crops are never downscaled
+    far below the upload megapixel rule - satellite crops are never downscaled
 """
 
 from __future__ import annotations
@@ -54,7 +54,7 @@ REQUEST_TIMEOUT_SECONDS = 60
 
 #: The Process API is always asked for this ground sampling distance.
 RESOLUTION_M = 10.0
-#: Default side of a place-name square (km) — the UI's dropdown default.
+#: Default side of a place-name square (km) - the UI's dropdown default.
 DEFAULT_SIZE_KM = 2.0
 #: Historical size of a sector/alias box when no size is requested (desktop parity).
 SECTOR_SIZE_KM = 2.6
@@ -77,7 +77,7 @@ function evaluatePixel(sample) {
 def sanitize_location(location_name: str) -> str:
     """Desktop fetch_sector_image's slug rule (label/name sanitising only).
 
-    Since the cache key rework this is *not* the cache key any more — it names
+    Since the cache key rework this is *not* the cache key any more - it names
     the stored image. See ``cache_key`` for what identifies a cached download.
     """
     return (
@@ -89,7 +89,7 @@ def sanitize_location(location_name: str) -> str:
 
 
 def format_size_km(size_km: float) -> str:
-    """'2', '2.5', '0.75' — no trailing zeros, safe for a filename."""
+    """'2', '2.5', '0.75' - no trailing zeros, safe for a filename."""
     text = f"{float(size_km):.3f}".rstrip("0").rstrip(".")
     return text or "0"
 
@@ -265,11 +265,11 @@ class SatelliteClient:
             raise SatelliteError("A place name, sector code or alias is required.")
         try:
             sector = get_sector(name)
-        except Exception:  # LocationNotFound — resolve it as a place name instead
+        except Exception:  # LocationNotFound - resolve it as a place name instead
             sector = None
         if sector is not None:
             # Known sector/alias: keeps working exactly as before, and the size
-            # box still means something — it centres the square on the sector.
+            # box still means something - it centres the square on the sector.
             side_km = validate_size(size_km if size_km is not None else SECTOR_SIZE_KM)
             return {
                 "label": sector.code,
@@ -286,7 +286,7 @@ class SatelliteClient:
         if not prepared.get("needs_lookup"):
             return prepared
         hit = self.places.resolve(prepared["place"], refresh=refresh)
-        # only the center point is used — Nominatim's bounding box is ignored
+        # only the center point is used - Nominatim's bounding box is ignored
         return {
             **prepared,
             "bbox": square_bbox(hit["lat"], hit["lon"], prepared["size_km"]),
@@ -296,9 +296,9 @@ class SatelliteClient:
     def resolve_request(self, *, refresh: bool = False, **kwargs) -> dict:
         """Label + box + output size for one request shape (no credentials needed).
 
-        * ``mode="place"`` — a sector/alias if the name is known, otherwise a
+        * ``mode="place"`` - a sector/alias if the name is known, otherwise a
           Nominatim lookup; the square is built around the center point.
-        * ``mode="bbox"``  — two opposite corners, any order.
+        * ``mode="bbox"`` - two opposite corners, any order.
         """
         prepared = self.prepare_request(**kwargs)
         geometry = self.complete_request(prepared, refresh=refresh)
@@ -322,13 +322,13 @@ class SatelliteClient:
     ) -> tuple[bytes, dict[str, object]]:
         """Return (png_bytes, meta).
 
-        The cache is keyed by the *whole* request — bounding box, size, date
-        window and resolution — and is checked before the network unless
+        The cache is keyed by the *whole* request - bounding box, size, date
+        window and resolution - and is checked before the network unless
         ``refresh`` (or ``use_cache=False``) asks for a fresh download.
         """
         # 1) local validation (a bad size/corner is the caller's 422, whatever
         #    the credentials look like), 2) credentials, 3) only then any
-        #    network step — so an unconfigured server never calls Nominatim
+        #    network step - so an unconfigured server never calls Nominatim
         prepared = self.prepare_request(
             location_name=location_name,
             mode=mode,

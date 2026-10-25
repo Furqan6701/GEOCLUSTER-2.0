@@ -124,7 +124,7 @@ export class ApiClient {
    *
    * Place mode sends the place text (a sector code, an alias or a place name)
    * plus the requested square size; corner mode sends the two pasted corners.
-   * Optional values are only added when the user actually supplied them — a
+   * Optional values are only added when the user actually supplied them - a
    * placeholder date or a blank corner must never reach the API.
    */
   satelliteFetch({

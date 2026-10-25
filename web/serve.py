@@ -9,7 +9,7 @@ Usage (from the repository root or from web/):
 
 It serves this folder and forwards **/api/*** to the backend (default
 http://127.0.0.1:8010), so the page works when the browser is not on the same
-machine as the API — a hosted preview, another device on the LAN, or a reverse
+machine as the API - a hosted preview, another device on the LAN, or a reverse
 proxy. Browsers must never be told to call localhost for a service that runs on
 the server: from a page served at http://localhost:5173 the frontend talks to
 the API directly (the API's CORS list allows that origin), and from any other

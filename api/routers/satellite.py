@@ -2,12 +2,12 @@
 
 The request comes in one of two shapes:
 
-* ``mode="place"`` — a sector code (F-8), a known alias (NUST), or any place
+* ``mode="place"`` - a sector code (F-8), a known alias (NUST), or any place
   name. Only a *sector/alias* is resolved locally; anything else is looked up
   with Nominatim and reduced to its center point, around which the requested
-  square is built. The assistant router never supplies coordinates — it only
+  square is built. The assistant router never supplies coordinates - it only
   ever forwards the place text, and the lookup happens here.
-* ``mode="bbox"`` — two opposite corners as pasted from Google Maps; they are
+* ``mode="bbox"`` - two opposite corners as pasted from Google Maps; they are
   sorted into min/max, so the corner order does not matter.
 
 ``SATELLITE_MAX_KM`` (default 5) caps the side of any crop; a larger request or

@@ -15,7 +15,7 @@ import { rememberImage, resetImages } from "./state.js";
  * Keep ground-scale metadata across a re-upload (item 5).
  *
  * The server knows a satellite image's `bbox` / `meters_per_pixel`, but an
- * evicted image is restored by uploading its Blob again — and an upload can
+ * evicted image is restored by uploading its Blob again - and an upload can
  * never know the scale. The values the UI already holds are therefore carried
  * over, so the Map composer's scale bar stays exact. Nothing is invented: an
  * image that never had metadata keeps none.
@@ -31,7 +31,7 @@ export function carryGroundMetadata(info, previous) {
 }
 
 export class SessionExpiredError extends Error {
-  constructor(message = "Your session expired (the server restarted or the 60-minute limit passed). A new session was created — please upload your image again.") {
+  constructor(message = "Your session expired (the server restarted or the 60-minute limit passed). A new session was created - please upload your image again.") {
     super(message);
     this.name = "SessionExpiredError";
   }
@@ -139,7 +139,7 @@ export class SessionManager {
    * The API keeps only `max_images` images per session (LRU), so an id from
    * the undo history can 404 even though the session is alive. When that
    * happens the registered reviver re-uploads the state's Blob and the call is
-   * retried exactly once with the replacement id — the user sees nothing.
+   * retried exactly once with the replacement id - the user sees nothing.
    */
   async withImage(imageId, fn) {
     return this.withSession(async (sid) => {

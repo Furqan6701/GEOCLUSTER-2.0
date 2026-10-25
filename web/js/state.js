@@ -51,7 +51,7 @@ export function createAppState() {
     /** Classification used by the Map view: {legend, imageId, name, canvas}. */
     map: null,
     /**
-     * Distance settings: `{ unit, pixelSize, satellite }` — the unit from
+     * Distance settings: `{ unit, pixelSize, satellite }` - the unit from
      * UNIT_ORDER and the ground length of one pixel in that unit (null until
      * known). The Analysis panel fills both from the image's own
      * `meters_per_pixel`; plain uploads stay in pixels. (item 10)

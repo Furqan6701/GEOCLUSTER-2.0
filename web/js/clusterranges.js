@@ -1,10 +1,10 @@
 /**
- * Classification ranges (item 11) — the pure maths behind the editor.
+ * Classification ranges (item 11) - the pure maths behind the editor.
  *
  * A classification is a set of ranges over the 0..255 intensity axis that are
  * ALWAYS contiguous: no gaps, no overlaps, every class at least one value wide.
- * The first class therefore starts at 0 and the last one ends at 255 — both
- * locked, both shown read-only — and editing one boundary moves exactly one
+ * The first class therefore starts at 0 and the last one ends at 255 - both
+ * locked, both shown read-only - and editing one boundary moves exactly one
  * neighbour:
  *
  *     max(i) = v   ⇒   min(i+1) = v + 1
@@ -83,7 +83,7 @@ export function normalizeEntries(entries) {
 }
 
 /**
- * An even split into `k` contiguous ranges — the editor's starting point and
+ * An even split into `k` contiguous ranges - the editor's starting point and
  * what "Reset ranges" falls back to. Mirrors the API's
  * `calculate_default_ranges` (last bucket ends exactly at 255).
  */
@@ -157,14 +157,14 @@ export function clampMinEdit(entries, index, value) {
  * Edit one class's Max.
  *
  * While typing (`commit: false`) the edit is applied only when it is VALID:
- * inside `maxEditBounds()` — i.e. it neither empties this class nor the next
+ * inside `maxEditBounds()` - i.e. it neither empties this class nor the next
  * one. An out-of-range keystroke changes nothing, so the field can be typed
  * into freely.
  *
  * On commit (`commit: true`, Enter or blur) the value is clamped into those
  * bounds and always applied, and the next class's Min follows (`v + 1`).
  *
- * Returns `{ entries, applied, value }` — a new list, never a mutation.
+ * Returns `{ entries, applied, value }` - a new list, never a mutation.
  */
 export function editMax(entries, index, value, { commit = false } = {}) {
   const list = cloneEntries(entries);
@@ -183,7 +183,7 @@ export function editMax(entries, index, value, { commit = false } = {}) {
 }
 
 /**
- * Edit one class's Min — the mirror of `editMax`: the previous class's Max
+ * Edit one class's Min - the mirror of `editMax`: the previous class's Max
  * becomes `v − 1`, live while the value is valid, clamped on commit.
  */
 export function editMin(entries, index, value, { commit = false } = {}) {

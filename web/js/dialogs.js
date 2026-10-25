@@ -32,7 +32,7 @@ export function closeDialog(result = null) {
   current = null;
   root.ownerDocument.removeEventListener("keydown", onKey, true);
   root.remove();
-  // put the user back where they were — never on <body>
+  // put the user back where they were - never on <body>
   if (opener && typeof opener.focus === "function" && opener.isConnected !== false) opener.focus();
   resolve?.(result);
   return true;
@@ -40,7 +40,7 @@ export function closeDialog(result = null) {
 
 /**
  * Open a dialog. `body` is a node (or a list of nodes), `actions` a list of
- * { label, variant, value, primary, autofocus } — pressing one closes the
+ * { label, variant, value, primary, autofocus } - pressing one closes the
  * dialog and resolves with its `value` (true for the primary action).
  *
  * Returns the dialog record; a second call replaces the first dialog, which is
@@ -173,7 +173,7 @@ export const SHORTCUTS = Object.freeze([
 ]);
 
 /**
- * The credits the About dialog must carry (item 14). Exact wording, one copy —
+ * The credits the About dialog must carry (item 14). Exact wording, one copy -
  * the logic tests assert these strings directly.
  */
 export const CREDITS = Object.freeze([
@@ -198,7 +198,7 @@ export function showShortcutsDialog() {
 /** The About dialog: what this is, its version, and the required credits. */
 export function showAboutDialog() {
   const body = [
-    el("p", { class: "app-dialog-text", text: `${PROJECT_NAME} — an image processing and land-cover classification workstation for satellite and photo imagery.` }),
+    el("p", { class: "app-dialog-text", text: `${PROJECT_NAME} - an image processing and land-cover classification workstation for satellite and photo imagery.` }),
     el("p", { class: "app-dialog-version", text: `Version ${APP_VERSION}` }),
     el("ul", { class: "app-dialog-credits" }, CREDITS.map((line) => el("li", { text: line }))),
   ];

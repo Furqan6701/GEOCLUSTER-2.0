@@ -94,7 +94,7 @@ function entryToText(entry) {
   const field = humanField(path.join("."));
   const message = humanMessage(entry.msg ?? entry.message ?? "");
   if (!message) return field;
-  // "window must be an odd number" already names the field — swap in the
+  // "window must be an odd number" already names the field - swap in the
   // human name instead of repeating it as a prefix.
   if (rawField && new RegExp(`^${rawField}\\b`, "i").test(message)) {
     return sanitizeMessage(field ? field + message.slice(rawField.length) : message);
@@ -198,7 +198,7 @@ export function humanizeError(error, { apiBase = "", operation = "" } = {}) {
         return text || "Some of those values are not valid.";
       }
       case 429:
-        return detail || "Too many requests — wait a moment and try again.";
+        return detail || "Too many requests - wait a moment and try again.";
       case 502:
         return detail || "The provider is unavailable right now. Try again shortly.";
       case 503:

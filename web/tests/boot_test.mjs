@@ -2,7 +2,7 @@
  * Boot test: runs the real frontend in a real DOM (jsdom) against a live API.
  *
  * This is the closest thing to "open it in a browser" that CI can do: it loads
- * index.html, imports js/app.js, and drives the UI through DOM events —
+ * index.html, imports js/app.js, and drives the UI through DOM events -
  * upload a sample image, run all six filters, K-Means, classify, histogram
  * and stats, GCH2 compress/decompress, chat router commands, and the
  * session-expired recovery path.
@@ -22,7 +22,7 @@
  *
  * --page-host simulates where the page is served from. With a local host the
  * frontend calls the API directly (http://localhost:8010, the documented dev
- * flow). With any other host — a hosted preview — it must fall back to the
+ * flow). With any other host - a hosted preview - it must fall back to the
  * same-origin /api path, which this harness resolves against --web (serve.py).
  */
 
@@ -82,8 +82,8 @@ function check(condition, label, detail = "") {
     console.log(`PASS  ${label}`);
     return true;
   }
-  failures.push(`${label}${detail ? ` — ${detail}` : ""}`);
-  console.log(`FAIL  ${label}${detail ? ` — ${detail}` : ""}`);
+  failures.push(`${label}${detail ? ` - ${detail}` : ""}`);
+  console.log(`FAIL  ${label}${detail ? ` - ${detail}` : ""}`);
   return false;
 }
 
@@ -113,7 +113,7 @@ async function until(predicate, label, { timeout = 20000, interval = 25 } = {}) 
 const jsdomModule = await loadJsdom();
 if (!jsdomModule?.JSDOM) {
   skips.push("boot test");
-  console.log("SKIP  boot test — jsdom is not installed (see the header of this file)");
+  console.log("SKIP  boot test - jsdom is not installed (see the header of this file)");
   console.log("RESULT: skipped (0 failures)");
   process.exit(0);
 }
@@ -131,7 +131,7 @@ try {
   apiUp = false;
 }
 if (!apiUp) {
-  console.log(`SKIP  boot test — no API at ${API_BASE} (start: uvicorn main:app --port 8010)`);
+  console.log(`SKIP  boot test - no API at ${API_BASE} (start: uvicorn main:app --port 8010)`);
   console.log("RESULT: skipped (0 failures)");
   process.exit(0);
 }
@@ -206,7 +206,7 @@ window.HTMLCanvasElement.prototype.getContext = function getContext() {
   return this.__ctx;
 };
 // jsdom cannot rasterise, so toBlob hands back a tiny PNG-shaped Blob that
-// carries the canvas size — enough to prove the export used the composed map.
+// carries the canvas size - enough to prove the export used the composed map.
 window.HTMLCanvasElement.prototype.toBlob = function toBlob(callback) {
   exportedCanvases.push({ width: this.width, height: this.height });
   const header = new Uint8Array(33);
@@ -347,7 +347,7 @@ console.error = (...args) => {
 window.addEventListener("error", (event) => uncaught.push(String(event.message)));
 window.addEventListener("unhandledrejection", (event) => uncaught.push(String(event.reason)));
 
-console.log(`boot test — ${WEB} → ${HOSTED ? `same-origin /api via ${WEB_ORIGIN}` : API_BASE}`);
+console.log(`boot test - ${WEB} → ${HOSTED ? `same-origin /api via ${WEB_ORIGIN}` : API_BASE}`);
 console.log(`page host: ${PAGE_HOST} (${HOSTED ? "hosted: /api proxy" : "local: direct API"})\n`);
 let bootFailed = false;
 try {
@@ -373,7 +373,7 @@ if (!bootFailed) {
   check(
     ["Source", "Filters", "Clusters", "Analysis"].every((title, index) =>
       sections[index]?.querySelector(".section-title")?.textContent.trim() === title),
-    "toolbox sections are Source/Filters/Clusters/Analysis — Files is gone",
+    "toolbox sections are Source/Filters/Clusters/Analysis - Files is gone",
     sections.map((node) => node.querySelector(".section-title")?.textContent.trim()).join(", "),
   );
   check(document.getElementById("section-files") == null &&
@@ -549,7 +549,7 @@ if (!bootFailed) {
       const corners = [...cornersRow.querySelectorAll('input[type="text"]')];
       check(place?.title === "Sector code, alias, or any place name",
         "the place field explains itself in its tooltip", place?.title);
-      check(corners[0]?.title === "Paste from Google Maps — any corner" &&
+      check(corners[0]?.title === "Paste from Google Maps - any corner" &&
         corners[1]?.title === "The opposite corner; no need to sort them",
         "the corner fields explain themselves in their tooltips",
         corners.map((node) => node.title).join(" | "));
@@ -877,7 +877,7 @@ if (!bootFailed) {
     const editorShares = () => editorRows.map((row) => Number.parseFloat(row.querySelector(".cluster-share").textContent));
     const histogramCalls = () => requests.filter((entry) => /\/histogram$/.test(entry.url)).length;
 
-    // the histogram is fetched ONCE per image — never while editing
+    // the histogram is fetched ONCE per image - never while editing
     await until(() => histogramCalls() >= 1, "the editor pulls the 256-bin histogram");
     await new Promise((resolve) => setTimeout(resolve, 60));
     const histogramBefore = histogramCalls();
@@ -1054,7 +1054,7 @@ if (!bootFailed) {
     check(document.querySelectorAll(".map-modal-dialog").length === 1,
       "there is exactly ONE composer dialog");
     check(document.getElementById("viewer-map") == null,
-      "the docked Map viewport is gone — the composer replaced it");
+      "the docked Map viewport is gone - the composer replaced it");
     check(document.querySelectorAll("#viewer-area .viewer").length === 2,
       "the workspace is back to the two real image viewports",
       String(document.querySelectorAll("#viewer-area .viewer").length));
@@ -1112,7 +1112,7 @@ if (!bootFailed) {
       `${studio.getSettings().title} from ${state().result.info.name}`);
     check(field("subtitle") != null, "the title has an optional subtitle field");
 
-    // ---- item 16: the default sizes follow the IMAGE — the title is the
+    // ---- item 16: the default sizes follow the IMAGE - the title is the
     // largest text, the legend and scale labels are about half of it and the
     // north arrow is about 6 % of the image height
     {
@@ -1238,7 +1238,7 @@ if (!bootFailed) {
       "the legend offers the five outside spots plus the four on-map corners",
       [...field("legendPlacement").querySelectorAll("option")].map((o) => o.value).join(","));
     check([...field("legendPlacement").querySelectorAll("option")].map((o) => o.textContent).join("|") ===
-      "Outside right|Outside left|Outside bottom left|Outside bottom center|Outside bottom right|On map — top left|On map — top right|On map — bottom left|On map — bottom right",
+      "Outside right|Outside left|Outside bottom left|Outside bottom center|Outside bottom right|On map - top left|On map - top right|On map - bottom left|On map - bottom right",
       "the placement options are labelled clearly",
       [...field("legendPlacement").querySelectorAll("option")].map((o) => o.textContent).join("|"));
     check(studio.getSettings().legend.placement === "outside-right",
@@ -1417,7 +1417,7 @@ if (!bootFailed) {
       "the unit dropdown stays next to the width",
       [...(field("imageWidthUnit")?.querySelectorAll("option") ?? [])].map((o) => o.value).join(","));
     check(studio.getSettings().scaleBar.unit === "m", "the default unit is metres");
-    // item 16: a photo with no ground scale gets a PLAIN bar — no numbers, no
+    // item 16: a photo with no ground scale gets a PLAIN bar - no numbers, no
     // unit and no "not to scale" wording anywhere
     const plainTexts = barCanvas.__texts ?? [];
     check(!plainTexts.includes("not to scale") && !plainTexts.some((text) => /not to scale/i.test(text)),
@@ -1705,7 +1705,7 @@ if (!bootFailed) {
     }
 
     // ---- border, background, corner coordinates, credit default
-    // item 17: the border is always drawn — no checkbox, colour only
+    // item 17: the border is always drawn - no checkbox, colour only
     check(field("border") == null, "the \"Border around the image\" checkbox is gone");
     check(document.querySelectorAll(".map-props .map-check-row").length >= 3,
       "the other sidebar checkboxes are still there",
@@ -1817,7 +1817,7 @@ if (!bootFailed) {
       field("scaleLength").value = "";
       field("scaleLength").dispatchEvent(new window.Event("change", { bubbles: true }));
 
-      // the legend class-name fields — the reported bug
+      // the legend class-name fields - the reported bug
       const legendNames = () => [...document.querySelectorAll(".map-legend-name")];
       check(legendNames().length >= 2, "the composer lists the class-name fields",
         String(legendNames().length));
@@ -1933,7 +1933,7 @@ if (!bootFailed) {
       return { item, disabled: false };
     };
     studio.close();
-    // item 14: the menu keeps ONE map entry — the composer owns the legend and
+    // item 14: the menu keeps ONE map entry - the composer owns the legend and
     // the export scale itself (Map legend / Map export were removed from it)
     check(!analysisItem("Map legend").item, "the Analysis menu no longer offers Map legend");
     check(!analysisItem("Map export").item, "the Analysis menu no longer offers Map export");
@@ -1999,7 +1999,7 @@ if (!bootFailed) {
 
   // ------------------------------------------------------------- 4. filters
   // Grayscale / Negative / Laplacian still have buttons; the three filters with
-  // parameters have sliders (no Apply button) — see the STEP 3 block below.
+  // parameters have sliders (no Apply button) - see the STEP 3 block below.
   const pointOperations = ["Grayscale", "Negative", "Laplacian"];
   expandSection("Filters");
   let previousId = state()?.result?.id ?? state()?.original?.id;
@@ -2657,7 +2657,7 @@ if (!bootFailed) {
     check(!/log scale|cumulative|density/.test(texts()), "Counts/Linear is a plain histogram",
       texts().slice(0, 160));
     check(requests.length === requestsBeforeOptions,
-      "every option change was recomputed in the browser — no new requests",
+      "every option change was recomputed in the browser - no new requests",
       `${requestsBeforeOptions} → ${requests.length}`);
 
     // ---- export
@@ -2773,7 +2773,7 @@ if (!bootFailed) {
     const again = hist.open({ targetId: win.targetId });
     await until(() => again.bins?.length === 256, "the reopened window has its bins");
     check(requests.filter((entry) => /\/histogram$/.test(entry.url)).length === requestsBeforeReuse,
-      "the same image's bins are cached — no second request");
+      "the same image's bins are cached - no second request");
     hist.closeAll();
     check(hist.count === 0, "all windows closed");
 
@@ -2918,7 +2918,7 @@ if (!bootFailed) {
       unitSelect.value);
 
     // ---- item 13: the footer Distance button is a real toggle and is disabled
-    // with nothing to measure — it must never look "on" on an empty pane
+    // with nothing to measure - it must never look "on" on an empty pane
     {
       const viewer = gh.viewers.result;
       check(viewer.distanceButton.getAttribute("aria-pressed") === "false",
@@ -2979,7 +2979,7 @@ if (!bootFailed) {
   }
 
   // --------------------------------------------------- 6. compress/decompress
-  // (item 12: the Files section is gone — these are File menu entries now)
+  // (item 12: the Files section is gone - these are File menu entries now)
   {
     const openFileMenu = () => {
       const button = [...document.querySelectorAll("#menubar .menu-button")]
@@ -3067,7 +3067,7 @@ if (!bootFailed) {
   const bubbles = () => [...document.querySelectorAll(".chat-log .bubble")].map((node) => node.textContent);
 
   // The API rate-limits /ai/chat. When the suite is run repeatedly the first
-  // attempt can come back "Too many chat requests" — wait out the window and
+  // attempt can come back "Too many chat requests" - wait out the window and
   // try once more so the check still exercises the router.
   const routerAnswered = () =>
     bubbles().some((text) => /Satellite fetch requested for F-8/.test(text) || /F-8.*failed/.test(text));
@@ -3076,7 +3076,7 @@ if (!bootFailed) {
     "chat answered (router or rate limit)");
   let afterCommand = await until(() => (routerAnswered() ? bubbles() : null), "satellite command reported back", { timeout: 10000 });
   if (!afterCommand && bubbles().some((text) => /Too many chat/.test(text))) {
-    console.log("note  chat rate limit hit — waiting 25 s and retrying once");
+    console.log("note  chat rate limit hit - waiting 25 s and retrying once");
     await sleep(25000);
     await sendChat("Show me F-8 imagery");
     afterCommand = await until(() => (routerAnswered() ? bubbles() : null), "satellite command reported back", { timeout: 20000 });
@@ -3349,7 +3349,7 @@ if (!bootFailed) {
     const gh = window.geocluster;
     const escapeMenu = () => window.document.dispatchEvent(
       new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-    /** The entries of one menu, in order, with separators as "—". */
+    /** The entries of one menu, in order, with separators as "-". */
     const entriesOf = (menuLabel) => {
       const button = [...document.querySelectorAll("#menubar .menu-button")]
         .find((node) => node.textContent.trim() === menuLabel);
@@ -3357,7 +3357,7 @@ if (!bootFailed) {
       button.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
       const popup = document.querySelector("#menubar .menu-popup:not([hidden])");
       const entries = [...popup.children].map((node) => (node.classList.contains("menu-sep")
-        ? "—"
+        ? "-"
         : (node.querySelector(".menu-item-label")?.textContent ?? "").trim()));
       escapeMenu();
       return entries;
@@ -3366,7 +3366,7 @@ if (!bootFailed) {
     // ---- View: the four zoom entries and the three dock toggles, nothing else
     const viewEntries = entriesOf("View");
     check(viewEntries.join(" | ") === [
-      "Fit to view", "Actual size", "Zoom in", "Zoom out", "—",
+      "Fit to view", "Actual size", "Zoom in", "Zoom out", "-",
       "Show toolbox", "Show assistant", "Show result viewport",
     ].join(" | "), "the View menu is Fit/Actual size/Zoom in/Zoom out + the three dock toggles",
       viewEntries.join(" | "));
@@ -3377,14 +3377,14 @@ if (!bootFailed) {
     // ---- Processing: six real operations and Clear result, no notes
     const processingEntries = entriesOf("Processing");
     check(processingEntries.join(" | ") === [
-      "Grayscale", "Negative", "Laplacian", "—",
-      "Brightness", "Threshold", "Mean filter", "—", "Clear result",
+      "Grayscale", "Negative", "Laplacian", "-",
+      "Brightness", "Threshold", "Mean filter", "-", "Clear result",
     ].join(" | "), "the Processing menu lists the six operations and Clear result",
       processingEntries.join(" | "));
 
     // ---- Analysis: K-Means, Histogram, Map composer
     const analysisEntries = entriesOf("Analysis");
-    check(analysisEntries.join(" | ") === ["Run K-Means…", "Histogram", "—", "Map composer…"].join(" | "),
+    check(analysisEntries.join(" | ") === ["Run K-Means…", "Histogram", "-", "Map composer…"].join(" | "),
       "the Analysis menu is Run K-Means / Histogram / Map composer",
       analysisEntries.join(" | "));
     check(!/Classification editor|Map legend|Map export|statistics/.test(analysisEntries.join(" ")),
@@ -3413,7 +3413,7 @@ if (!bootFailed) {
     // ---- File: the required order, with New session last
     const fileEntries = entriesOf("File");
     check(fileEntries[0] === "Open image…" && fileEntries[1] === "Fetch Sentinel-2 tile…" &&
-      fileEntries[2] === "—" &&
+      fileEntries[2] === "-" &&
       fileEntries[3] === "Export current image (PNG)…" &&
       fileEntries.at(-1) === "New session",
       "the File menu is Open / Fetch / Export / … / New session", fileEntries.join(" | "));
@@ -3427,7 +3427,7 @@ if (!bootFailed) {
 
     // ---- Help: two entries, and no developer wording anywhere in the menus
     const helpEntries = entriesOf("Help");
-    check(helpEntries.join(" | ") === ["Keyboard shortcuts", "—", "About"].join(" | "),
+    check(helpEntries.join(" | ") === ["Keyboard shortcuts", "-", "About"].join(" | "),
       "the Help menu is Keyboard shortcuts + About", helpEntries.join(" | "));
     {
       const menuText = [...document.querySelectorAll("#menubar .menu-item")]
@@ -3578,7 +3578,7 @@ if (!bootFailed) {
       check((state()?.sessionId ?? null) === sessionBefore, "cancelling keeps the current session",
         `${sessionBefore} → ${state()?.sessionId}`);
 
-      // confirming really calls session.restart() — stubbed so the run continues
+      // confirming really calls session.restart() - stubbed so the run continues
       const realRestart = gh.session.restart;
       let restarted = 0;
       gh.session.restart = async () => { restarted += 1; return { sessionId: state()?.sessionId }; };
@@ -3599,7 +3599,7 @@ if (!bootFailed) {
   const viewers = window.geocluster.viewers;
   viewers.original.setActive(true);
 
-  // STEP 2.3: zoom exists in exactly one place — the per-viewport footers
+  // STEP 2.3: zoom exists in exactly one place - the per-viewport footers
   const zoomControls = (id) => [
     ...document.querySelectorAll(`#${id} .viewer-foot button`),
   ].map((node) => node.textContent.replace(/[\u2212\u2013]/g, "-").trim());
@@ -3641,7 +3641,7 @@ if (!bootFailed) {
 
   check(document.getElementById("sb-size").textContent.includes("×"), "status bar shows image dimensions",
     document.getElementById("sb-size").textContent);
-  check(/Zoom \d+%|Zoom —/.test(document.getElementById("sb-zoom").textContent), "status bar shows the zoom level",
+  check(/Zoom \d+%|Zoom -/.test(document.getElementById("sb-zoom").textContent), "status bar shows the zoom level",
     document.getElementById("sb-zoom").textContent);
   check(document.getElementById("sb-api").textContent.startsWith("API"), "status bar shows the API state",
     document.getElementById("sb-api").textContent);
@@ -3685,7 +3685,7 @@ if (!bootFailed) {
   document.getElementById("assistant-reopen").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
   check(!document.getElementById("assistant-dock").hidden, "the assistant comes back");
 
-  // (undo/redo are real now — see block 7d at the end of the operations run)
+  // (undo/redo are real now - see block 7d at the end of the operations run)
 
   // -------------------------------- 7c. STEP 1: Processing menu path (all six)
   const openMenu = (label) => {
@@ -3758,7 +3758,7 @@ if (!bootFailed) {
   }
 
   // item 14: Brightness / Threshold / Mean filter open the Filters panel and put
-  // the cursor ON their slider — a menu click never runs an operation with a
+  // the cursor ON their slider - a menu click never runs an operation with a
   // value the user has not seen (the notes that used to print it are gone).
   {
     const cases = [
@@ -3991,7 +3991,7 @@ if (!bootFailed) {
   const uploadsBeforeUndo = uploadsAfter;
   await gh.undo();
   const uploadsAfterUndo = requests.filter((entry) => entry.method === "POST" && /\/images$/.test(entry.url)).length;
-  check(uploadsAfterUndo === uploadsBeforeUndo, "undo paints from local Blobs — no server round-trip",
+  check(uploadsAfterUndo === uploadsBeforeUndo, "undo paints from local Blobs - no server round-trip",
     `${uploadsBeforeUndo} → ${uploadsAfterUndo}`);
 
   // a full reset clears history (nothing stale survives a new session)
@@ -4009,7 +4009,7 @@ if (!bootFailed) {
   check(!/json/i.test(validationToText("Operation 'brightness' requires a JSON body matching BrightnessRequest.",
     { operation: "brightness" })), "the API's JSON-body message is rewritten without the word JSON");
 
-  // ------------------------- 7e. Task 1: the chat runs the real UI actions ---
+  // ------------------------- 7e. The chat runs the real UI actions ---
   {
     const gh = window.geocluster;
     const chat = gh.chat;
@@ -4167,8 +4167,8 @@ if (!bootFailed) {
   check(uncaught.length === 0, "no uncaught errors during the whole run", uncaught.join(" | "));
   // ------------- no user-facing message leaks an internal server image id
   {
-    // every id the session has ever seen — from the app state, the history and
-    // the K-Means response — must not appear in a toast
+    // every id the session has ever seen - from the app state, the history and
+    // the K-Means response - must not appear in a toast
     const knownIds = new Set();
     for (const entry of requests) {
       const match = /\/images\/([^/?]+)/.exec(String(entry.url ?? ""));

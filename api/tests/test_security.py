@@ -1,4 +1,4 @@
-"""Task 2: the security contract of the API.
+"""The security contract of the API.
 
 What this file pins down:
   * secrets come from environment variables only, and **no response ever

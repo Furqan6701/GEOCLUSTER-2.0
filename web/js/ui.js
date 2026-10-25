@@ -1,7 +1,7 @@
 /**
  * DOM helpers for the GeoCluster workstation shell.
  *
- * Everything renders through `textContent` / `createElementNS` — there is no
+ * Everything renders through `textContent` / `createElementNS` - there is no
  * `innerHTML` anywhere in this frontend (chat replies especially: they may
  * contain LaTeX such as \[ ... \] and must be shown as plain text). Icons are
  * real SVG nodes built with createElementNS rather than markup strings.
@@ -388,13 +388,13 @@ export function toast(message, kind = "", { timeout = 6000 } = {}) {
 
 export function fmtNumber(value, digits = 2) {
   const number = Number(value);
-  if (!Number.isFinite(number)) return "—";
+  if (!Number.isFinite(number)) return "-";
   return number.toFixed(digits).replace(/\.0+$/, "");
 }
 
 export function fmtBytes(value) {
   const bytes = Number(value);
-  if (!Number.isFinite(bytes) || bytes <= 0) return "—";
+  if (!Number.isFinite(bytes) || bytes <= 0) return "-";
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;

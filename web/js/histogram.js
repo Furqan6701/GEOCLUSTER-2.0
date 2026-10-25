@@ -2,7 +2,7 @@
  * Histogram rendering options (STEP 5).
  *
  * The API returns 256 integer bin counts and nothing else. Every display
- * option here — log scale, smoothing, cumulative, density, theme — is computed
+ * option here - log scale, smoothing, cumulative, density, theme - is computed
  * in the browser from those same 256 numbers, so switching an option never
  * causes another request.
  *
@@ -37,7 +37,7 @@ export function channelLabel(key) {
 /**
  * A grayscale image offers Gray only; a colour image offers every channel.
  * `info.channels` is the API's own field (1 for a 2-D grayscale array, 3 or 4
- * for colour — see api/sessions.py), so nothing has to be guessed.
+ * for colour - see api/sessions.py), so nothing has to be guessed.
  */
 export function channelKeysFor(info) {
   const channels = Number(info?.channels);
@@ -157,7 +157,7 @@ export function smoothingWindow(value) {
   return SMOOTHING_STEPS[smoothingLevel(value)] ?? 0;
 }
 
-/** "off" / "smoothing 4" — the phrase a caption uses. */
+/** "off" / "smoothing 4" - the phrase a caption uses. */
 export function smoothingLabel(value) {
   const level = smoothingLevel(value);
   return level === 0 ? "Off" : `Smoothing ${level}`;
@@ -209,13 +209,13 @@ export function binStats(bins) {
 
 /** The five numbers shown beside the chart. */
 export function formatStats(stats) {
-  const number = (value, digits = 2) => (Number.isFinite(value) ? value.toFixed(digits) : "—");
+  const number = (value, digits = 2) => (Number.isFinite(value) ? value.toFixed(digits) : "-");
   return [
-    { key: "min", label: "Min", text: stats?.count ? String(stats.min) : "—" },
-    { key: "max", label: "Max", text: stats?.count ? String(stats.max) : "—" },
+    { key: "min", label: "Min", text: stats?.count ? String(stats.min) : "-" },
+    { key: "max", label: "Max", text: stats?.count ? String(stats.max) : "-" },
     { key: "mean", label: "Mean", text: number(stats?.mean) },
     { key: "std", label: "Std dev", text: number(stats?.std) },
-    { key: "count", label: "Pixels", text: Number.isFinite(stats?.count) ? stats.count.toLocaleString() : "—" },
+    { key: "count", label: "Pixels", text: Number.isFinite(stats?.count) ? stats.count.toLocaleString() : "-" },
   ];
 }
 
@@ -295,7 +295,7 @@ export function prepareBins(bins, { scale = "linear", smoothing = 0, cumulative 
 }
 
 /**
- * "linear scale · smoothing 4 · cumulative · density" — used in captions and the
+ * "linear scale · smoothing 4 · cumulative · density" - used in captions and the
  * PNG. A channel other than Gray is named too, so an exported chart always says
  * which channel it shows.
  */
@@ -316,7 +316,7 @@ export function axisLabels({ cumulative = false, density = false } = {}) {
 }
 
 /**
- * Paint the histogram. Used for the panel canvas and for the export canvas —
+ * Paint the histogram. Used for the panel canvas and for the export canvas -
  * pass a bigger width/height (and a `titleFont` scale) for the PNG.
  */
 export function drawHistogram(ctx, {

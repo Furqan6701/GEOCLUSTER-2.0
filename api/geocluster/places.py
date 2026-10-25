@@ -101,12 +101,12 @@ def parse_coordinate_pair(text: str, *, label: str = "Coordinate") -> tuple[floa
     """Parse 'lat, lon' (what Google Maps copies) or 'lat lon'.
 
     Google Maps' "copy coordinates" gives e.g. ``33.6844, 73.0479`` and a
-    placemark URL gives ``33.6844° N, 73.0479° E`` — the degree signs and the
+    placemark URL gives ``33.6844° N, 73.0479° E`` - the degree signs and the
     hemisphere letters are tolerated, anything else is a clear error.
     """
     raw = (text or "").strip()
     if not raw:
-        raise SatelliteError(f"{label} is empty — paste 'lat, lon'.")
+        raise SatelliteError(f"{label} is empty - paste 'lat, lon'.")
     cleaned = (
         raw.replace("°", " ")
         .replace(",", " ")
@@ -118,14 +118,14 @@ def parse_coordinate_pair(text: str, *, label: str = "Coordinate") -> tuple[floa
     parts = [piece for piece in cleaned.split() if piece]
     if len(parts) != 2:
         raise SatelliteError(
-            f"{label} must look like 'lat, lon' (for example 33.6844, 73.0479) — got '{raw}'."
+            f"{label} must look like 'lat, lon' (for example 33.6844, 73.0479) - got '{raw}'."
         )
     try:
         lat = float(parts[0])
         lon = float(parts[1])
     except ValueError as exc:
         raise SatelliteError(
-            f"{label} must be two numbers, 'lat, lon' — got '{raw}'."
+            f"{label} must be two numbers, 'lat, lon' - got '{raw}'."
         ) from exc
     return validate_coordinates(lat, lon, label=label)
 
@@ -157,7 +157,7 @@ def bbox_from_corners(
     south = min(corner1[0], corner2[0])
     north = max(corner1[0], corner2[0])
     if east - west <= 0 and north - south <= 0:
-        raise SatelliteError("The two corners are the same point — the area would be empty.")
+        raise SatelliteError("The two corners are the same point - the area would be empty.")
     ceiling = max_size_km() if limit is None else limit
     side_km = max(
         (north - south) * EARTH_METRES_PER_DEGREE / 1000.0,
@@ -253,7 +253,7 @@ class PlaceLookup:
         """Resolve a place name to its center point.
 
         Returns ``{"query", "lat", "lon", "display_name", "cached"}``. Only the
-        center is used downstream — never Nominatim's bounding box.
+        center is used downstream - never Nominatim's bounding box.
         """
         name = (place or "").strip()
         if not name:
