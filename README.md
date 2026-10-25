@@ -238,13 +238,12 @@ The browser-level boot test and the live API checks are described in
 
 | | |
 | --- | --- |
-| ![Screenshot: fetching a Sentinel-2 crop](docs/images/TODO-fetch.png) | ![Screenshot: K-Means clusters and classification](docs/images/TODO-kmeans.png) |
+| ![Screenshot: fetching a Sentinel-2 crop](docs/images/fetch.png) | ![Screenshot: K-Means clusters and classification](docs/images/kmeans.png) |
 | *TODO: caption, fetch by place name* | *TODO: caption, K-Means and classification* |
-| ![Screenshot: map composer with legend and scale bar](docs/images/TODO-composer.png) | ![Screenshot: histogram window](docs/images/TODO-histogram.png) |
+| ![Screenshot: map composer with legend and scale bar](docs/images/composer.png) | ![Screenshot: histogram window](docs/images/histogram.png) |
 | *TODO: caption, map composer* | *TODO: caption, histogram window* |
 
-**Demo video:** [TODO: replace with the hosted video link](Geocluster2.0%20demo.mp4)
-(the 18 MB recording currently stored in this repository).
+Demo video: link to be added
 
 ## Project History
 
