@@ -5,8 +5,6 @@ from __future__ import annotations
 import io
 
 import cv2
-import numpy as np
-
 import settings
 from tests.test_api_flow import create_session, upload
 

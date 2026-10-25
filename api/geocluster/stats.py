@@ -11,7 +11,6 @@ from __future__ import annotations
 import numpy as np
 
 from .errors import GeoclusterError
-from .filters import to_grayscale
 
 Array = np.ndarray
 
@@ -31,9 +30,3 @@ def histogram256(gray: Array) -> list[int]:
     if not isinstance(gray, np.ndarray) or gray.ndim != 2:
         raise GeoclusterError("Histogram expects a 2-D grayscale image.")
     return np.bincount(gray.reshape(-1), minlength=256).astype(np.int64).tolist()
-
-
-def analyze(image: Array) -> tuple[Array, dict[str, float | int], list[int]]:
-    """Convenience helper: grayscale view + statistics + histogram."""
-    gray = to_grayscale(image)
-    return gray, statistics(gray), histogram256(gray)

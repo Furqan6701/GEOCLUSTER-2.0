@@ -21,7 +21,6 @@ router = APIRouter(
     dependencies=[Depends(require_auth)],
 )
 
-PARAMETERLESS = {"grayscale", "negative", "laplacian"}
 MODEL_BY_OPERATION: dict[str, type[BaseModel] | None] = {
     "grayscale": None,
     "negative": None,

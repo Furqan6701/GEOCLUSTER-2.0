@@ -176,14 +176,12 @@ p { margin: 0; }
 .tb-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 .tb-btn.toggle[aria-pressed="true"] { background: var(--accent-soft); border-color: rgba(53, 208, 186, 0.5); color: #c8fff6; }
 .tb-btn.text { padding: 0 6px; font-family: var(--mono); font-size: var(--fs-xs); }
-.tb-presets { display: flex; align-items: center; gap: 1px; border-left: 1px solid var(--border); border-right: 1px solid var(--border); margin: 0 4px; padding: 0 3px; }
 .tb-label { display: inline; }
 /* compact mode: icons only, with their tooltips carrying the meaning. The
    class is added by app.js when the toolbar would overflow (and by the media
    query below for known-narrow desktops). */
 .toolbar.tb-compact .tb-label { display: none; }
 .toolbar.tb-compact .tb-btn { padding: 0 5px; }
-.toolbar.tb-compact .tb-presets { display: none; }
 /* item 13: from 1600 px the words come back next to the icons, so Export
    (download) and Compress (archive) can never be confused. app.js measures the
    row anyway: .tb-tight (the row would still overflow) wins over .tb-wide. */
@@ -540,7 +538,6 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .btn.primary:hover:not(:disabled) { background: #4ee0c9; }
 .btn.ghost { background: transparent; }
 .btn.small { padding: 3px 7px; font-size: var(--fs-sm); }
-.btn.danger { border-color: rgba(248, 113, 113, 0.5); color: var(--danger); }
 .btn.block { width: 100%; }
 .icon-btn { display: inline-flex; align-items: center; gap: 5px; }
 .icon-btn.icon-only { padding: 3px; }
@@ -552,7 +549,6 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .badge { font-size: var(--fs-xs); padding: 0 5px; border-radius: 999px; border: 1px solid var(--border-strong); color: var(--text-dim); }
 .badge.ok { color: var(--ok); border-color: rgba(74, 222, 128, 0.4); }
 .badge.warn { color: var(--warn); border-color: rgba(245, 185, 66, 0.4); }
-.chip-row { display: flex; flex-wrap: wrap; gap: 4px; }
 
 .muted { color: var(--text-faint); font-size: var(--fs-sm); margin: 3px 0; }
 .note {
@@ -581,7 +577,6 @@ table.grid input[type="color"] { height: 18px; }
 .stat-strip .stat span:first-child { color: var(--text-faint); }
 
 .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; border: 1px solid rgba(0,0,0,0.4); vertical-align: -1px; }
-.swatch-preview { display: inline-block; width: 14px; height: 14px; border-radius: 2px; border: 1px solid rgba(0, 0, 0, 0.5); }
 /* ────────────── Floating histogram windows (non-modal, opaque) ─────────── */
 .histo-layer { position: fixed; inset: 0; z-index: 70; pointer-events: none; }
 .histo-window {
@@ -678,7 +673,6 @@ table.grid input[type="color"] { height: 18px; }
   /* 1366-class screens: icons only, no wrapping, no overlap */
   .tb-label { display: none; }
   .tb-btn { padding: 0 5px; }
-  .tb-presets { display: none; }
 }
 @media (max-width: 1240px) {
   :root { --toolbox-w: 238px; --assistant-w: 260px; }

@@ -69,14 +69,12 @@ const ICONS = {
   sync: ["M4.5 10a7.5 7.5 0 0 1 12.6-3.9", "M19.5 14a7.5 7.5 0 0 1-12.6 3.9", "M17.5 3.5v3.2h-3.2", "M6.5 20.5v-3.2h3.2"],
   undo: ["M9.5 14.5 4 9l5.5-5.5", "M4 9h11a5 5 0 0 1 0 10h-5.5"],
   redo: ["m14.5 14.5 5.5-5.5-5.5-5.5", "M20 9H9a5 5 0 0 0 0 10h5.5"],
-  chevronDown: ["m6.5 9.5 5.5 5.5 5.5-5.5"],
   chevronRight: ["m9.5 6 6 6-6 6"],
   panelLeft: ["M4 4.5h16v15H4z", "M10 4.5v15"],
   panelRight: ["M4 4.5h16v15H4z", "M14 4.5v15"],
   chat: ["M4.5 5.5h15v10h-9l-4.5 4v-4h-1.5z"],
   info: [{ circle: [12, 12, 8.5] }, "M12 11v5.5", "M12 7.6v.9"],
   map: ["m9 3.5 6 2.2 6-2.2v16l-6 2.2-6-2.2-6 2.2v-16z", "M9 3.5v16", "M15 5.7v16"],
-  legend: ["M4 6h4.5v4.5H4z", "M4 14h4.5v4.5H4z", "M11 8.2h9", "M11 16.2h9"],
   help: [{ circle: [12, 12, 8.5] }, "M9.6 9.6a2.5 2.5 0 1 1 3.3 2.4V14", "M12.9 17.2v.9"],
   trash: ["M4.5 7h15", "M9.5 7V4.8h5V7", "M6.5 7l1 13h9l1-13"],
   run: ["m7.5 4.5 12 7.5-12 7.5z"],
@@ -84,7 +82,6 @@ const ICONS = {
   grid: ["M3.5 3.5h17v17h-17z", "M9 3.5v17", "M15 3.5v17", "M3.5 9h17", "M3.5 15h17"],
   check: ["m5 12.5 4.5 4.5L19 7.5"],
   dot: [{ circle: [12, 12, 4] }],
-  route: ["M6.5 20V8.5a4 4 0 0 1 4-4h7", "m14 1.5 3.5 3-3.5 3", { circle: [6.5, 20, 1.5] }],
   // a fresh start: the circular arrow on the File menu's New session entry
   refresh: ["M19.5 12a7.5 7.5 0 1 1-2.2-5.3", "M19.5 4V8.6h-4.6"],
 };
@@ -136,15 +133,6 @@ export function icon(name, { size = 14, class: className = "" } = {}) {
 export function button(label, onClick, { variant = "", size = "", disabled = false, title = "" } = {}) {
   const classes = ["btn", variant, size].filter(Boolean).join(" ");
   return el("button", { class: classes, type: "button", text: label, disabled, title, onclick: onClick });
-}
-
-/** Compact icon button; with a label it renders icon + text. */
-export function iconButton(name, onClick, { label = "", title = "", variant = "", size = "small", disabled = false } = {}) {
-  const node = button(label, onClick, { title: title || label, variant, size, disabled });
-  node.classList.add("icon-btn");
-  if (!label) node.classList.add("icon-only");
-  node.prepend(icon(name, { size: size === "small" ? 13 : 15 }));
-  return node;
 }
 
 /**
@@ -410,28 +398,6 @@ export function fmtBytes(value) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-}
-
-export function fmtMegapixels(value) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) return "—";
-  return `${number.toFixed(2)} MP`;
-}
-
-export function fmtPercent(value, digits = 2) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) return "—";
-  return `${number.toFixed(digits)}%`;
-}
-
-/** One-line description of an image info object from the API. */
-export function describeImage(info) {
-  if (!info) return "no image";
-  const parts = [`${info.width}×${info.height}`, `${info.channels} ch`, fmtMegapixels(info.megapixels)];
-  if (info.source) parts.push(String(info.source));
-  if (info.bytes) parts.push(fmtBytes(info.bytes));
-  if (info.downscaled) parts.push(`downscaled from ${info.original_width}×${info.original_height}`);
-  return parts.join(" · ");
 }
 
 export function downloadBlob(blob, filename) {

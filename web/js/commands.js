@@ -40,26 +40,6 @@ export const OPERATION_PARAM_SPECS = Object.freeze({
   kmeans: Object.freeze({ k: Object.freeze({ min: 2, max: 10 }) }),
 });
 
-export const COMMAND_ACTIONS = Object.freeze({
-  run_operation: "run an operation",
-  run_kmeans: "run K-Means",
-  classify_clusters: "classify the clusters",
-  open_map_composer: "open the map composer",
-  open_histogram: "open the histogram",
-  open_compress: "compress the image",
-  open_distance: "measure a distance",
-  export_png: "export the image",
-  export_label_map: "export the raw label map",
-  undo: "undo the last step",
-  redo: "redo the step",
-  clear_result: "clear the result",
-  fit_view: "fit the image to the viewport",
-  actual_size: "show the image at actual size",
-  zoom_in: "zoom in",
-  zoom_out: "zoom out",
-  fetch_satellite: "fetch satellite imagery",
-});
-
 /** Parameters for one operation, or null when it takes none. */
 export function defaultParamsFor(operation) {
   const defaults = OPERATION_DEFAULTS[operation];

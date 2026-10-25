@@ -16,7 +16,6 @@ export const APP_VERSION = "2.0";
 
 export const DEFAULT_API_BASE = "http://localhost:8010";
 export const API_BASE_STORAGE_KEY = "geocluster.apiBase";
-export const DEFAULT_PORT = 5173;
 /**
  * Same-origin path used when the page is NOT served from the dev machine
  * (hosted preview, LAN, reverse proxy). serve.py forwards /api/* to the
@@ -84,9 +83,4 @@ function readStoredBase(storage) {
   } catch {
     return "";
   }
-}
-
-/** Small helper used by the status chips and hints. */
-export function webOriginHint(port = DEFAULT_PORT) {
-  return `http://localhost:${port}`;
 }

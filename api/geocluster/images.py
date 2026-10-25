@@ -17,8 +17,6 @@ from .errors import ImageValidationError
 
 Array = np.ndarray
 
-SUPPORTED_FORMATS = ("jpeg", "png", "bmp", "tiff")
-
 _MAGIC_SIGNATURES: tuple[tuple[bytes, str], ...] = (
     (b"\xff\xd8\xff", "jpeg"),
     (b"\x89PNG\r\n\x1a\n", "png"),

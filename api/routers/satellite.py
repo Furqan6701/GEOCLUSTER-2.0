@@ -35,7 +35,7 @@ from geocluster.images import decode_image, downscale_to_limit
 from geocluster.locations import LocationNotFound
 from geocluster.places import parse_coordinate_pair
 from geocluster.satellite import RESOLUTION_M, sanitize_location
-from ratelimit import client_key, rate_limit_dependency
+from ratelimit import rate_limit_dependency
 from sessions import SessionStore
 
 router = APIRouter(prefix="/satellite", tags=["satellite"], dependencies=[Depends(require_auth)])

@@ -21,8 +21,6 @@
 /** Longest side of the preview copy. 512² is a few million pixel ops at most. */
 export const PREVIEW_MAX_SIDE = 512;
 
-export const PREVIEWABLE = Object.freeze(["brightness", "threshold", "meanfilter"]);
-
 /** OpenCV's default border mode: gfedcb|abcdefgh|gfedcba. */
 export function reflect101(index, size) {
   if (size <= 1) return 0;

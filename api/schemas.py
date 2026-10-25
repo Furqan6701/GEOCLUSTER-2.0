@@ -64,10 +64,6 @@ class ImageOut(BaseModel):
         )
 
 
-class EmptyRequest(BaseModel):
-    model_config = FORBID_EXTRA
-
-
 class BrightnessRequest(BaseModel):
     model_config = FORBID_EXTRA
     value: int = Field(..., ge=-255, le=255, description="Brightness delta (-255..255)")
@@ -235,15 +231,3 @@ class HealthResponse(BaseModel):
     max_image_megapixels: float
 
 
-class HuffmanMeta(BaseModel):
-    rows: int
-    cols: int
-    channels: int
-    payload_bits: int
-    original_bytes: int
-    compressed_bytes: int
-    unique_values: int
-
-
-class ErrorResponse(BaseModel):
-    detail: str
