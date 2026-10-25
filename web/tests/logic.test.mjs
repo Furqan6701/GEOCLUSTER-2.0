@@ -293,6 +293,13 @@ test("ApiError flags network and session failures", () => {
   assert.equal(new ApiError(500, null).isSessionExpired, false);
 });
 
+test("a Copernicus 502 shows the server's own message, network or credentials", () => {
+  const network = "Could not reach Copernicus. Check your internet connection and try again.";
+  const credentials = "Copernicus rejected the client ID or secret. Check COPERNICUS_CLIENT_ID and COPERNICUS_CLIENT_SECRET in api/.env.";
+  assert.equal(humanizeError(new ApiError(502, network)), network);
+  assert.equal(humanizeError(new ApiError(502, credentials)), credentials);
+});
+
 test("humanizeError maps statuses to friendly text", () => {
   assert.match(humanizeError(new ApiError(0, "network"), { apiBase: "http://localhost:8010" }), /Can't reach the API at http:\/\/localhost:8010/);
   assert.match(humanizeError(new ApiError(413, null)), /too large/i);
