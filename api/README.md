@@ -52,6 +52,8 @@ Non-secret settings (defaults in brackets):
 | `SATELLITE_MAX_KM` | `5` | Largest satellite crop, per side, in kilometres. A 5 × 5 km square is the largest crop by default. Larger requests get a 422. |
 | `COPERNICUS_CONNECT_TIMEOUT_SECONDS` | `15` | Seconds to wait to connect to Copernicus. A connection error or timeout is retried 3 times with a short backoff (0.5 s, 1 s, 2 s), then the request fails with a 502: "Could not reach Copernicus. Check your internet connection and try again." |
 | `COPERNICUS_READ_TIMEOUT_SECONDS` | `45` | Seconds to wait for Copernicus to answer once connected. Same retries and 502 as above. |
+| `COPERNICUS_CA_BUNDLE` | unset (certifi's list) | Path to a PEM file with the root certificate of a proxy or antivirus that re-signs HTTPS. Set it only when `scripts/check_copernicus.py` reports a certificate problem that the Windows store accepts. A secure-connection error (502) names this setting. |
+| `COPERNICUS_FORCE_IPV4` | `false` | Connect to Copernicus over IPv4 only. For networks that advertise IPv6 but cannot route it: each attempt otherwise waits out its connect timeout first. Process-wide. Set `true` only when the diagnostic shows IPv6 failing and IPv4 passing. |
 | `COPERNICUS_TOTAL_TIMEOUT_SECONDS` | `120` | Overall budget for one satellite fetch: sign-in, imagery request, every retry and every backoff together. When it runs out, no further retry starts and the request fails with the same 502 network message, so one fetch never waits longer than this. Each attempt is also capped to the time left. |
 | `SATELLITE_CACHE_DIR` | the OS temp folder, `geocluster-satellite-cache` | Satellite PNG and place-lookup cache. Disposable and never served over HTTP. |
 | `NOMINATIM_USER_AGENT` | `GeoCluster/2.0 (Sentinel-2 crop fetch; +repository URL)` | Identifying User-Agent for OpenStreetMap place lookups. Set your own contact URL for long-running use. |
@@ -165,7 +167,7 @@ scale bar exact.
 ## Tests
 
 ```bash
-pytest api/tests -q                      # 367 tests, offline (network mocked)
+pytest api/tests -q                      # 375 tests, offline (network mocked)
 ```
 
 On Windows, skip `test_memory.py` because it imports the Unix-only `resource`

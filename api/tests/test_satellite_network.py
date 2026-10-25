@@ -19,6 +19,7 @@ from geocluster.satellite import (
     DEFAULT_READ_TIMEOUT_SECONDS,
     DEFAULT_TOTAL_TIMEOUT_SECONDS,
     NETWORK_MESSAGE,
+    TLS_MESSAGE,
     RETRIES,
     SatelliteClient,
 )
@@ -363,7 +364,7 @@ def test_token_is_only_sent_as_a_bearer_header(tmp_path):
     session = ScriptedSession(make_png())
     make_client(tmp_path, session).fetch("F-8")
     process = [meta for url, meta in session.posts if "process" in url][0]
-    assert process["headers"] == {"Authorization": f"Bearer {ACCESS_TOKEN}"}
+    assert process["headers"]["Authorization"] == f"Bearer {ACCESS_TOKEN}"
     assert ACCESS_TOKEN not in repr(process["json"])
 
 
@@ -491,3 +492,72 @@ def test_a_rejected_imagery_request_logs_the_reason_and_keeps_secrets_out(tmp_pa
     assert reason in caplog.text, "the developer sees why Copernicus refused"
     assert CLIENT_SECRET not in caplog.text and ACCESS_TOKEN not in caplog.text
     assert len(process_urls(session)) == 1, "a 400 is not retried"
+
+
+# -------------------------------------------- Windows / network-path hardening
+
+def test_a_cut_off_response_body_is_retried(tmp_path):
+    session = ScriptedSession(
+        make_png(), token_script=[requests.exceptions.ChunkedEncodingError("body cut off")]
+    )
+    content, _ = make_client(tmp_path, session).fetch("F-8")
+    assert content == session.png
+    assert len(token_urls(session)) == 2
+
+
+def test_a_certificate_error_is_not_retried_and_says_so(tmp_path):
+    sleeps = []
+    session = ScriptedSession(make_png(), token_script=[requests.exceptions.SSLError("cert verify failed")])
+    client = make_client(tmp_path, session, sleeps=sleeps)
+    with pytest.raises(SatelliteNetworkError) as raised:
+        client.fetch("F-8")
+    assert str(raised.value) == TLS_MESSAGE
+    assert "COPERNICUS_CA_BUNDLE" in str(raised.value)
+    assert len(token_urls(session)) == 1 and sleeps == []
+
+
+def test_every_attempt_opens_a_fresh_connection(tmp_path):
+    session = ScriptedSession(
+        make_png(),
+        token_script=[requests.ConnectionError("reset")],
+        process_script=[requests.ConnectionError("reset")],
+    )
+    make_client(tmp_path, session).fetch("F-8")
+    for url, meta in session.posts:
+        assert meta["headers"]["Connection"] == "close", f"{url} must not reuse a dropped connection"
+
+
+def test_a_ca_bundle_file_is_used_for_verification(tmp_path, monkeypatch):
+    bundle = tmp_path / "corporate-root.pem"
+    bundle.write_text("-----BEGIN CERTIFICATE-----\n", encoding="utf-8")
+    monkeypatch.setenv("COPERNICUS_CA_BUNDLE", str(bundle))
+    session = ScriptedSession(make_png())
+    make_client(tmp_path, session)
+    assert session.verify == str(bundle)
+
+
+def test_a_missing_ca_bundle_keeps_the_default_certificates(tmp_path, monkeypatch, caplog):
+    monkeypatch.setenv("COPERNICUS_CA_BUNDLE", str(tmp_path / "nope.pem"))
+    session = ScriptedSession(make_png())
+    make_client(tmp_path, session)
+    assert not hasattr(session, "verify")
+    assert "COPERNICUS_CA_BUNDLE" in caplog.text
+
+
+def test_force_ipv4_restricts_name_resolution_only_when_enabled(monkeypatch):
+    import socket
+
+    import urllib3.util.connection as urllib3_connection
+
+    from geocluster import satellite as satellite_module
+
+    original = urllib3_connection.allowed_gai_family
+    monkeypatch.setattr(urllib3_connection, "allowed_gai_family", original)  # restored after the test
+
+    monkeypatch.setenv("COPERNICUS_FORCE_IPV4", "false")
+    satellite_module.SatelliteClient(client_id="a", client_secret="b", session=FakeSession(make_png()))
+    assert urllib3_connection.allowed_gai_family is original
+
+    monkeypatch.setenv("COPERNICUS_FORCE_IPV4", "true")
+    satellite_module.SatelliteClient(client_id="a", client_secret="b", session=FakeSession(make_png()))
+    assert urllib3_connection.allowed_gai_family() == socket.AF_INET

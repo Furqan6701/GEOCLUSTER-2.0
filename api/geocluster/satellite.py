@@ -36,6 +36,8 @@ import time
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
+import socket
+
 import requests
 
 from .errors import (
@@ -84,6 +86,17 @@ CREDENTIALS_MESSAGE = (
 PROVIDER_MESSAGE = "Copernicus had a problem answering. Try again shortly."
 AUTH_MESSAGE = "Could not authenticate with Copernicus."
 IMAGERY_MESSAGE = "The satellite imagery request failed."
+TLS_MESSAGE = (
+    "Could not open a secure connection to Copernicus. A proxy or antivirus may be "
+    "inspecting HTTPS: see COPERNICUS_CA_BUNDLE in api/README.md."
+)
+#: Failures worth another attempt: no connection, a timeout, or a body cut off mid-way.
+#: (A TLS certificate error is a ConnectionError too, but it does not fix itself.)
+RETRYABLE_ERRORS = (
+    requests.ConnectionError,
+    requests.Timeout,
+    requests.exceptions.ChunkedEncodingError,
+)
 #: The Process API requires the CRS of the bounding box. Our boxes are lon/lat (WGS 84).
 WGS84_CRS = "http://www.opengis.net/def/crs/EPSG/0/4326"
 
@@ -102,6 +115,22 @@ def _provider_reason(response) -> str:
             if isinstance(value, str) and value.strip():
                 return value.strip()[:200]
     return "no reason given"
+
+
+def _env_flag(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _prefer_ipv4() -> None:
+    """Make urllib3 connect over IPv4 only.
+
+    urllib3 tries every address the resolver returns, so a broken IPv6 route makes
+    each attempt wait out its connect timeout before IPv4 is tried. This is
+    process-wide: it applies to every outbound connection of the API process.
+    """
+    import urllib3.util.connection as urllib3_connection
+
+    urllib3_connection.allowed_gai_family = lambda: socket.AF_INET
 
 
 def _env_seconds(name: str, default: float) -> float:
@@ -237,6 +266,14 @@ class SatelliteClient:
         self.cache_dir = Path(cache_dir)
         self._token_ttl = int(token_ttl_seconds)
         self._session = session or requests.Session()
+        ca_bundle = os.getenv("COPERNICUS_CA_BUNDLE", "").strip()
+        if ca_bundle:
+            if Path(ca_bundle).is_file():
+                self._session.verify = ca_bundle
+            else:
+                logger.error("COPERNICUS_CA_BUNDLE is not a readable file; using the default certificates.")
+        if _env_flag("COPERNICUS_FORCE_IPV4"):
+            _prefer_ipv4()
         self._timeout = (
             connect_timeout
             if connect_timeout is not None
@@ -288,6 +325,10 @@ class SatelliteClient:
         """
         attempts = self._retries + 1
         connect_timeout, read_timeout = self._timeout
+        # "Connection: close" makes every attempt open a fresh connection. A
+        # keep-alive connection that the network dropped would otherwise be
+        # reused and fail again on the retry.
+        headers = {**(kwargs.pop("headers", None) or {}), "Connection": "close"}
         for attempt in range(1, attempts + 1):
             remaining = deadline - self._clock()
             if remaining <= 0:
@@ -295,8 +336,11 @@ class SatelliteClient:
                 raise SatelliteNetworkError(NETWORK_MESSAGE)
             timeout = (min(connect_timeout, remaining), min(read_timeout, remaining))
             try:
-                return self._session.post(url, timeout=timeout, **kwargs)
-            except (requests.ConnectionError, requests.Timeout) as exc:
+                return self._session.post(url, timeout=timeout, headers=headers, **kwargs)
+            except requests.exceptions.SSLError as exc:
+                logger.error("Copernicus %s request failed: certificate check failed (SSLError)", what)
+                raise SatelliteNetworkError(TLS_MESSAGE) from exc
+            except RETRYABLE_ERRORS as exc:
                 name = exc.__class__.__name__
                 if attempt == attempts:
                     logger.error(
