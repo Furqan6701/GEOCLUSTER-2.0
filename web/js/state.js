@@ -38,6 +38,8 @@ export function createAppState() {
     maxImages: null,
     /** GET /health payload (null until fetched). */
     health: null,
+    /** Outcome of the last satellite fetch in this session: idle | ok | failed. */
+    satellite: { status: "idle" },
     /** {id, info} of the uploaded image. */
     original: null,
     /** {id, info} of the most recent operation result. */

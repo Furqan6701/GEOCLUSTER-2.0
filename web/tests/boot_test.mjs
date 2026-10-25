@@ -448,7 +448,9 @@ if (!bootFailed) {
   const chips = document.getElementById("status-chips").textContent;
   check(/session [0-9A-Za-z_-]{8}/.test(chips), "status chip shows the session id", chips);
   check(/AI (ready|not configured)/.test(chips), "status chip shows the AI state", chips);
-  check(/Satellite (ready|not configured)/.test(chips), "status chip shows the satellite state", chips);
+  check(/Satellite (ready|not configured|not fetched yet|fetch failed)/.test(chips), "status chip shows the satellite state", chips);
+  // no satellite fetch has run in this page yet, so the chip must not be green
+  check(!/Satellite ready/.test(chips), "no green satellite chip before any fetch has succeeded", chips);
 
   // ---------------------------------------------------------------- 2. upload
   const uploadBytes = await readFile(FIXTURE);
@@ -594,6 +596,13 @@ if (!bootFailed) {
       await source.actions.fetchSatellite();
       check(sent.length === 1, "place mode sends exactly one request", String(sent.length));
       checkPointButtons("after a satellite fetch (place)");
+      {
+        // green only after a success, and only when the server has credentials
+        const chipText = document.getElementById("status-chips").textContent;
+        const configuredNow = state()?.health?.satellite_configured === true;
+        check(configuredNow ? /Satellite ready/.test(chipText) : /Satellite not configured/.test(chipText),
+          "a successful satellite fetch turns the chip green (when configured)", chipText);
+      }
       const body = sent[0];
       check(body.mode === "place" && body.location === "Karachi" && body.sizeKm === 5,
         "place mode sends the place text and the chosen size", JSON.stringify(body));
@@ -643,6 +652,19 @@ if (!bootFailed) {
       radios[0].dispatchEvent(new window.Event("change", { bubbles: true }));
       await source.actions.fetchSatellite();
       check(sent.length === 3, "an empty place name is not sent either", String(sent.length));
+      // a failed fetch turns the chip red and never green
+      const successStub = gh.api.satelliteFetch;
+      placeInput.value = "Karachi";
+      radios[0].checked = true;
+      radios[0].dispatchEvent(new window.Event("change", { bubbles: true }));
+      gh.api.satelliteFetch = async () => { throw new Error("stubbed satellite failure"); };
+      await source.actions.fetchSatellite();
+      const failedChip = document.getElementById("status-chips").textContent;
+      const configuredFail = state()?.health?.satellite_configured === true;
+      check(configuredFail ? /Satellite fetch failed/.test(failedChip) : /Satellite not configured/.test(failedChip),
+        "a failed satellite fetch shows the failed state (when configured)", failedChip);
+      check(!/Satellite ready/.test(failedChip), "after a failure the chip is not green", failedChip);
+      gh.api.satelliteFetch = successStub;
     } finally {
       gh.api.satelliteFetch = realFetch;
       // the stub's image id does not exist server-side: put the real working

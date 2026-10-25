@@ -22,6 +22,7 @@ import { createPanels } from "./panels/index.js";
 import { SessionExpiredError, SessionManager, carryGroundMetadata } from "./session.js";
 import { activeImage, createAppState, createBus } from "./state.js";
 import { chip, createMenuBar, downloadBlob, el, icon, setChildren, toast, toggleButton } from "./ui.js";
+import { satelliteChip } from "./satellitestatus.js";
 import { closeDialog, confirmDialog, isDialogOpen, openDialog, showAboutDialog, showShortcutsDialog, SHORTCUTS } from "./dialogs.js";
 import { Viewer } from "./viewer.js";
 
@@ -948,7 +949,8 @@ function renderChips() {
   const health = state.health;
   if (health) {
     nodes.push(chip(`AI ${health.ai_configured ? "ready" : "not configured"}`, health.ai_configured ? "ok" : "warn", "GROQ_API_KEY on the server"));
-    nodes.push(chip(`Satellite ${health.satellite_configured ? "ready" : "not configured"}`, health.satellite_configured ? "ok" : "warn", "Copernicus credentials on the server"));
+    const satellite = satelliteChip(health, state.satellite);
+    nodes.push(chip(satellite.label, satellite.kind, satellite.title));
     nodes.push(chip(`max ${health.max_image_megapixels} MP`, "", "MAX_IMAGE_MEGAPIXELS"));
   } else {
     nodes.push(chip("API unreachable", "bad", "Could not reach GET /health"));
@@ -1098,6 +1100,7 @@ byId("new-session").addEventListener("click", () => { void startNewSession(); })
 
 bus.on("session", () => renderChips());
 bus.on("health", () => renderChips());
+bus.on("satellite:status", () => renderChips());
 bus.on("busy", () => updateStatusBar());
 
 // -------------------------------------------------------------- bootstrap

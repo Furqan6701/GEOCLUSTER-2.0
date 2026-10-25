@@ -44,6 +44,7 @@ import {
 import { ApiClient } from "../js/api.js";
 import { HISTORY_LIMIT, ImageHistory, snapshotOf } from "../js/history.js";
 import { carryGroundMetadata } from "../js/session.js";
+import { SATELLITE_STATUS, satelliteChip } from "../js/satellitestatus.js";
 import { GATE_STATE_EVENTS, createActionGate } from "../js/gate.js";
 import {
   KMEANS_MAX_ITER,
@@ -3163,4 +3164,35 @@ test("a typed total length cannot put numbers on a bar without a ground scale", 
   // the pixel length follows the ground scale exactly: 250 m of 2000 m over
   // 1000 px is 125 px
   assert.equal(exact.boxes.scaleBar.width, 125);
+});
+
+// ------------------------------------------- satellite status chip (green only on success)
+
+test("the satellite chip is green only after a fetch has succeeded", () => {
+  const health = { satellite_configured: true };
+  assert.equal(satelliteChip(health, { status: SATELLITE_STATUS.OK }).kind, "ok");
+  assert.equal(satelliteChip(health, { status: SATELLITE_STATUS.OK }).label, "Satellite ready");
+  // configured but never run: neutral, never green
+  const idle = satelliteChip(health, { status: SATELLITE_STATUS.IDLE });
+  assert.equal(idle.kind, "");
+  assert.equal(idle.label, "Satellite not fetched yet");
+  assert.equal(satelliteChip(health, null).kind, "");
+  assert.equal(satelliteChip(health, undefined).label, "Satellite not fetched yet");
+});
+
+test("a failed satellite fetch shows a red chip, not green", () => {
+  const chip = satelliteChip({ satellite_configured: true }, { status: SATELLITE_STATUS.FAILED });
+  assert.equal(chip.kind, "bad");
+  assert.equal(chip.label, "Satellite fetch failed");
+  assert.notEqual(chip.kind, "ok");
+});
+
+test("without Copernicus credentials the chip stays amber whatever the last fetch said", () => {
+  for (const satellite of [null, { status: "idle" }, { status: "ok" }, { status: "failed" }]) {
+    const chip = satelliteChip({ satellite_configured: false }, satellite);
+    assert.equal(chip.kind, "warn");
+    assert.equal(chip.label, "Satellite not configured");
+  }
+  // no health payload yet: nothing is known, so nothing can be green
+  assert.equal(satelliteChip(null, { status: "ok" }).kind, "warn");
 });

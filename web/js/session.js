@@ -74,6 +74,8 @@ export class SessionManager {
     this.state.sessionId = null;
     this.blobCache.clear();
     resetImages(this.state);
+    // a new session has not fetched anything yet
+    this.setSatelliteStatus("idle");
     const sessionId = await this.start();
     this.bus.emit("session:reset", { sessionId });
     return sessionId;
@@ -209,13 +211,26 @@ export class SessionManager {
   }
 
   async fetchSatellite(request) {
-    const info = await this.withSession((sid) =>
-      this.api.satelliteFetch({ ...request, sessionId: sid }),
-    );
+    let info;
+    try {
+      info = await this.withSession((sid) =>
+        this.api.satelliteFetch({ ...request, sessionId: sid }),
+      );
+    } catch (error) {
+      // the status chip shows a red "failed" state until a fetch succeeds
+      this.setSatelliteStatus("failed");
+      throw error;
+    }
+    this.setSatelliteStatus("ok");
     this.remember(info);
     this.state.original = { id: info.image_id, info };
     this.state.result = null;
     this.bus.emit("image:loaded", { role: "original", info });
     return info;
+  }
+
+  setSatelliteStatus(status) {
+    this.state.satellite = { status };
+    this.bus.emit("satellite:status", { status });
   }
 }
