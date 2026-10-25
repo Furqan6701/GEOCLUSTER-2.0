@@ -461,3 +461,33 @@ def test_the_deadline_is_the_same_message_at_the_api(app, client, tmp_path):
     response = client.post("/satellite/fetch", json={"session_id": session_id, "location": "F-8"})
     assert response.status_code == 502
     assert response.json() == {"detail": NETWORK_MESSAGE}
+
+
+# ------------------------------------------------- Process API request shape
+
+def test_the_process_request_names_the_wgs84_crs_of_its_bbox(tmp_path):
+    session = ScriptedSession(make_png())
+    make_client(tmp_path, session).fetch("F-8")
+    payload = [meta["json"] for url, meta in session.posts if "process" in url][0]
+    bounds = payload["input"]["bounds"]
+    # Sentinel Hub rejects a bounds object without properties.crs
+    assert bounds["properties"]["crs"] == "http://www.opengis.net/def/crs/EPSG/0/4326"
+    west, south, east, north = bounds["bbox"]
+    assert west < east and south < north
+    assert -180 <= west and east <= 180 and -90 <= south and north <= 90
+
+
+def test_a_rejected_imagery_request_logs_the_reason_and_keeps_secrets_out(tmp_path, caplog):
+    caplog.set_level(logging.DEBUG)
+    reason = "bounds.properties.crs is required"
+    session = ScriptedSession(
+        make_png(), process_script=[FakeResponse(status=400, json_payload={"error": {"message": reason}})]
+    )
+    client = make_client(tmp_path, session)
+    with pytest.raises(SatelliteError) as raised:
+        client.fetch("F-8")
+
+    assert str(raised.value) == "The satellite imagery request failed (HTTP 400)."
+    assert reason in caplog.text, "the developer sees why Copernicus refused"
+    assert CLIENT_SECRET not in caplog.text and ACCESS_TOKEN not in caplog.text
+    assert len(process_urls(session)) == 1, "a 400 is not retried"

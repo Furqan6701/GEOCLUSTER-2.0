@@ -84,6 +84,24 @@ CREDENTIALS_MESSAGE = (
 PROVIDER_MESSAGE = "Copernicus had a problem answering. Try again shortly."
 AUTH_MESSAGE = "Could not authenticate with Copernicus."
 IMAGERY_MESSAGE = "The satellite imagery request failed."
+#: The Process API requires the CRS of the bounding box. Our boxes are lon/lat (WGS 84).
+WGS84_CRS = "http://www.opengis.net/def/crs/EPSG/0/4326"
+
+
+def _provider_reason(response) -> str:
+    """A short reason from a Process API error body, for the log only (no secrets: none are sent back)."""
+    try:
+        payload = response.json()
+    except ValueError:
+        return "no reason given (the body is not JSON)"
+    if isinstance(payload, dict):
+        for key in ("message", "error", "reason"):
+            value = payload.get(key)
+            if isinstance(value, dict):
+                value = value.get("message")
+            if isinstance(value, str) and value.strip():
+                return value.strip()[:200]
+    return "no reason given"
 
 
 def _env_seconds(name: str, default: float) -> float:
@@ -506,7 +524,7 @@ class SatelliteClient:
         token = self.get_access_token(deadline)
         payload = {
             "input": {
-                "bounds": {"bbox": bbox},
+                "bounds": {"bbox": bbox, "properties": {"crs": WGS84_CRS}},
                 "data": [
                     {
                         "type": "sentinel-2-l2a",
@@ -543,8 +561,12 @@ class SatelliteClient:
             logger.error("Copernicus rejected the imagery request (HTTP %d).", response.status_code)
             raise SatelliteCredentialsError(CREDENTIALS_MESSAGE)
         if response.status_code >= 400:
-            logger.error("Copernicus imagery request returned HTTP %d.", response.status_code)
-            raise SatelliteError(IMAGERY_MESSAGE)
+            # The reason is logged, never returned: it is for the developer reading the log.
+            logger.error(
+                "Copernicus imagery request returned HTTP %d: %s",
+                response.status_code, _provider_reason(response),
+            )
+            raise SatelliteError(f"The satellite imagery request failed (HTTP {response.status_code}).")
 
         content = response.content
         try:
