@@ -49,6 +49,10 @@ def chat(request: schemas.ChatRequest, http_request: Request) -> schemas.ChatRes
         # offline: answered from the glossary above, never from the provider
         return schemas.ChatResponse(intent="help", reply=str(result.get("answer") or ""), commands=[])
 
+    if intent == "ask_place":
+        # imagery was asked for but no real place was named: ask, never geocode
+        return schemas.ChatResponse(intent="ask_place", reply=str(result.get("reply") or ""), commands=[])
+
     if intent != "ask_question":
         # explicit one-line commands and satellite requests never call the
         # model: they keep working with no key, no network and when it is down

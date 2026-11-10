@@ -39,7 +39,7 @@ router = CommandRouter()
 @pytest.mark.parametrize(
     "message,intent,key,value",
     [
-        ("show me F-8", "fetch_satellite", "location", "F-8"),
+        ("show me F-8 imagery", "fetch_satellite", "location", "F-8"),
         ("fetch satellite imagery of NUST", "fetch_satellite", "location", "NUST"),
         ("kmeans", "process_image", "operation", "kmeans"),
         ("run k-means please", "process_image", "operation", "kmeans"),
@@ -66,7 +66,7 @@ def test_router_matches_desktop_behavior(message, intent, key, value):
 @pytest.mark.parametrize(
     "message,expected",
     [
-        ("show me F-8", [{"action": "fetch_satellite", "location": "F-8"}]),
+        ("show me F-8 imagery", [{"action": "fetch_satellite", "location": "F-8"}]),
         ("kmeans", [{"action": "run_kmeans"}]),
         ("classify", [{"action": "run_kmeans"}]),
         ("mean filter", [{"action": "run_operation", "operation": "meanfilter"}]),
@@ -83,10 +83,69 @@ def test_build_commands_covers_every_router_output(message, expected):
     assert build_commands(router.route(message)) == expected
 
 
-def test_show_prefix_wins_over_operation_keywords():
-    """Desktop quirk, ported as-is: satellite verbs are matched before the
-    operation map, so 'show histogram' routes to fetch_satellite."""
-    assert router.route("show histogram") == {"intent": "fetch_satellite", "location": "histogram"}
+def test_tool_names_win_over_satellite_verbs():
+    """'show histogram' is the histogram tool, never a place called 'histogram'."""
+    assert router.route("show histogram") == {"intent": "process_image", "operation": "histogram"}
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "show histogram",
+        "histogram",
+        "open histogram",
+        "histogram of this image",
+        "run k-means",
+        "show threshold",
+        "show brightness",
+        "show mean filter",
+        "show zoom in",
+        "undo",
+    ],
+)
+def test_tool_messages_never_trigger_a_satellite_fetch(message):
+    result = router.route(message)
+    assert result["intent"] != "fetch_satellite"
+    assert all(command.get("action") != "fetch_satellite" for command in build_commands(result))
+
+
+@pytest.mark.parametrize(
+    "message,location",
+    [
+        ("show me F-8 imagery", "F-8"),
+        ("fetch satellite imagery for Karachi", "Karachi"),
+    ],
+)
+def test_clear_imagery_requests_still_fetch(message, location):
+    assert router.route(message) == {"intent": "fetch_satellite", "location": location}
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "show me imagery",
+        "fetch satellite imagery",
+        "show me the image of the",
+        "show me 12345 imagery",
+        "open map of " + "x" * 130,
+    ],
+)
+def test_imagery_request_without_a_real_place_asks_for_one(message):
+    result = router.route(message)
+    assert result["intent"] == "ask_place"
+    assert result["reply"].startswith("Which place should I fetch?")
+    assert build_commands(result) == [], "no fetch command is produced without a place"
+
+
+def test_chat_asks_for_a_place_and_never_emits_a_fetch():
+    with make_app_client(AIAssistant(api_key=None)) as client:
+        response = client.post("/ai/chat", json={"message": "show me imagery"})
+        histogram = client.post("/ai/chat", json={"message": "Show histogram"})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["intent"] == "ask_place"
+    assert payload["commands"] == []
+    assert histogram.json()["commands"] == [{"action": "open_histogram"}]
 
 
 def test_clean_response_strips_reasoning():
@@ -220,7 +279,7 @@ def test_chat_command_intents_do_not_call_the_assistant():
 
     stub = SimpleNamespace(available=True, ask_with_action=explode)
     with make_app_client(stub) as client:
-        response = client.post("/ai/chat", json={"message": "show me F-8"})
+        response = client.post("/ai/chat", json={"message": "show me F-8 imagery"})
         assert response.status_code == 200
         assert response.json()["commands"] == [{"action": "fetch_satellite", "location": "F-8"}]
         assert response.json()["reply"] is None
@@ -623,8 +682,8 @@ def test_help_matching_covers_names_and_aliases(question, tool_id):
         ("histogram", "process_image", "histogram"),
         ("run k-means", "process_image", "kmeans"),
         ("apply mean filter", "process_image", "meanfilter"),
-        ("show me F-8", "fetch_satellite", "F-8"),
-        ("show histogram", "fetch_satellite", "histogram"),
+        ("show me F-8 imagery", "fetch_satellite", "F-8"),
+        ("show histogram", "process_image", "histogram"),
         ("what is NDVI?", "ask_question", "what is NDVI?"),
         ("what is GIS?", "ask_question", "what is GIS?"),
     ],

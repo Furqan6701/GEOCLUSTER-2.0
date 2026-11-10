@@ -228,6 +228,67 @@ def clean_response(text: str) -> str:
     return text.strip()
 
 
+# Words that name an app tool. A message containing one is never a place request.
+TOOL_WORDS = re.compile(
+    r"\b(k-?means|cluster(?:s|ing)?|classify|classified|histograms?|mean filter|"
+    r"meanfilter|filters?|smooth|threshold|brightness|negative|grayscale|greyscale|"
+    r"laplacian|compress|compression|distance|measure|undo|redo|zoom|fit|"
+    r"actual size|export|clear|map composer|composer)\b",
+    re.IGNORECASE,
+)
+
+# Operation keywords for the image-processing commands, most specific first.
+OPERATION_KEYWORDS = (
+    ("kmeans", "kmeans"),
+    ("k-means", "kmeans"),
+    ("mean filter", "meanfilter"),
+    ("threshold", "threshold"),
+    ("brightness", "brightness"),
+    ("negative", "negative"),
+    ("histogram", "histogram"),
+    ("compress", "compress"),
+    ("compression", "compress"),
+    ("distance", "distance"),
+)
+
+# A satellite request must contain one of these imagery cues.
+IMAGERY_CUE = re.compile(r"\b(satellite|imagery|sentinel|fetch)\b|\b(image|map|picture)\s+of\b", re.IGNORECASE)
+
+# Words removed from the text after the verb before the place is checked.
+_PLACE_NOISE = r"\b(satellite|imagery|image|images|sentinel|picture|map|tile|fetch|of|for|the|a|an)\b"
+
+# Words that are never a place on their own.
+GENERIC_PLACE_WORDS = frozenset({
+    "this", "that", "it", "these", "those", "me", "my", "here", "there", "one",
+    "something", "anything", "place", "area", "location", "file", "photo", "data",
+    "please", "now", "again", "more", "some",
+})
+
+PLACE_QUESTION = (
+    "Which place should I fetch? Name a place, for example "
+    "\"Show me F-8 imagery\" or \"Fetch satellite imagery for Karachi\"."
+)
+
+MAX_PLACE_CHARS = 120
+
+
+def is_place_text(location: str) -> bool:
+    """True when the text after the verb could be a place name.
+
+    The geocoder decides whether a real place exists; this check only refuses
+    text that cannot be a place: empty, no letters, only filler words, a tool
+    name, or too long for the satellite request.
+    """
+    if not location or len(location) > MAX_PLACE_CHARS:
+        return False
+    tokens = [t.lower() for t in re.findall(r"[A-Za-z0-9][A-Za-z0-9'\-]*", location)]
+    if not any(re.search(r"[a-z]", t) for t in tokens):
+        return False
+    if all(t in GENERIC_PLACE_WORDS for t in tokens):
+        return False
+    return not TOOL_WORDS.search(location)
+
+
 class CommandRouter:
     """desktop command_router.CommandRouter (unchanged logic)."""
 
@@ -249,47 +310,37 @@ class CommandRouter:
             topic = match_app_help(text)
             return {"intent": "help", "tool": (topic or {}).get("id", ""), "answer": answer}
 
-        # --------------------------------------------------- SATELLITE REQUESTS
-        satellite_verbs = ["show me", "show", "load", "fetch", "display", "open", "view", "get"]
+        # --------------------------------------------------- APP TOOLS FIRST
+        # A message that names an app tool is never a place request, whatever
+        # verb it starts with: "show histogram" means the histogram tool, not a
+        # place called "histogram". This runs before any satellite verb.
+        if TOOL_WORDS.search(text):
+            for key, value in OPERATION_KEYWORDS:
+                if key in lower:
+                    return {"intent": "process_image", "operation": value}
+            if "cluster" in lower or "classify" in lower:
+                return {"intent": "process_image", "operation": "kmeans"}
+            # other tools (zoom, undo, map composer, ...) go to the model, which
+            # may choose ONE whitelisted action; they are never fetched
+            return {"intent": "ask_question", "question": text}
 
-        if any(lower.startswith(verb) for verb in satellite_verbs):
+        # --------------------------------------------------- SATELLITE REQUESTS
+        # Only a request that clearly asks for imagery of a place: a satellite
+        # verb AND an imagery cue (satellite, imagery, Sentinel, fetch, image of,
+        # map of). Anything else never reaches the geocoder.
+        satellite_verbs = ["show me", "show", "load", "fetch", "display", "open", "view", "get"]
+        if any(lower.startswith(verb) for verb in satellite_verbs) and IMAGERY_CUE.search(text):
             location = text
             for verb in satellite_verbs:
                 if lower.startswith(verb):
                     location = text[len(verb):]
                     break
-            location = re.sub(
-                r"\b(satellite|imagery|image|sentinel|picture|of|for)\b",
-                "",
-                location,
-                flags=re.IGNORECASE,
-            )
+            location = re.sub(_PLACE_NOISE, "", location, flags=re.IGNORECASE)
             location = re.sub(r"\s+", " ", location).strip()
+            if not is_place_text(location):
+                # not a real place: ask for one instead of calling the geocoder
+                return {"intent": "ask_place", "reply": PLACE_QUESTION}
             return {"intent": "fetch_satellite", "location": location}
-
-        # --------------------------------------------------- IMAGE PROCESSING
-        operation_map = {
-            "kmeans": "kmeans",
-            "k-means": "kmeans",
-            "mean filter": "meanfilter",
-            "threshold": "threshold",
-            "brightness": "brightness",
-            "negative": "negative",
-            "histogram": "histogram",
-            "compress": "compress",
-            "compression": "compress",
-            "distance": "distance",
-        }
-
-        for key, value in operation_map.items():
-            if key in lower:
-                return {"intent": "process_image", "operation": value}
-
-        if "cluster" in lower:
-            return {"intent": "process_image", "operation": "kmeans"}
-
-        if "classify" in lower:
-            return {"intent": "process_image", "operation": "kmeans"}
 
         # --------------------------------------------------- EVERYTHING ELSE
         return {"intent": "ask_question", "question": text}

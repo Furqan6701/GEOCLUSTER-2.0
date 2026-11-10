@@ -251,7 +251,7 @@ def main() -> int:
         ("Show me F-8 imagery", "fetch_satellite", "fetch_satellite"),
         ("Run k-means on this", "process_image", "run_kmeans"),
         ("Measure the distance", "process_image", "open_distance"),
-        ("Show histogram", "fetch_satellite", "fetch_satellite"),
+        ("Show histogram", "process_image", "open_histogram"),
     ]:
         status, _, reply = request("POST", "/ai/chat", body={"message": message})
         check(status in (200, 502, 503), f'chat "{message}" responds', str(status))
