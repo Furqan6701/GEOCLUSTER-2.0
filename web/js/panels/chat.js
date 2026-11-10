@@ -28,9 +28,6 @@ import { button, el } from "../ui.js";
 
 const HINTS = [
   { label: "What does Mean filter do?", text: "What does the mean filter do?" },
-  { label: "Histogram", text: "Show histogram" },
-  { label: "K-Means", text: "Run k-means" },
-  { label: "Satellite", text: "Show me F-8 imagery" },
 ];
 
 /**
