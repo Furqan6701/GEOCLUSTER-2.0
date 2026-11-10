@@ -126,19 +126,14 @@ def test_assistant_cleans_provider_answer():
     assert "GEOCLUSTER AI" in captured["messages"][0]["content"]
 
 
-def test_assistant_reads_groq_then_legacy_key_from_the_environment(monkeypatch):
-    from geocluster.assistant import GROQ_API_KEY_ENV, LEGACY_API_KEY_ENV
+def test_assistant_reads_the_groq_key_from_the_environment(monkeypatch):
+    from geocluster.assistant import GROQ_API_KEY_ENV
 
     monkeypatch.delenv(GROQ_API_KEY_ENV, raising=False)
-    monkeypatch.delenv(LEGACY_API_KEY_ENV, raising=False)
     assert AIAssistant().available is False
 
-    # the older variable still works, so an existing api/.env keeps going
-    monkeypatch.setenv(LEGACY_API_KEY_ENV, "legacy-key")
-    assert AIAssistant().available is True
-
-    # …but the current name wins
     monkeypatch.setenv(GROQ_API_KEY_ENV, "groq-key")
+    assert AIAssistant().available is True
     assert AIAssistant()._api_key == "groq-key"
 
 

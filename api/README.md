@@ -34,7 +34,7 @@ Secrets (server-side only; never sent to the browser):
 
 | Variable | Purpose |
 | --- | --- |
-| `GROQ_API_KEY` | AI assistant (Groq). Missing: `/api/ai/chat` answers 503 for questions. The older `FIREWORKS_API_KEY` name is still read as a fallback. Get a key: see the [root README](../README.md#step-3-get-your-keys-optional). |
+| `GROQ_API_KEY` | AI assistant (Groq). Missing: `/api/ai/chat` answers 503 for questions. Get a key: see the [root README](../README.md#step-3-get-your-keys-optional). |
 | `COPERNICUS_CLIENT_ID` / `COPERNICUS_CLIENT_SECRET` | Sentinel-2 fetch. Missing: `/api/satellite/fetch` answers 503. Get them: see the [root README](../README.md#step-3-get-your-keys-optional). |
 
 Non-secret settings (defaults in brackets):

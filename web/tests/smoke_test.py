@@ -151,9 +151,8 @@ def check_references() -> None:
 
 def check_no_secrets() -> None:
     patterns = {
-        "provider key literal": re.compile(r"(?:sk|gsk|fw)_[A-Za-z0-9]{10,}"),
+        "provider key literal": re.compile(r"(?:sk|gsk)_[A-Za-z0-9]{10,}"),
         "assigned GROQ_API_KEY": re.compile(r"GROQ_API_KEY\s*=\s*['\"]?[A-Za-z0-9]"),
-        "assigned FIREWORKS_API_KEY": re.compile(r"FIREWORKS_API_KEY\s*=\s*['\"]?[A-Za-z0-9]"),
         "assigned COPERNICUS secret": re.compile(r"COPERNICUS_CLIENT_(?:ID|SECRET)\s*=\s*['\"]?[A-Za-z0-9]"),
         "bearer token literal": re.compile(r"Bearer\s+[A-Za-z0-9._-]{12,}"),
     }

@@ -399,7 +399,7 @@ def test_docker_and_env_templates_only_carry_placeholders():
             continue
         name, _, value = stripped.partition("=")
         value = value.strip()
-        if name in {"GROQ_API_KEY", "FIREWORKS_API_KEY", "COPERNICUS_CLIENT_ID", "COPERNICUS_CLIENT_SECRET"}:
+        if name in {"GROQ_API_KEY", "COPERNICUS_CLIENT_ID", "COPERNICUS_CLIENT_SECRET"}:
             assert value == "", f"{name} must stay empty in the tracked template"
         assert "gsk_" not in value and "sk-" not in value
     assert "ENABLE_DOCS" in text and "ALLOWED_ORIGINS" in text

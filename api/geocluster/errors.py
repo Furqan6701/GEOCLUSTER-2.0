@@ -28,7 +28,7 @@ class HuffmanError(GeoclusterError):
 
 
 class AssistantUnavailable(GeoclusterError):
-    """GROQ_API_KEY is not configured (the legacy FIREWORKS_API_KEY name is also read)."""
+    """GROQ_API_KEY is not configured."""
 
 
 class AssistantProviderError(GeoclusterError):

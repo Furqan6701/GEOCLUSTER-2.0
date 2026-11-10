@@ -52,12 +52,10 @@ load_dotenv()
 logger = logging.getLogger("geocluster.assistant")
 
 # Groq (OpenAI-compatible). The key is read server-side only and is never sent
-# to the browser; GROQ_API_KEY is the current name, the older FIREWORKS_API_KEY
-# variable is still accepted so an existing api/.env keeps working.
+# to the browser. GROQ_API_KEY is the only name the API reads.
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 GROQ_MODEL = "llama-3.3-70b-versatile"
 GROQ_API_KEY_ENV = "GROQ_API_KEY"
-LEGACY_API_KEY_ENV = "FIREWORKS_API_KEY"
 
 #: JSON mode keeps the answer machine-readable; the reply is short by design.
 LLM_TEMPERATURE = 0.2
@@ -696,7 +694,7 @@ class AIAssistant:
         if api_key is not None:
             key = api_key
         else:
-            key = os.getenv(GROQ_API_KEY_ENV) or os.getenv(LEGACY_API_KEY_ENV)
+            key = os.getenv(GROQ_API_KEY_ENV)
         self._api_key = key or None
         self._client: OpenAI | None = None
 
