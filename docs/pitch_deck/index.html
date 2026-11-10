@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GeoCluster 2.0 - Official Pitch Deck</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0b1120;
+      --card-bg: rgba(30, 41, 59, 0.7);
+      --card-border: rgba(51, 65, 85, 0.6);
+      --emerald: #10b981;
+      --cyan: #06b6d4;
+      --amber: #f59e0b;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', -apple-system, sans-serif;
+      min-height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    header.deck-bar {
+      height: 56px;
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--card-border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+      z-index: 50;
+    }
+    .deck-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-family: 'Outfit', sans-serif;
+      font-weight: 700;
+      font-size: 18px;
+    }
+    .brand-badge {
+      background: linear-gradient(135deg, var(--emerald), var(--cyan));
+      color: #0b1120;
+      font-size: 11px;
+      font-weight: 800;
+      padding: 2px 7px;
+      border-radius: 4px;
+      letter-spacing: 0.5px;
+    }
+    .deck-controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .deck-btn {
+      background: rgba(51, 65, 85, 0.5);
+      border: 1px solid var(--card-border);
+      color: var(--text);
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .deck-btn:hover {
+      background: var(--card-border);
+      border-color: var(--cyan);
+      color: var(--cyan);
+    }
+    .slide-indicator {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      color: var(--muted);
+      min-width: 70px;
+      text-align: center;
+    }
+
+    main.deck-viewport {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      position: relative;
+    }
+    .slide-container {
+      width: 100%;
+      max-width: 1280px;
+      aspect-ratio: 16 / 9;
+      background: linear-gradient(145deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.9));
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.7);
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      padding: 48px 56px;
+    }
+    .slide {
+      display: none;
+      height: 100%;
+      flex-direction: column;
+      animation: fadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .slide.active {
+      display: flex;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px) scale(0.99); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    .slide-tag {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: var(--emerald);
+      margin-bottom: 6px;
+    }
+    .slide-title {
+      font-family: 'Outfit', sans-serif;
+      font-size: 34px;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.15;
+      margin-bottom: 8px;
+    }
+    .slide-subtitle {
+      font-size: 16px;
+      color: var(--muted);
+      margin-bottom: 24px;
+      line-height: 1.4;
+    }
+
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; flex: 1; }
+    .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; flex: 1; }
+    .grid-4 { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 18px; flex: 1; }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 22px;
+      display: flex;
+      flex-direction: column;
+      backdrop-filter: blur(8px);
+    }
+    .card-title {
+      font-family: 'Outfit', sans-serif;
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .card-title.cyan { color: var(--cyan); }
+    .card-title.emerald { color: var(--emerald); }
+    .card-title.amber { color: var(--amber); }
+    .card-title.white { color: var(--text); }
+    .card p, .card li {
+      font-size: 13.5px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+    .card ul {
+      list-style: none;
+      margin-top: 6px;
+    }
+    .card ul li {
+      position: relative;
+      padding-left: 16px;
+      margin-bottom: 8px;
+    }
+    .card ul li::before {
+      content: "•";
+      position: absolute;
+      left: 0;
+      color: var(--cyan);
+      font-weight: bold;
+    }
+
+    .hero-title {
+      font-family: 'Outfit', sans-serif;
+      font-size: 54px;
+      font-weight: 800;
+      line-height: 1.05;
+      background: linear-gradient(135deg, #ffffff 40%, var(--cyan) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 12px;
+    }
+    .hero-tagline {
+      font-size: 20px;
+      color: var(--emerald);
+      font-weight: 600;
+      margin-bottom: 16px;
+    }
+    .hero-desc {
+      font-size: 16px;
+      color: var(--muted);
+      line-height: 1.6;
+      max-width: 680px;
+    }
+    .badge-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid var(--emerald);
+      color: var(--emerald);
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      margin-bottom: 18px;
+    }
+
+    .metric-box {
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin-bottom: 12px;
+    }
+    .metric-val {
+      font-family: 'Outfit', sans-serif;
+      font-size: 24px;
+      font-weight: 700;
+    }
+    .metric-lbl {
+      font-size: 11.5px;
+      color: var(--muted);
+    }
+
+    .img-preview {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 8px;
+      border: 1px solid var(--card-border);
+    }
+    .table-custom {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12.5px;
+    }
+    .table-custom th {
+      background: rgba(30, 41, 59, 0.9);
+      color: var(--text);
+      text-align: left;
+      padding: 10px 14px;
+      font-weight: 600;
+      border-bottom: 2px solid var(--card-border);
+    }
+    .table-custom td {
+      padding: 9px 14px;
+      border-bottom: 1px solid rgba(51, 65, 85, 0.4);
+      color: var(--muted);
+    }
+    .table-custom tr.highlight td {
+      background: rgba(16, 185, 129, 0.08);
+      color: var(--text);
+      font-weight: 500;
+    }
+  </style>
+</head>
+<body>
+  <header class="deck-bar">
+    <div class="deck-brand">
+      <span>GeoCluster</span>
+      <span class="brand-badge">2.0 DECK</span>
+    </div>
+    <div class="deck-controls">
+      <button class="deck-btn" id="prev-btn" onclick="prevSlide()">‹ Previous</button>
+      <span class="slide-indicator" id="slide-num">1 / 12</span>
+      <button class="deck-btn" id="next-btn" onclick="nextSlide()">Next ›</button>
+      <button class="deck-btn" onclick="toggleFullscreen()">⛶ Fullscreen</button>
+    </div>
+  </header>
+
+  <main class="deck-viewport">
+    <div class="slide-container">
+      
+      <!-- SLIDE 1 -->
+      <section class="slide active" id="slide-1">
+        <div style="flex: 1; display: flex; flex-direction: column; justify-content: center;">
+          <div class="badge-pill">EARTH OBSERVATION & GEOSPATIAL INTELLIGENCE</div>
+          <h1 class="hero-title">GeoCluster 2.0</h1>
+          <div class="hero-tagline">Web-Native Satellite Analytics & AI-Driven Land Cover Classification</div>
+          <p class="hero-desc">
+            A zero-install remote sensing workstation that bridges the gap between raw Sentinel-2 satellite data, 
+            vectorized K-Means clustering, and publication-ready cartographic maps — supercharged by Groq LLaMA 3.3 70B AI.
+          </p>
+          <div style="margin-top: 32px; display: flex; gap: 16px;">
+            <div class="metric-box" style="flex: 1;">
+              <div class="metric-val" style="color: var(--emerald);">100% In-Memory</div>
+              <div class="metric-lbl">Zero disk persistence of uploads; sliding TTL RAM sessions.</div>
+            </div>
+            <div class="metric-box" style="flex: 1;">
+              <div class="metric-val" style="color: var(--cyan);">10m Sentinel-2</div>
+              <div class="metric-lbl">Direct Copernicus Data Space Ecosystem API integration.</div>
+            </div>
+            <div class="metric-box" style="flex: 1;">
+              <div class="metric-val" style="color: var(--amber);">LLaMA 3.3 70B</div>
+              <div class="metric-lbl">Deterministic AI routing with immutable action verification.</div>
+            </div>
+          </div>
+          <div style="margin-top: 24px; font-size: 13px; color: var(--muted);">
+            Author: <strong>Muhammad Furqan Shahid</strong> • National University of Sciences & Technology (NUST)
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 2 -->
+      <section class="slide" id="slide-2">
+        <div class="slide-tag">The Problem</div>
+        <div class="slide-title">Remote Sensing & GIS Analysis Is Locked Behind Desktop Bloat</div>
+        <div class="slide-subtitle">Traditional tools exclude researchers, students, and agile teams who need rapid geospatial intelligence.</div>
+        <div class="grid-3">
+          <div class="card">
+            <div class="card-title amber">Heavy Desktop Stacks</div>
+            <p>ArcGIS, QGIS, and ENVI demand multi-gigabyte downloads, specialized C++ binaries, and heavyweight workstation hardware that field teams and students lack.</p>
+          </div>
+          <div class="card">
+            <div class="card-title cyan">Steep Learning Curves</div>
+            <p>Users must navigate hundreds of nested menus, manual coordinate reference system (CRS/WGS84) transformations, and proprietary raster formats before producing insights.</p>
+          </div>
+          <div class="card">
+            <div class="card-title emerald">Expensive & Closed</div>
+            <p>Prohibitive commercial software licenses and complex cloud credit billing models restrict democratized access to Earth observation data in education and public science.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 3 -->
+      <section class="slide" id="slide-3">
+        <div class="slide-tag">The Solution</div>
+        <div class="slide-title">GeoCluster 2.0: Instant, Browser-First Geospatial Power</div>
+        <div class="slide-subtitle">Delivering enterprise GIS and satellite clustering through modern, lightweight web standards.</div>
+        <div class="grid-4">
+          <div class="card">
+            <div class="card-title cyan">Instant Browser Access</div>
+            <p>Zero software installation, zero npm build steps. Runs smoothly on any modern browser backed by a high-concurrency FastAPI server.</p>
+          </div>
+          <div class="card">
+            <div class="card-title emerald">1-Click Satellite Fetch</div>
+            <p>Retrieve true-color Sentinel-2 crops by place name, sector code, or lat/long bounding box with automated cloud filtering and ground scaling.</p>
+          </div>
+          <div class="card">
+            <div class="card-title white">Automated K-Means Clustering</div>
+            <p>Vectorized intensity histogram clustering segments satellite imagery into land-cover classes (water, forest, urban, grass, soil) in under 15ms.</p>
+          </div>
+          <div class="card">
+            <div class="card-title amber">Publication-Grade Map Studio</div>
+            <p>Compose finished cartographic maps with title, custom legend, metric scale bar, and north arrow on a single WYSIWYG canvas for instant export.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 4 -->
+      <section class="slide" id="slide-4">
+        <div class="slide-tag">Architecture</div>
+        <div class="slide-title">Unified Single-Origin Architecture</div>
+        <div class="slide-subtitle">Engineered for security, synchronous responsiveness, and zero-headache deployment.</div>
+        <div class="grid-3">
+          <div class="card">
+            <div class="card-title cyan">Web Workstation</div>
+            <ul>
+              <li>Modular ES6 JavaScript architecture</li>
+              <li>Dual synchronized viewports (Original vs Result)</li>
+              <li>Canvas-based live filter previews during drag</li>
+              <li>Single-canvas Map Studio renderer</li>
+              <li>Zero build pipelines or node_modules bloat</li>
+            </ul>
+          </div>
+          <div class="card">
+            <div class="card-title emerald">FastAPI Backend Engine</div>
+            <ul>
+              <li>High-speed in-memory session management</li>
+              <li>Global memory guard and LRU eviction policy</li>
+              <li>NumPy & headless OpenCV processing</li>
+              <li>Vectorized GCH2 Huffman compression</li>
+              <li>Single-origin serving (/ and /api)</li>
+            </ul>
+          </div>
+          <div class="card">
+            <div class="card-title amber">Cloud & Providers</div>
+            <ul>
+              <li>Copernicus Data Space Ecosystem (Sentinel-2 L2A)</li>
+              <li>OpenStreetMap Nominatim place geocoding</li>
+              <li>Groq Cloud: LLaMA 3.3 70B inference</li>
+              <li>Automatic token refresh & secret scrubbing</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 5 -->
+      <section class="slide" id="slide-5">
+        <div class="slide-tag">Satellite Pipeline</div>
+        <div class="slide-title">Sentinel-2 Satellite Imagery on Demand</div>
+        <div class="slide-subtitle">From textual query or geographic coordinates to calibrated 10m multispectral crops.</div>
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-title cyan">Triple-Mode Retrieval Engine</div>
+            <ul>
+              <li><strong>Sector/Alias Mode:</strong> Instant centroid lookup for pre-indexed sectors (e.g. F-8, H-12, NUST campus).</li>
+              <li><strong>Global Geocoding:</strong> OpenStreetMap Nominatim geocoding throttled at 1 req/s with disk caching.</li>
+              <li><strong>Coordinate Bounding Box:</strong> Paste opposite latitude/longitude corners directly from Google Maps or GIS surveys.</li>
+              <li><strong>Atmospheric Correction:</strong> Sentinel-2 L2A Bottom-Of-Atmosphere reflectance bands (B04, B03, B02).</li>
+              <li><strong>Ground Scale Metadata:</strong> Stores exact meters-per-pixel ratio (10 m/px) for true physical distance measurement.</li>
+            </ul>
+          </div>
+          <div class="card" style="align-items: center; justify-content: center; background: rgba(15, 23, 42, 0.4);">
+            <img src="../../docs/demo/F8_satellite.png" alt="Sentinel-2 Satellite Crop" style="max-height: 250px; border-radius: 8px; border: 1px solid var(--card-border);">
+            <div style="font-size: 11.5px; color: var(--emerald); margin-top: 10px; font-weight: 600;">
+              Sentinel-2 L2A Crop: Islamabad Sector F-8 (10m Resolution)
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 6 -->
+      <section class="slide" id="slide-6">
+        <div class="slide-tag">Machine Learning Core</div>
+        <div class="slide-title">Fast Intensity-Histogram K-Means & Classification</div>
+        <div class="slide-subtitle">Accelerated 256-intensity lookup table (LUT) clustering with interactive land cover mapping.</div>
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-title emerald">Algorithmic Innovation</div>
+            <ul>
+              <li><strong>256-LUT Optimization:</strong> Maps all pixel intensities into a 256-bin lookup table, collapsing iteration runtime from O(N·K) to O(256·K + N).</li>
+              <li><strong>Sub-15ms Convergence:</strong> Iterative centroid updates stop when centroid shift &lt; 0.5 intensity units.</li>
+              <li><strong>Interactive Re-Coloring:</strong> Boundary sliders allow users to adjust land-cover thresholds live on screen.</li>
+              <li><strong>Multi-Class Presets:</strong> Auto-labels clusters (Shadows, Water, Forest, Rooftops, Soil, Lawn).</li>
+            </ul>
+          </div>
+          <div class="card" style="align-items: center; justify-content: center; background: rgba(15, 23, 42, 0.4);">
+            <img src="../../api/tests/fixtures/kmeans_k5_display.png" alt="K-Means Cluster Display" style="max-height: 250px; border-radius: 8px; border: 1px solid var(--card-border);">
+            <div style="font-size: 11.5px; color: var(--cyan); margin-top: 10px; font-weight: 600;">
+              Classified Land Cover Output (Vegetation, Urban, Soil, Shadows)
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 7 -->
+      <section class="slide" id="slide-7">
+        <div class="slide-tag">Image Engine & Archival</div>
+        <div class="slide-title">Spatial Filtering Suite & Lossless GCH2 Compression</div>
+        <div class="slide-subtitle">Real-time canvas filter previews and high-efficiency binary image serialization.</div>
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-title cyan">Spatial Filtering Engine</div>
+            <ul>
+              <li><strong>Live Canvas Previews:</strong> Sliders for Brightness (-255..255) and Threshold (0..255) draw instant in-browser previews during dragging.</li>
+              <li><strong>Odd-Kernel Mean Blur:</strong> Box blur smoothing from 3×3 up to 31×31 with reflect-101 border replication.</li>
+              <li><strong>Laplacian Edge Detection:</strong> 2nd-order spatial derivative highlights geological fault lines, roads, and coastlines.</li>
+              <li><strong>Grayscale & Negative:</strong> Standard contrast inversion and calibrated luminance extraction.</li>
+            </ul>
+          </div>
+          <div class="card">
+            <div class="card-title emerald">Lossless GCH2 Huffman Compression</div>
+            <ul>
+              <li><strong>Custom Container:</strong> GCH2 magic header with rows, cols, channels, payload bits, and 256 frequency table.</li>
+              <li><strong>Vectorized Bit-Packing:</strong> High-performance NumPy bit-packing with zero rounding or compression artifacts.</li>
+              <li><strong>State-Transition Decoding:</strong> Pre-built byte transition table decodes 8 bits per table hop for rapid unpack.</li>
+              <li><strong>Desktop Format Parity:</strong> 100% byte-for-byte compatibility with earlier desktop GeoCluster archives.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 8 -->
+      <section class="slide" id="slide-8">
+        <div class="slide-tag">AI Co-Pilot</div>
+        <div class="slide-title">Three-Tier Deterministic AI Assistant</div>
+        <div class="slide-subtitle">Powered by Groq LLaMA 3.3 70B with strict server-side action validation.</div>
+        <div class="grid-3">
+          <div class="card">
+            <div class="card-title emerald">Tier 1: Offline Glossary</div>
+            <p><strong>Zero API calls & zero tokens:</strong> Tool definitions and questions ("What is NDVI?", "What does Laplacian filter do?") are answered locally from a built-in GIS glossary.</p>
+          </div>
+          <div class="card">
+            <div class="card-title cyan">Tier 2: Command Router</div>
+            <p><strong>Rule-based instant execution:</strong> Exact commands ("show me NUST", "run k-means", "open histogram") trigger UI actions without LLM latency or cost.</p>
+          </div>
+          <div class="card">
+            <div class="card-title amber">Tier 3: Safe LLM Agent</div>
+            <p><strong>Strict Whitelist Guardrails:</strong> LLaMA-3.3-70B reasons in JSON format and can request at most one verified action from a fixed whitelist. Out-of-range parameters are dropped server-side.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 9 -->
+      <section class="slide" id="slide-9">
+        <div class="slide-tag">Cartography</div>
+        <div class="slide-title">Single-Canvas Map Composer Studio</div>
+        <div class="slide-subtitle">Publication-ready cartography directly within your browser.</div>
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-title cyan">What You See Is What You Export</div>
+            <ul>
+              <li><strong>One-Canvas Architecture:</strong> The interactive preview and final high-res export are drawn by the same <code>drawStudioMap</code> function, guaranteeing 100% layout fidelity.</li>
+              <li><strong>Multi-Scale Rendering:</strong> Export at 1x, 2x, or 3x pixel scale for high-DPI academic papers and presentations.</li>
+              <li><strong>Automated Ground Scale Bar:</strong> Automatically calculates metric (m, km) or imperial (ft, mi) ground units from Sentinel-2 metadata.</li>
+            </ul>
+          </div>
+          <div class="card">
+            <div class="card-title emerald">Flexible Cartographic Components</div>
+            <ul>
+              <li><strong>9 Legend Placements:</strong> 5 outside margin placements that never obscure the image, plus 4 on-map corner overlays with class percentages.</li>
+              <li><strong>7 North Arrow Placements:</strong> Classic arrow, compass rose, or triangle styles placed on-map or in the top title band.</li>
+              <li><strong>Attribution & Coordinates:</strong> Automatic Copernicus Sentinel attribution and optional GPS corner coordinates.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 10 -->
+      <section class="slide" id="slide-10">
+        <div class="slide-tag">Security & Hardening</div>
+        <div class="slide-title">Defense-in-Depth & Privacy by Design</div>
+        <div class="slide-subtitle">Hardened against credential leakage, resource exhaustion, and path traversal.</div>
+        <div class="grid-4">
+          <div class="card">
+            <div class="card-title cyan">Automatic Secret Redaction</div>
+            <p><code>log_safety.py</code> intercepts log records and tracebacks, automatically scrubbing credential patterns so keys never leak to logs.</p>
+          </div>
+          <div class="card">
+            <div class="card-title emerald">In-Memory Ephemeral Storage</div>
+            <p>Session images live in RAM with a sliding 60-minute TTL. No client image uploads are ever written to server hard drives.</p>
+          </div>
+          <div class="card">
+            <div class="card-title white">Multi-Tier Rate Limiting</div>
+            <p>Token-bucket limits protect upstream providers: 10 req/min for AI chat, 5 req/min for satellite retrieval, 1 req/s for geocoding.</p>
+          </div>
+          <div class="card">
+            <div class="card-title amber">Defensive Static Serving</div>
+            <p>Static server strictly denies dotfiles (<code>.env</code>), path traversal attempts (<code>..</code>), and internal dev folders.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 11 -->
+      <section class="slide" id="slide-11">
+        <div class="slide-tag">Competitive Matrix</div>
+        <div class="slide-title">How GeoCluster 2.0 Outperforms Existing Stacks</div>
+        <div class="slide-subtitle">Democratizing Earth observation without sacrificing analytical power.</div>
+        <div class="card" style="padding: 12px; overflow-x: auto;">
+          <table class="table-custom">
+            <thead>
+              <tr>
+                <th>Feature / Dimension</th>
+                <th>Desktop GIS (ArcGIS/QGIS)</th>
+                <th>Cloud Notebooks (GEE/Python)</th>
+                <th style="color: var(--emerald);">GeoCluster 2.0 (Web)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Installation</td>
+                <td>5 - 15 GB install & licenses</td>
+                <td>Python / conda environment setup</td>
+                <td style="color: var(--emerald); font-weight: 600;">Zero install (Instant web access)</td>
+              </tr>
+              <tr>
+                <td>Satellite Retrieval</td>
+                <td>Manual portal download & import</td>
+                <td>Requires API coding scripts</td>
+                <td style="color: var(--emerald); font-weight: 600;">1-Click place name or coordinates</td>
+              </tr>
+              <tr>
+                <td>User Learning Curve</td>
+                <td>Steep (Weeks to months)</td>
+                <td>Requires programming skills</td>
+                <td style="color: var(--emerald); font-weight: 600;">Instant / Guided by AI Assistant</td>
+              </tr>
+              <tr>
+                <td>AI Copilot Integration</td>
+                <td>None / experimental plugins</td>
+                <td>Separate LLM window / manual</td>
+                <td style="color: var(--emerald); font-weight: 600;">Native Groq LLaMA-3.3-70B router</td>
+              </tr>
+              <tr>
+                <td>Cartographic Map Export</td>
+                <td>Complex multi-step layout view</td>
+                <td>Manual Matplotlib coding</td>
+                <td style="color: var(--emerald); font-weight: 600;">WYSIWYG Map Studio (1x, 2x, 3x)</td>
+              </tr>
+              <tr>
+                <td>Data Persistence & Privacy</td>
+                <td>Stored on local disks</td>
+                <td>Stored on 3rd-party cloud</td>
+                <td style="color: var(--emerald); font-weight: 600;">In-memory ephemeral (Zero disk retention)</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- SLIDE 12 -->
+      <section class="slide" id="slide-12">
+        <div class="slide-tag">Future Horizon</div>
+        <div class="slide-title">Roadmap & Next-Generation Geospatial Frontier</div>
+        <div class="slide-subtitle">Expanding the horizon of democratized, open-source Earth observation.</div>
+        <div class="grid-4" style="margin-bottom: 20px;">
+          <div class="card">
+            <div class="card-title cyan">Multispectral Indices</div>
+            <p>Automated calculation of NDVI, NDWI, SAVI, and NBR directly from Sentinel-2 NIR/SWIR bands for crop health monitoring.</p>
+          </div>
+          <div class="card">
+            <div class="card-title emerald">WebGPU Deep Learning</div>
+            <p>Client-side ONNX Runtime models for automated building footprint extraction and road network vectorization.</p>
+          </div>
+          <div class="card">
+            <div class="card-title amber">Multi-Constellation Support</div>
+            <p>Ingestion of Landsat 8/9, PlanetScope daily mosaics, and Sentinel-1 Synthetic Aperture Radar (SAR) imagery.</p>
+          </div>
+          <div class="card">
+            <div class="card-title white">Team Collaboration</div>
+            <p>Shared web sessions, collaborative map annotation, and direct GeoTIFF / shapefile vector export.</p>
+          </div>
+        </div>
+        <div class="card" style="background: rgba(16, 185, 129, 0.1); border-color: var(--emerald); align-items: center; justify-content: center; padding: 16px;">
+          <div style="font-family: 'Outfit', sans-serif; font-size: 20px; font-weight: 700; color: var(--text);">
+            Thank You! • Open Source: <span style="color: var(--cyan);">github.com/Furqan6701/GEOCLUSTER-2.0</span>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <script>
+    let currentSlide = 1;
+    const totalSlides = 12;
+
+    function showSlide(n) {
+      if (n < 1) n = 1;
+      if (n > totalSlides) n = totalSlides;
+      currentSlide = n;
+
+      document.querySelectorAll('.slide').forEach((s, idx) => {
+        s.classList.toggle('active', idx + 1 === currentSlide);
+      });
+
+      document.getElementById('slide-num').innerText = `${currentSlide} / ${totalSlides}`;
+      document.getElementById('prev-btn').disabled = (currentSlide === 1);
+      document.getElementById('next-btn').disabled = (currentSlide === totalSlides);
+    }
+
+    function nextSlide() { showSlide(currentSlide + 1); }
+    function prevSlide() { showSlide(currentSlide - 1); }
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') {
+        nextSlide();
+      } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+        prevSlide();
+      }
+    });
+
+    function toggleFullscreen() {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      } else {
+        document.exitFullscreen().catch(() => {});
+      }
+    }
+
+    showSlide(1);
+  </script>
+</body>
+</html>

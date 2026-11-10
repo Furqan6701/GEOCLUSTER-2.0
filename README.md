@@ -263,18 +263,21 @@ Read the summary at the bottom:
 - **Proxy** errors: check the proxy address in `HTTPS_PROXY` or the Windows proxy setting.
 
 
-## Demo
+## Pitch Deck & Demo Walkthrough
 
-> Placeholders. Replace each one before the public release.
+- **Official Video Walkthrough (1080p with Native English Narration):** [`geocluster2_demo_walkthrough.mp4`](geocluster2_demo_walkthrough.mp4) (Interactive player: [`docs/demo/index.html`](docs/demo/index.html))
+- **Video Walkthrough Script & Timestamps:** [`docs/demo/WALKTHROUGH_SCRIPT.md`](docs/demo/WALKTHROUGH_SCRIPT.md)
+- **PowerPoint Pitch Deck (16:9 Widescreen):** [`GEOCLUSTER_2.0_Pitch_Deck.pptx`](GEOCLUSTER_2.0_Pitch_Deck.pptx)
+- **Web Pitch Deck:** [`docs/pitch_deck/index.html`](docs/pitch_deck/index.html)
+- **Pitch Deck Speaker Notes & Summary:** [`docs/pitch_deck/PITCH_DECK_SUMMARY.md`](docs/pitch_deck/PITCH_DECK_SUMMARY.md)
 
 | | |
 | --- | --- |
-| ![Screenshot: fetching a Sentinel-2 crop](docs/images/fetch.png) | ![Screenshot: K-Means clusters and classification](docs/images/kmeans.png) |
-| *TODO: caption, fetch by place name* | *TODO: caption, K-Means and classification* |
-| ![Screenshot: map composer with legend and scale bar](docs/images/composer.png) | ![Screenshot: histogram window](docs/images/histogram.png) |
-| *TODO: caption, map composer* | *TODO: caption, histogram window* |
+| ![Satellite: Sentinel-2 crop](docs/demo/F8_satellite.png) | ![K-Means clusters](api/tests/fixtures/kmeans_k5_display.png) |
+| *Sentinel-2 10m True-Color Crop (Islamabad F-8)* | *Vectorized K-Means Intensity Clustering (5 Classes)* |
+| ![Land Cover Map](api/tests/fixtures/classify_display.png) | ![Satellite Crop: NUST](desktop/data/cache/NUST.png) |
+| *Classified Land Cover with Curated Color Map* | *Sentinel-2 Acquisition: NUST H-12 Campus* |
 
-Demo video: link to be added
 
 ## Project History
 

@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GeoCluster 2.0 - Official Video Walkthrough</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0b1120;
+      --card-bg: rgba(30, 41, 59, 0.7);
+      --card-border: rgba(51, 65, 85, 0.6);
+      --emerald: #10b981;
+      --cyan: #06b6d4;
+      --amber: #f59e0b;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', -apple-system, sans-serif;
+      min-height: 100vh;
+      padding: 32px 24px;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    header.demo-header {
+      margin-bottom: 28px;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid var(--emerald);
+      color: var(--emerald);
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      margin-bottom: 12px;
+    }
+    h1 {
+      font-family: 'Outfit', sans-serif;
+      font-size: 38px;
+      font-weight: 800;
+      line-height: 1.15;
+      margin-bottom: 8px;
+    }
+    p.subtitle {
+      font-size: 16px;
+      color: var(--muted);
+      max-width: 800px;
+      line-height: 1.5;
+    }
+
+    .video-grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 28px;
+      margin-top: 24px;
+    }
+    @media (max-width: 960px) {
+      .video-grid { grid-template-columns: 1fr; }
+    }
+
+    .video-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 16px;
+      box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.6);
+      display: flex;
+      flex-direction: column;
+    }
+    video {
+      width: 100%;
+      border-radius: 12px;
+      background: #000;
+      aspect-ratio: 16 / 9;
+      outline: none;
+    }
+
+    .meta-box {
+      margin-top: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      background: rgba(15, 23, 42, 0.6);
+      border-radius: 8px;
+      border: 1px solid var(--card-border);
+      font-size: 13px;
+    }
+    .meta-left {
+      color: var(--muted);
+    }
+    .meta-badge {
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--cyan);
+      font-weight: 600;
+    }
+
+    .chapters-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+    }
+    .chapters-card h3 {
+      font-family: 'Outfit', sans-serif;
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 16px;
+      color: var(--cyan);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .chapter-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      overflow-y: auto;
+      max-height: 520px;
+      padding-right: 6px;
+    }
+    .chapter-item {
+      background: rgba(15, 23, 42, 0.5);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 12px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .chapter-item:hover {
+      background: rgba(51, 65, 85, 0.4);
+      border-color: var(--cyan);
+    }
+    .chapter-time {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: var(--emerald);
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .chapter-title {
+      font-size: 13.5px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+    .chapter-desc {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .links-bar {
+      margin-top: 28px;
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    .link-btn {
+      background: rgba(30, 41, 59, 0.8);
+      border: 1px solid var(--card-border);
+      color: var(--text);
+      text-decoration: none;
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-size: 13.5px;
+      font-weight: 600;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .link-btn:hover {
+      background: var(--card-border);
+      border-color: var(--cyan);
+      color: var(--cyan);
+    }
+    .link-btn.primary {
+      background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(6, 182, 212, 0.2));
+      border-color: var(--emerald);
+      color: var(--emerald);
+    }
+    .link-btn.primary:hover {
+      background: var(--emerald);
+      color: #0b1120;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header class="demo-header">
+      <div class="badge">OFFICIAL VIDEO DEMO WALKTHROUGH</div>
+      <h1>GeoCluster 2.0 Workstation Tour</h1>
+      <p class="subtitle">
+        Comprehensive end-to-end video walkthrough with synchronized native English narration, demonstrating 
+        Copernicus Sentinel-2 acquisition, in-memory K-Means spectral clustering, spatial filters with live canvas previews, 
+        Groq LLaMA 3.3 70B AI assistant, and cartographic map composition.
+      </p>
+      <div class="links-bar">
+        <a href="geocluster2_demo_walkthrough.mp4" download class="link-btn primary">⬇ Download Video (1080p MP4)</a>
+        <a href="../pitch_deck/index.html" class="link-btn">📽 Open Pitch Deck (Web)</a>
+        <a href="../../GEOCLUSTER_2.0_Pitch_Deck.pptx" download class="link-btn">📊 Download Pitch Deck (PPTX)</a>
+        <a href="WALKTHROUGH_SCRIPT.md" class="link-btn">📜 View Full Script & Timestamps</a>
+      </div>
+    </header>
+
+    <div class="video-grid">
+      <div class="video-card">
+        <video id="demo-player" controls preload="metadata">
+          <source src="geocluster2_demo_walkthrough.mp4" type="video/mp4">
+          Your browser does not support HTML5 video.
+        </video>
+        <div class="meta-box">
+          <div class="meta-left">
+            Narrator: <strong>Native English (Andrew Multilingual Neural)</strong> • 1080p Full HD • 24 FPS
+          </div>
+          <div class="meta-badge">160s (02:40)</div>
+        </div>
+      </div>
+
+      <div class="chapters-card">
+        <h3>Walkthrough Scenes</h3>
+        <div class="chapter-list">
+          <div class="chapter-item" onclick="seekTo(0)">
+            <div class="chapter-time">00:00 - 00:27</div>
+            <div class="chapter-title">1. Introduction & Project Vision</div>
+            <div class="chapter-desc">Democratizing Earth observation and GIS directly in the browser.</div>
+          </div>
+          <div class="chapter-item" onclick="seekTo(27)">
+            <div class="chapter-time">00:27 - 00:52</div>
+            <div class="chapter-title">2. Architecture & In-Memory Sessions</div>
+            <div class="chapter-desc">FastAPI + ES6 Vanilla JS with sliding 60m TTL and RAM memory guard.</div>
+          </div>
+          <div class="chapter-item" onclick="seekTo(52)">
+            <div class="chapter-time">00:52 - 01:16</div>
+            <div class="chapter-title">3. 1-Click Copernicus Satellite Fetch</div>
+            <div class="chapter-desc">10m Sentinel-2 L2A true-color retrieval by sector, place name, or coordinates.</div>
+          </div>
+          <div class="chapter-item" onclick="seekTo(76)">
+            <div class="chapter-time">01:16 - 01:36</div>
+            <div class="chapter-title">4. Spatial Filtering with Live Canvas Preview</div>
+            <div class="chapter-desc">Laplacian edge detection, box blur, and live brightness/threshold drag preview.</div>
+          </div>
+          <div class="chapter-item" onclick="seekTo(96)">
+            <div class="chapter-time">01:36 - 01:58</div>
+            <div class="chapter-title">5. Accelerated K-Means & Classification</div>
+            <div class="chapter-desc">Vectorized 256-LUT clustering running in &lt;15ms with live re-coloring.</div>
+          </div>
+          <div class="chapter-item" onclick="seekTo(118)">
+            <div class="chapter-time">01:58 - 02:20</div>
+            <div class="chapter-title">6. Three-Tier AI Assistant & GCH2 Compression</div>
+            <div class="chapter-desc">Groq LLaMA 3.3 70B action whitelist and lossless vectorized Huffman engine.</div>
+          </div>
+          <div class="chapter-item" onclick="seekTo(140)">
+            <div class="chapter-time">02:20 - 02:40</div>
+            <div class="chapter-title">7. Map Composer Studio & Conclusion</div>
+            <div class="chapter-desc">Single-canvas publication-grade cartography and open-source release.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const player = document.getElementById('demo-player');
+    function seekTo(seconds) {
+      player.currentTime = seconds;
+      player.play().catch(() => {});
+    }
+  </script>
+</body>
+</html>
